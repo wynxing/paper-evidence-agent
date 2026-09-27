@@ -1,11 +1,11 @@
 # 技术选型：论文引文证据核验 Agent
 
 状态：设计稿  
-版本：0.1  
+版本：0.3  
 日期：2026-09-27  
 作者：Wynn  
 读者：实现  
-相关文档：[术语表](glossary.md)、[产品需求](prd.md)、[架构设计](architecture.md)、[研究评测](evaluation.md)
+相关文档：[术语表](glossary.md)、[产品需求](prd.md)、[架构设计](architecture.md)、[测试方案](test-plan.md)
 
 句子标记见 [术语表](glossary.md)。本文只记录已经采纳的技术决定、不采纳的方案和尚未选择的点。产品定位见 [产品需求](prd.md)。用户可见的验收不在这里重复。
 
@@ -39,16 +39,16 @@
 
 - 状态：已采纳
 - 背景：核验范围是当前这一篇被引文献，不是全库语义搜索。
-- 决定：用 SQLite 保存本地任务、证据、Agent 评审、诊断记录和作者反馈。只对当前被引文献的段落建 FTS5 全文索引，并以 BM25 排序。[FTS5](https://www.sqlite.org/fts5.html)
+- 决定：用 SQLite 保存本地任务、证据、paper agent 的判断、诊断记录和作者反馈。只对当前被引文献的段落建 FTS5 全文索引，并以 BM25 排序。[FTS5](https://www.sqlite.org/fts5.html)
 - 不选的方案：首版不使用向量数据库。
 - 后果：这是限定文献范围的检索。词汇不匹配会损失召回。是否加嵌入检索见 [待决](#待决)，并由 [研究评测](evaluation.md) 的检索率决定。
 
 ## D5 流程编排
 
 - 状态：已采纳
-- 背景：身份解析、许可检查、获取、检索、初判、独立评审和证据校验需要明确的出口，不能变成自由协商的多 Agent。
-- 决定：用 LangGraph 把这些步骤写成有界节点。测试 Agent 离线读取诊断包。工具只执行只读查询。[LangGraph 概述](https://docs.langchain.com/oss/python/langgraph/overview)
-- 不选的方案：不允许自治 Agent 任意联网或改写任务目标。
+- 背景：身份解析、许可检查、获取、检索、判断和证据校验需要明确的出口。仓库不实现第二名 agent。
+- 决定：用 LangGraph 把身份、许可、获取、检索、判断和证据校验写成有界节点。图谱只有 paper agent 这一次模型调用。工具只执行只读查询。[LangGraph 概述](https://docs.langchain.com/oss/python/langgraph/overview)
+- 不选的方案：不在图谱里编排内部评审。不允许自治 agent 任意联网或改写任务目标。
 - 后果：节点出口必须落到 [任务状态](glossary.md#2-任务状态) 中的一种。
 
 ## D6 模型适配
@@ -57,12 +57,12 @@
 - 背景：需要一个稳定的上游接口，同时保留以后换模型做对照的可能。
 - 决定：使用 LiteLLM Python SDK。默认调用 Agnes 的 `agnes-2.5-flash` Chat Completions。禁用 LiteLLM 自动模型回退。无效输出允许一次受控重试，仍然无效则记录 `MODEL_INVALID_OUTPUT`。[LiteLLM](https://docs.litellm.ai/docs/)、[Agnes 2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash)
 - 不选的方案：不使用 LiteLLM Proxy。DeepSeek 只作为后续对照候选，不在同一次主要实验中自动切换。不假定 Agnes 支持某种特定的 JSON Schema 响应参数。
-- 后果：初判和评审在隔离上下文中各调用一次。即使提示词不同，同一模型仍可能出现相关错误。实验分别记录每次调用的模型标识、参数、提示词版本、调用次数和 token 用量。一致意见不是真值。
+- 后果：一次核验记录这一次调用的模型标识、参数、提示词版本、调用次数和 token 用量。参赛实现不包含第二次内部调用。paper agent 的标签不是真值。仓库内再加一名评审是否有收益，只留在研究评测，不据此实现第二个 agent。
 
 ## D7 可观测性
 
 - 状态：已采纳
-- 背景：测试 Agent 需要按阶段查看工具调用、耗时和错误码。
+- 背景：测试方案需要按阶段核对工具调用、耗时和错误码。
 - 决定：使用 OpenTelemetry Python SDK 记录本地轨迹。[手动埋点](https://opentelemetry.io/docs/languages/python/instrumentation/)
 - 不选的方案：不把轨迹当作模型内部推理记录。
 - 后果：span 的字段边界见 [架构设计](architecture.md#4-本地记录与失败处理)。诊断包只投影术语表中的 `execution` 字段。
@@ -71,8 +71,8 @@
 
 - 状态：已采纳
 - 背景：规则、接口和作者复核流程需要分开检查。研究指标不能用界面演示代替。
-- 决定：pytest 检查规则和接口。Playwright 检查作者复核流程。实验评测使用冻结数据集，协议见 [研究评测](evaluation.md)。
-- 不选的方案：不用一次性的手工演示代替上述检查。
+- 决定：pytest 与 Playwright 按 [测试方案](test-plan.md) 执行。研究评测不作为参赛验收。
+- 不选的方案：不用一次性的手工演示代替上述检查，也不用研究数据集代替测试方案里的用例。
 - 后果：依赖版本在实际开发时锁定。仓库目前没有应用代码、模型密钥、论文语料或性能结果。
 
 ## D9 文献来源
@@ -88,7 +88,7 @@
 - 不选的方案：不抓取受限 PDF。不把论文全文提交到 Git。不用 OpenAlex 的开放获取字段单独充当许可凭据。
 - 后果：许可缺失、版本间许可冲突或未取得全文时，任务为 `BLOCKED`，错误码 `LICENSE_UNKNOWN` 或 `CONTENT_INCOMPLETE`，结果标签为「无法核验来源」。保存 PMCID、DOI、获取入口、许可、版本、获取时间和内容哈希。只索引获准处理的段落。
 
-密钥放在本机环境变量中。启动云模型调用前，界面告知将向 Agnes 发送论断文本和候选开放片段，并取得本次核验的确认。未经确认只做 DOI 的只读元数据查询。诊断包交给外部测试 Agent 时，另行展示将发送的字段并取得同意。默认包遮盖未发表论断。这里的外部测试 Agent 是角色；Codex 只是一种可能的调用方，不是字段契约的一部分。
+密钥放在本机环境变量中。启动云模型调用前，界面告知将向 Agnes 发送论断文本和候选开放片段，并取得本次核验的确认。未经确认只做 DOI 的只读元数据查询。若把诊断包交给仓库外的评审 agent，另行展示将发送的字段并取得同意。默认包遮盖未发表论断。Claude、Cursor 是这类评审的例子，不是字段契约，也不进入应用依赖。
 
 ## D10 暂不采用
 
@@ -101,6 +101,14 @@
   - 把整篇 PDF 解析当作首版能力。以后可评估 [GROBID](https://grobid.readthedocs.io/en/latest/Grobid-service/) 识别引文标记和参考文献，并让作者确认含糊对应。解析准确率和页码定位未单独评测前，解析结果不充当确定的引用关系。
 - 不选的方案：不把以上任何一项写入首版验收。
 - 后果：整篇论文模式若要做，先拆成现有的单条任务。见 [架构设计](architecture.md#5-后续扩展接口)。
+
+## D11 不改用赛题推荐栈
+
+- 状态：已采纳
+- 背景：[赛题](https://www.boxuegu.com/matchTrack/detail/?id=10041)建议 Dify、Coze、LangChain、LlamaIndex、DeepSeek、Qwen、GLM、DeepEval、RAGAS、JMeter 和 Locust。这些是建议，不是必选依赖。
+- 决定：首版保持已经采纳的 Vue、FastAPI、LangGraph、LiteLLM、Agnes、SQLite FTS5、pytest、Playwright 和本地 OpenTelemetry。Dify、Coze、DeepEval、RAGAS 和 JMeter 不进入依赖。Claude 与 Cursor 的 SDK 也不进入依赖；它们只在仓库外担任评审。性能测量遵守测试方案，不引入 Locust 或分布式压测。
+- 不选的方案：不为了贴近推荐名单而更换编排框架或检索方案。
+- 后果：参赛说明要写明这是有意选择。目录和模块边界以 [架构设计](architecture.md#代码布局) 为准。
 
 ## 待决
 
