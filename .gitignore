@@ -1,0 +1,25 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Local paper corpora and run outputs
+/data/
+/corpus/
+/artifacts/
+/runs/
+
+# Project-local temporary worktrees
+/.worktrees/
