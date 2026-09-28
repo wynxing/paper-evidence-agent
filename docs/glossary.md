@@ -1,7 +1,7 @@
 # 术语表
 
 状态：设计稿\
-版本：0.4\
+版本：0.5\
 日期：2026-09-28\
 作者：Wynn\
 读者：产品、实现与评测\
@@ -16,7 +16,7 @@
 
 ## 1. 结果标签
 
-界面有六种结果；前五种写入 `label`。「执行失败」只是 `FAILED` 的界面文字，学术标签保持 `null`。
+下表定义五种学术/来源标签及执行失败展示；另外 CANCELLED 显示「已取消」，INTERRUPTED 显示「运行中断」。后三者均不是学术标签，`label` 和 `decision` 保持 `null`。
 
 | 展示结果 | 使用条件 | 任务状态 |
 | --- | --- | --- |
@@ -36,9 +36,10 @@
 | `QUEUED` | 已入队 | 否 |
 | `RUNNING` | 执行中，包括重试、补读及修复 | 否 |
 | `COMPLETED` | 已形成核验结果，包括证据不足 | 是 |
-| `BLOCKED` | 来源、许可或完整性阻断 | 是 |
+| `BLOCKED` | 来源、许可、正文语言或完整性阻断 | 是 |
 | `FAILED` | 执行失败；`label` 为 `null` | 是 |
-| `INTERRUPTED` | 进程启动时发现遗留的 RUNNING；`label` 为 `null` | 是 |
+| `CANCELLED` | 作者取消；保留已有诊断，`label` 和 `decision` 为 `null` | 是 |
+| `INTERRUPTED` | 进程启动时发现未带取消标记的遗留 RUNNING；`label` 为 `null` | 是 |
 
 用户重试创建新的 QUEUED 任务并保留原记录；工作流内部恢复不新建任务。只有终态任务可删除或由用户重试。重试须重新确认当前运行配置及云调用范围。
 
@@ -60,32 +61,39 @@
 
 ## 4. 错误码
 
-下表是任务终态的映射；执行记录也保留已恢复的错误，但不因此把成功任务改为失败。FAILED 的结果字段均为 `null`。
+下表是已创建任务的终态映射；解析预览尚未创建任务时，使用相同错误码及架构中的 HTTP 状态，不产生任务终态。执行记录也保留已恢复的错误，但不因此把成功任务改为失败。FAILED 的结果字段均为 `null`。
 
 | 错误码 | 条件 | 终态 |
 | --- | --- | --- |
+| `DOI_INVALID` | DOI 格式无效；入队前拒绝，已存任务重新校验失败时阻断 | `BLOCKED` |
+| `DOI_UNRESOLVABLE` | DOI 官方解析服务明确返回未找到；仅表示当前无法解析，不断言永久不存在 | `BLOCKED` |
+| `METADATA_NOT_FOUND` | DOI 能解析或属于 Crossref，但 Crossref 文献记录未找到 | `BLOCKED` |
+| `REGISTRATION_AGENCY_UNSUPPORTED` | 已确认注册机构不在首版 Crossref 支持范围 | `BLOCKED` |
 | `SOURCE_MISMATCH` | DOI、PMCID 或版本身份冲突，不替换文献 | `BLOCKED` |
 | `SOURCE_UNAVAILABLE` | 官方查询确认无首版可用 PMC 全文来源；网络错误不属此类 | `BLOCKED` |
 | `LICENSE_UNKNOWN` | 许可缺失或冲突，无法确认 | `BLOCKED` |
 | `LICENSE_UNSUPPORTED` | 许可已知但不在首版 CC0/CC BY 支持范围，不代表该许可非法 | `BLOCKED` |
+| `SOURCE_LANGUAGE_UNSUPPORTED` | 正文不是可确认的英文版本，或必要内容混有未支持语言；不翻译全文补结论 | `BLOCKED` |
 | `CONTENT_INCOMPLETE` | 已取得内容但 JATS 不完整、解析失败，或所需图表无法可靠读取 | `BLOCKED` |
+| `RETRIEVAL_FAILED` | 程序构造 MATCH 后仍发生数据库/索引查询错误，立即停止，不消耗模型修复预算 | `FAILED` |
 | `RETRIEVAL_EMPTY` | 完成允许的补充检索仍无候选，生成「证据不足」及检索限制 | `COMPLETED` |
 | `UPSTREAM_TIMEOUT` | 请求超时，恢复未成功 | `FAILED` |
 | `UPSTREAM_RATE_LIMITED` | 上游限流，恢复未成功 | `FAILED` |
 | `UPSTREAM_AUTH_FAILED` | 上游或网关认证/授权失败，不重试 | `FAILED` |
 | `UPSTREAM_INVALID_REQUEST` | 参数或协议不兼容，不重试 | `FAILED` |
 | `UPSTREAM_UNAVAILABLE` | 连接故障或暂时性服务错误，恢复未成功 | `FAILED` |
+| `TASK_TIMEOUT` | 从执行器领取任务起达到总执行时限，包含重试等待、不含排队 | `FAILED` |
 | `BUDGET_EXCEEDED` | 流程仍要求执行超出授权次数的请求或补读，未形成有效结果 | `FAILED` |
 | `MODEL_INVALID_OUTPUT` | 结构或动作不合法，修复机会用尽后仍无效 | `FAILED` |
 | `QUOTE_MISMATCH` | 摘录或引用来源校验失败，修复机会用尽后仍无效 | `FAILED` |
 
-恢复后的终态保留最后导致停止的原因，完整错误链保存在 execution 与 attempts。来源 HTTP 响应先由连接器按接口语义解释，不能将所有 404 都当作参数错误。其他未恢复执行错误使用 FAILED 并保留脱敏的异常类别，`error_code` 为 `null`，不强行套用错误含义。
+CANCELLED 的 error_code 为 null；取消不是错误。已受理取消优先于随后到达的 deadline，其他执行停止原因按架构规则处理。恢复后的终态保留最后导致停止的原因，完整错误链保存在 execution 与 attempts。来源 HTTP 响应先由连接器按接口语义解释，不能将所有 404 都当作参数错误。其他未恢复执行错误使用 FAILED 并保留脱敏的异常类别，`error_code` 为 `null`，不强行套用错误含义。
 
 ## 5. 证据门槛
 
 「支持」「部分支持」「相矛盾」是确定判断。展示前必须通过来源身份、版本和许可检查，且每条摘录能在保存的同版本段落中逐字定位，结果结构与证据引用有效。模型还须解释对象、条件、数量、因果和否定方向的关系。
 
-确定性校验只能证明引用与结构有效，不能证明语义判断正确；语义质量由 [首版测试](test-plan.md) 和独立标注评估。修复后须重新经过同样的校验，不降低门槛。证据不足可以没有摘录；阻断、失败及中断没有最终 decision。
+确定性校验只能证明引用与结构有效，不能证明语义判断正确；语义质量由 [首版测试](test-plan.md) 和独立标注评估。修复后须重新经过同样的校验，不降低门槛。证据不足可以没有摘录；阻断、失败、中断和取消没有最终 decision。
 
 ### 最终判断
 
@@ -153,16 +161,18 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 
 ## 6. 诊断包
 
-输入诊断包与外部评审返回值分开。输入包不含故障注入真因、正式真值标签或 diagnosis。版本升级为 `2.0`，替代原 `decisions[]` 和单次模型字段；当前没有运行数据，不需要数据库迁移，不承诺 1.0 消费端兼容。
+输入诊断包与外部评审返回值分开。输入包不含故障注入真因、正式真值标签或 diagnosis。当前草案为 `2.1`，在 2.0 的多请求结构上增加任务关联、取消标记、超时及观测配置；消费端须识别新增状态/字段。当前没有运行数据，无数据库迁移。
 
-默认 `redacted` 外传包保留结构、标识、状态与用量元数据。论断、查询、摘录、rationale、supported_parts、scope_differences、limitations 等自由文本均使用脱敏占位，不能借解释字段泄漏未发表论断。原始模型响应和密钥永不导出。`consented` 包仅在本地生成，由作者预览并对接收方单独授权后外传；可以包含获许可片段和判断文本，不自动包含完整提示词。无论断原句的包不能用于声称核实语义标签。
+默认 `redacted` 包保留结构、标识、状态、用量及公开书目信息。明确保留 input.doi、source.title/doi/pmcid/access_url，以及证据的 section/source_url；章节取自公开原文，不能由用户输入或模型生成。此模式隐藏论断文本，不保证研究主题匿名。导出预览须提示“书目字段未遮盖，可识别文献及相关主题”，作者可放弃导出。仅遮标题而保留 DOI 不能实现匿名；首版不提供主题匿名模式。论断、查询、摘录、rationale、supported_parts、scope_differences、limitations 等自由文本均使用脱敏占位，不能借解释字段泄漏未发表论断。原始模型响应和密钥永不导出。`consented` 包仅在本地生成，由作者预览并对接收方单独授权后外传；可以包含获许可片段和判断文本，不自动包含完整提示词。无论断原句的包不能用于声称核实语义标签。
 
 ### 输入诊断包
 
 | 字段 | 内容 |
 | --- | --- |
-| `schema_version` | 固定 `2.0` |
+| `schema_version` | 固定 `2.1` |
 | `case_id`, `run_id`, `trace_id` | 任务、运行、轨迹标识 |
+| `previous_id` | 重试、修改或拆分所关联的原任务；无关联为 null |
+| `cancel_requested` | 是否已受理取消；boolean |
 | `status`, `label`, `error_code` | 任务状态、结果标签、终止原因；未产生或不适用为 null |
 | `input.doi`, `input.claim`, `input.privacy` | DOI、原句或占位、redacted/consented |
 | `input.recipient` | 诊断包授权接收方；未授权为 null，与模型接收方分开 |
@@ -172,6 +182,8 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | `run_config.profile`, `run_config.config_digest` | daily/evaluation、脱敏配置快照的摘要 |
 | `run_config.authorized_recipients` | 本次允许的模型服务接收方标识，不含密钥 |
 | `run_config.limits` | main_requests=3、repair_requests=1、attempts_per_request=2、supplemental_rounds=1 |
+| `run_config.timeouts` | model_attempt_seconds=45、source_request_seconds=15、task_seconds=180；实际采用值入配置摘要 |
+| `run_config.observability` | langfuse_enabled 默认 false；recipient 为已授权观测接收方或 null，不含凭据 |
 | `evidence_candidates[]` | 候选段落记录，字段见下表 |
 | `decision` | 上节的最终判断或 null；与尝试记录分开 |
 | `execution[]` | 所有已执行步骤，包括失败/阻断前的步骤，字段见下表 |
@@ -187,7 +199,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | 执行字段 | 内容 |
 | --- | --- |
 | `stage`, `span_id`, `tool` | 阶段、span、工具名称 |
-| `status` | 步骤结果 success/error/blocked，不复用任务状态 |
+| `status` | 步骤结果 success/error/blocked/cancelled，不复用任务状态 |
 | `error_code`, `duration_ms` | 原因与耗时，未知为 null |
 | `round` | 检索轮次，不适用为 null |
 | `request_id` | 关联逻辑模型请求，无模型调用时为 null |
@@ -207,7 +219,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | `configured_model`, `deployment_id`, `recipient` | 此次实际路由配置与接收方，来自网关元数据 |
 | `response_model`, `verified_model_version` | 上游声称的模型及可验证版本；不能验证版本则为 null，不能用别名代替 |
 | `recovery_kind`, `recovery_reason` | none/retry/fallback，以及触发本次恢复的错误码；首次 reason 为 null |
-| `status`, `error_code`, `duration_ms` | success/error、错误码和耗时 |
+| `status`, `error_code`, `duration_ms` | success/error/cancelled、错误码和耗时；cancelled 表示本地等待停止，不代表上游计算已停止 |
 | `usage` | prompt_tokens/completion_tokens/total_tokens 对象；usage 或其缺失子项为 null，不补零 |
 
 调用次数由请求数组及 attempts 数组计算；模型版本和 token 未知不影响正确展示“未知”，但缺失尝试记录不能宣称调用预算或成本已完整核实。网关必须提供逐次元数据，最终响应不能代表所有尝试。原始元数据先脱敏再落日志。
@@ -216,7 +228,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "case_id": "example-case",
   "run_id": "example-run",
   "trace_id": "example-trace",
@@ -250,6 +262,15 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
       "repair_requests": 1,
       "attempts_per_request": 2,
       "supplemental_rounds": 1
+    },
+    "timeouts": {
+      "model_attempt_seconds": 45,
+      "source_request_seconds": 15,
+      "task_seconds": 180
+    },
+    "observability": {
+      "langfuse_enabled": false,
+      "recipient": null
     }
   },
   "evidence_candidates": [],
@@ -315,7 +336,9 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
         }
       ]
     }
-  ]
+  ],
+  "previous_id": null,
+  "cancel_requested": false
 }
 ```
 
@@ -345,9 +368,13 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
       "stage": "retrieval",
       "error_code": "RETRIEVAL_EMPTY",
       "observation": "<observed-anomaly>",
-      "evidence_refs": ["<span-id-or-paragraph-id-or-json-path>"],
+      "evidence_refs": [
+        "<span-id-or-paragraph-id-or-json-path>"
+      ],
       "cause_hypothesis": "<hypothesis>",
-      "reproduction_steps": ["<read-only-step>"],
+      "reproduction_steps": [
+        "<read-only-step>"
+      ],
       "regression_assertion": "<assertion>",
       "uncertainty": "<what-remains-unknown>"
     }

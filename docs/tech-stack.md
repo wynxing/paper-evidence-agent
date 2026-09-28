@@ -1,7 +1,7 @@
 # 技术选型：论文引文证据核验 Agent
 
 状态：设计稿\
-版本：0.4\
+版本：0.5\
 日期：2026-09-28\
 作者：Wynn\
 读者：实现\
@@ -39,9 +39,13 @@
 
 - 状态：已采纳
 - 背景：核验范围是当前这一篇被引文献，不是全库语义搜索。
-- 决定：用 SQLite 保存本地任务、证据、paper agent 的判断、诊断记录和作者反馈。只对当前被引文献的段落建 FTS5 全文索引，并以 BM25 排序。[FTS5](https://www.sqlite.org/fts5.html)
+- 决定：用 SQLite 保存本地任务、证据、paper agent 的判断、诊断记录和作者反馈。只对当前被引文献的段落建 FTS5 全文索引，使用 `unicode61` 分词，并以 BM25 排序。[FTS5](https://www.sqlite.org/fts5.html)
 - 不选的方案：首版不使用向量数据库。
 - 后果：这是限定文献范围的检索。保留词汇基线，但加入文献语言查询生成、一次补充检索及段落邻居读取。先用首版语义验收集定位跨语言、同义改写和上下文遗漏；嵌入检索是可评估的候选，不是原则性禁用。见 [待决](#待决)。
+
+**规则**：首版接受中文或英文论断，只自动处理可确认的英文 PMC 正文，查询生成输出英文普通检索词。以 JATS 正文版本的语言声明和解析出的实际内容核对语言；元数据仅声明英文但正文不符、语言不明或所需内容为未支持语言时，返回 `SOURCE_LANGUAGE_UNSUPPORTED`，不凭英文摘要替代正文。中文分词、全文翻译和额外 tokenizer 扩展不在首版。
+
+**规则**：queries 中每项为普通词组，不是 MATCH 程序。程序按 Unicode 空白拆词、对每个词内部双引号加倍后用双引号包裹，再以程序固定的 OR 合并去重词项，最后作为 SQL 参数绑定；AND/OR/NOT/NEAR、括号、星号和冒号都不作为用户操作符解释。不把整段长查询直接短语化。只含标点或空白、无可索引字符的查询属于 MODEL_INVALID_OUTPUT，可使用已有一次修复；合法构造后数据库/索引异常为 RETRIEVAL_FAILED，不转为零命中，也不让模型修 SQL。[FTS5 查询语法](https://www.sqlite.org/fts5.html#full_text_query_syntax)
 
 ## D5 流程编排
 
@@ -78,9 +82,14 @@ Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅�
 
 - 状态：已采纳
 - 背景：测试方案需要按阶段核对工具调用、耗时和错误码。
-- 决定：使用 OpenTelemetry Python SDK 记录本地轨迹。[手动埋点](https://opentelemetry.io/docs/languages/python/instrumentation/)
+- 决定：使用 OpenTelemetry Python SDK 记录本地轨迹，提供默认关闭的 Langfuse 导出。[手动埋点](https://opentelemetry.io/docs/languages/python/instrumentation/)
 - 不选的方案：不把轨迹当作模型内部推理记录。
 - 后果：span 的字段边界见 [架构设计](architecture.md#4-本地记录与失败处理)。诊断包的执行与模型元数据分别投影到术语表的 `execution` 和 `model_calls`，不导出原始响应。
+
+**规则**：提供可选 Langfuse OTLP/HTTP 导出，默认关闭；仅在配置端点、凭据和观测接收方授权后启用。先脱敏再导出；本地记录是诊断依据，异步有界导出失败只记录本地观测警告，不重试业务请求、不改变任务结果，不阻塞 worker 释放。观测接收方独立于模型接收方，配置摘要包含启用状态和接收方，密钥不进入摘要或日志。[Langfuse OTLP](https://langfuse.com/integrations/native/opentelemetry)
+
+- 不强制本机部署 Langfuse 服务栈；可连接用户已提供的实例。接入已有服务不等于没有部署成本，自托管需额外存储组件。[部署架构](https://langfuse.com/self-hosting)
+- Langfuse 用于分析调用链、延迟、成本和错误；外部测试 Agent 从授权轨迹与诊断包取数、分析并输出报告，流程见 [外部评审](test-plan.md#1-外部评审怎么做)。接入仪表盘不等于完成自动归因，须用隐藏注入真因验证。
 
 ## D8 验证
 
@@ -96,6 +105,7 @@ Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅�
 - 背景：首版必须先确认文献身份、可处理的全文及其版本，再在该文献内找证据。用户指定的是某一篇 DOI，不是一篇“相似”文献。
 - 决定：
   1. 用 [Crossref REST API](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) 核对 DOI、题名、作者和发表信息。界面仍要求作者确认解析出的题名。
+     Crossref `/works/{doi}` 404 时先查 `/works/{doi}/agency`；确认非 Crossref 则 REGISTRATION_AGENCY_UNSUPPORTED，确认 Crossref 则 METADATA_NOT_FOUND。机构也未找到时，用 DOI 官方解析服务做不跟随跳转的解析检查：有效跳转仅证明可解析，返回 METADATA_NOT_FOUND；明确未找到才 DOI_UNRESOLVABLE。认证、429、5xx、超时等按上游故障处理，不能证明 DOI 不存在；异常协议响应按 UPSTREAM_INVALID_REQUEST 处理。所有请求仅去固定官方入口，不跟随到任意出版商页面。
   2. 用 [PMC ID Converter](https://pmc.ncbi.nlm.nih.gov/tools/id-converter-api/) 把 DOI 映射到 PMCID。
   3. 用 [OpenAlex](https://help.openalex.org/data/works/open-access/) 辅助发现开放位置、版本和许可线索。OpenAlex 的“可免费阅读”不等于允许获取并发送全文。
   4. 通过 [PMC OAI-PMH](https://pmc.ncbi.nlm.nih.gov/tools/oai/) 获取允许复用的 JATS 全文，并逐篇检查该版本的许可声明。
@@ -121,7 +131,7 @@ Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅�
 
 - 状态：已采纳
 - 背景：[赛题](https://www.boxuegu.com/matchTrack/detail/?id=10041)建议 Dify、Coze、LangChain、LlamaIndex、DeepSeek、Qwen、GLM、DeepEval、RAGAS、JMeter 和 Locust。这些是建议，不是必选依赖。
-- 决定：首版保持已经采纳的 Vue、FastAPI、LangGraph、OpenAI 兼容客户端、LiteLLM Proxy、默认 Agnes、SQLite FTS5、pytest、Playwright 和本地 OpenTelemetry。Dify、Coze、DeepEval、RAGAS 和 JMeter 不进入依赖。Claude 与 Cursor 的 SDK 也不进入依赖；它们只在仓库外担任评审。性能测量遵守测试方案，不引入 Locust 或分布式压测。
+- 决定：首版保持已经采纳的 Vue、FastAPI、LangGraph、OpenAI 兼容客户端、LiteLLM Proxy、默认 Agnes、SQLite FTS5、pytest、Playwright 和本地 OpenTelemetry（可选 Langfuse 导出）。Dify、Coze、DeepEval、RAGAS 和 JMeter 不进入依赖。Claude 与 Cursor 的 SDK 也不进入依赖；它们只在仓库外担任评审。性能测量遵守测试方案，不引入 Locust 或分布式压测。
 - 不选的方案：不为了贴近推荐名单而更换编排框架或检索方案。
 - 后果：参赛说明要写明这是有意选择。目录和模块边界以 [架构设计](architecture.md#代码布局) 为准。
 
