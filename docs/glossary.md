@@ -1,7 +1,7 @@
 # 术语表
 
 状态：设计稿\
-版本：0.5\
+版本：0.6\
 日期：2026-09-28\
 作者：Wynn\
 读者：产品、实现与评测\
@@ -26,6 +26,8 @@
 | 证据不足 | 来源可处理且有界检索已完成，但可核查片段仍不足；只能说本次未获得足够证据 | `COMPLETED` |
 | 无法核验来源 | 来源身份、可用范围、许可或内容完整性阻断 | `BLOCKED` |
 | 执行失败 | 外部请求、模型输出或执行预算导致任务未能完成，不是学术判断 | `FAILED` |
+
+BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案和报告按 error_code 显示具体原因。除下述三个处理类错误码外，其余映射为 BLOCKED 的 DOI/元数据、来源身份/许可/全文可用性问题列为来源阻断；REGISTRATION_AGENCY_UNSUPPORTED、SOURCE_LANGUAGE_UNSUPPORTED、CONTENT_INCOMPLETE 列为处理范围或内容阻断。后者分别显示「注册机构暂不支持」「正文语言暂不支持」「内容不完整或无法解析」，不能暗示来源身份错误或一律要求换论文。CONTENT_INCOMPLETE 还须在本地诊断区分源内容缺失、解析失败、图表能力不足；无法确定时明确未知，不猜成程序缺陷。
 
 首次检索为空只是中间观察，不直接生成最终标签。外部评审意见不改写任务状态；模型标签不等于客观真值。
 
@@ -83,8 +85,8 @@
 | `UPSTREAM_INVALID_REQUEST` | 参数或协议不兼容，不重试 | `FAILED` |
 | `UPSTREAM_UNAVAILABLE` | 连接故障或暂时性服务错误，恢复未成功 | `FAILED` |
 | `TASK_TIMEOUT` | 从执行器领取任务起达到总执行时限，包含重试等待、不含排队 | `FAILED` |
-| `BUDGET_EXCEEDED` | 流程仍要求执行超出授权次数的请求或补读，未形成有效结果 | `FAILED` |
-| `MODEL_INVALID_OUTPUT` | 结构或动作不合法，修复机会用尽后仍无效 | `FAILED` |
+| `BUDGET_EXCEEDED` | 动作合法但执行将超出授权调用/补读额度；不含本步非法动作。提示查看已用/上限，调整配置并重新授权新任务，不能自动加额度 | `FAILED` |
+| `MODEL_INVALID_OUTPUT` | 结构或本步动作不合法，修复机会用尽后仍无效；包括请求 3 要求 retrieve，不因其涉及补读改判预算耗尽 | `FAILED` |
 | `QUOTE_MISMATCH` | 摘录或引用来源校验失败，修复机会用尽后仍无效 | `FAILED` |
 
 CANCELLED 的 error_code 为 null；取消不是错误。已受理取消优先于随后到达的 deadline，其他执行停止原因按架构规则处理。恢复后的终态保留最后导致停止的原因，完整错误链保存在 execution 与 attempts。来源 HTTP 响应先由连接器按接口语义解释，不能将所有 404 都当作参数错误。其他未恢复执行错误使用 FAILED 并保留脱敏的异常类别，`error_code` 为 `null`，不强行套用错误含义。
@@ -119,7 +121,13 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | `paragraph_hash` | 段落哈希 |
 | `validation` | 该证据定位校验，发布时为 `pass` |
 
-没有稳定 JATS 标识时使用来源版本哈希与段落顺序的本地定位，并在 limitations 标明局限。多个证据各自验证，不用一条真实摘录替其他证据背书。
+### 文本与定位契约
+
+保存作者提交的 claim 原字符串；仅以去除首尾空白的临时副本检查是否为空，不改写持久化输入。冻结正文解析器版本：解析 JATS 实体并按文档顺序展开段内文本，段内 Unicode 空白连续串变成一个 U+0020 并去除段首尾空白；不改大小写、引号、连字符或 Unicode 规范形式。保存得到的段落文本作为逐字校验基准，不宣称它等同 XML 字节序列。quote 不再 trim 或模糊归一化，必须是该冻结段落文本的精确子串；位置以 Unicode 码点的半开区间表示，重复匹配保存全部区间并在界面消歧。
+
+source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为冻结段落文本 UTF-8 字节 SHA-256。本地 paragraph_id 统一为 `p:<source-key>:<version-hash>:<parser-version>:<ordinal>`：source-key 为标准化 PMCID，parser-version 使用无冒号的不可变版本标识，ordinal 为冻结解析器按正文文档顺序输出段落的从 1 开始序号（包括未进入索引的正文段落）。原生 JATS id 另存为来源定位提示，不能替代本地版本绑定。无原生定位链接时打开保存的获许可版本并定位，limitations 提示本地定位不保证远端网页锚点。
+
+同一来源字节和解析器版本须得到同一序列；来源字节、段落顺序或解析器变化产生新的命名空间，旧 ID 只能解析到旧快照，快照不存在则明确无法复现，不重定向到新段落。解析器版本不允许原地重定义；重复 ID 或相同哈希对应不同内容时阻止索引并报 CONTENT_INCOMPLETE。多个证据各自验证，evidence 数组的展示顺序不改变逐项校验门槛，不用一条真实摘录替其他证据背书。
 
 以下为构造的最终判断形状示例（已脱敏），不代表论文实测或语义验证通过：
 
@@ -161,7 +169,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 
 ## 6. 诊断包
 
-输入诊断包与外部评审返回值分开。输入包不含故障注入真因、正式真值标签或 diagnosis。当前草案为 `2.1`，在 2.0 的多请求结构上增加任务关联、取消标记、超时及观测配置；消费端须识别新增状态/字段。当前没有运行数据，无数据库迁移。
+输入诊断包与外部评审返回值分开。输入包不含故障注入真因、正式真值标签或 diagnosis。当前草案为 `2.2`，在 2.1 上增加判据归属、配置快照引用及调用账完整性；消费端须识别新增字段。当前没有运行数据，无数据库迁移。
 
 默认 `redacted` 包保留结构、标识、状态、用量及公开书目信息。明确保留 input.doi、source.title/doi/pmcid/access_url，以及证据的 section/source_url；章节取自公开原文，不能由用户输入或模型生成。此模式隐藏论断文本，不保证研究主题匿名。导出预览须提示“书目字段未遮盖，可识别文献及相关主题”，作者可放弃导出。仅遮标题而保留 DOI 不能实现匿名；首版不提供主题匿名模式。论断、查询、摘录、rationale、supported_parts、scope_differences、limitations 等自由文本均使用脱敏占位，不能借解释字段泄漏未发表论断。原始模型响应和密钥永不导出。`consented` 包仅在本地生成，由作者预览并对接收方单独授权后外传；可以包含获许可片段和判断文本，不自动包含完整提示词。无论断原句的包不能用于声称核实语义标签。
 
@@ -169,7 +177,9 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 
 | 字段 | 内容 |
 | --- | --- |
-| `schema_version` | 固定 `2.1` |
+| `schema_version` | 固定 `2.2` |
+| `criteria` | version、digest、snapshot_ref、implementation_revision；见下节版本归属，提交须为运行实现的完整 Git SHA |
+| `accounting` | verification=verified/unverified；main_requests_used、repair_requests_used、supplemental_rounds_used 为本地计数；upstream_attempts_used 完整时为整数，否则 null；observed_upstream_attempts 为已记录的下界；reason 未核实时为固定原因标识，否则 null |
 | `case_id`, `run_id`, `trace_id` | 任务、运行、轨迹标识 |
 | `previous_id` | 重试、修改或拆分所关联的原任务；无关联为 null |
 | `cancel_requested` | 是否已受理取消；boolean |
@@ -179,7 +189,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | `source` | 来源对象；解析未完成时允许 null；内部未知字段也为 null |
 | `source.title`, `source.doi`, `source.pmcid`, `source.license`, `source.version` | 已核对的书目、许可和版本，不伪造缺失值 |
 | `source.access_url`, `source.retrieved_at`, `source.version_hash` | 获取入口、时间和内容哈希 |
-| `run_config.profile`, `run_config.config_digest` | daily/evaluation、脱敏配置快照的摘要 |
+| `run_config.profile`, `run_config.config_digest`, `run_config.snapshot_ref` | daily/evaluation、冻结有效配置的摘要与不可变本地快照引用；定义域见下节 |
 | `run_config.authorized_recipients` | 本次允许的模型服务接收方标识，不含密钥 |
 | `run_config.limits` | main_requests=3、repair_requests=1、attempts_per_request=2、supplemental_rounds=1 |
 | `run_config.timeouts` | model_attempt_seconds=45、source_request_seconds=15、task_seconds=180；实际采用值入配置摘要 |
@@ -222,13 +232,23 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 | `status`, `error_code`, `duration_ms` | success/error/cancelled、错误码和耗时；cancelled 表示本地等待停止，不代表上游计算已停止 |
 | `usage` | prompt_tokens/completion_tokens/total_tokens 对象；usage 或其缺失子项为 null，不补零 |
 
-调用次数由请求数组及 attempts 数组计算；模型版本和 token 未知不影响正确展示“未知”，但缺失尝试记录不能宣称调用预算或成本已完整核实。网关必须提供逐次元数据，最终响应不能代表所有尝试。原始元数据先脱敏再落日志。
+### 调用账与版本归属
+
+调用账来自工作流在派发前持久化的逻辑请求/补读计数及网关逐次尝试记录，不能只数成功响应；派发未确认也保守占用额度。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
+
+必须在接入验收中证明网关能强制执行授权路由和额度；不能因最终响应成功而接纳不具备这些控制的网关。若控制仍可靠、只是运行后尝试元数据丢失，已通过证据门槛的学术结果可保持 COMPLETED 并带调用账未核实提示，不伪造失败或证据不足；缺口不改变学术指标分母，另列审计完整率，不能混入“预算已核实”或精确成本统计。发现控制本身无法保证时停止后续请求并按实际执行故障记录，不按本例发布成功。未知故障按错误码节既有 null error_code 规则处理。最终响应不能代表所有尝试；原始元数据先脱敏再落日志。
+
+criteria 保存可取回的不可变 JSON 判据快照，含证据门槛、四类学术标签及来源/执行展示条件、全部错误码到终态映射、动作合法性与预算判定顺序、文本与摘录比对规则。version 为不可原地重定义的人工版本；digest 为快照摘要；snapshot_ref 为内容寻址的本地引用，不是任意路径或远程 URL。实现提交同时记录在 implementation_revision。规则语义改变必须发布新版本，旧结果继续指向旧快照；快照找不到即明确不可复现，单有哈希不声称能回放。
+
+config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该快照。快照包含 profile、实际授权后的主/备用路由及接收方标识、模型别名和部署/模型配置、模型参数、提示词版本及内容摘要、检索词构造/分词/排序/上下文限制、来源解析器版本、重试/回退/缓存策略、limits、timeouts、观测启用及接收方、criteria.version/digest/implementation_revision。没有显式值的默认参数也须展开。私有地址以不可变的本地部署配置版本标识绑定，不存密钥或凭据。授权预览摘要用于创建前冲突检查；若用户缩小备用接收方范围，任务另存收窄后的有效快照与摘要，绝不能扩大预览范围。
+
+两种摘要都对规范 JSON 的 UTF-8 字节计算 SHA-256：对象键按 Unicode 码点升序递归排序，使用紧凑分隔符，不转义非 ASCII，字符串按 JSON 规则转义；数组保留顺序，字符串值不 trim 或归一化。数字仅用整数，非整数参数以无指数的最短十进制字符串保存（去除无意义的尾随零，负零统一为零），禁止 NaN/Infinity/重复键；不额外添加 BOM 或末尾换行。运行 ID、输入 claim/DOI、来源正文、evidence 数组、时间戳、计数、token、结果状态和摘要/引用自身不进入配置或判据摘要；这些通过任务记录和来源哈希另行关联。不可用正文哈希或摘要替代脱敏。
 
 下面是**构造的脱敏超时示例**，不是实测数据；展示一个逻辑请求的两次尝试；为便于阅读，execution 仅列模型阶段，完整导出须同时包含此前的来源检查步骤。成功包的 decision 按上一节定义。
 
 ```json
 {
-  "schema_version": "2.1",
+  "schema_version": "2.2",
   "case_id": "example-case",
   "run_id": "example-run",
   "trace_id": "example-trace",
@@ -271,7 +291,8 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
     "observability": {
       "langfuse_enabled": false,
       "recipient": null
-    }
+    },
+    "snapshot_ref": "<local-config-reference>"
   },
   "evidence_candidates": [],
   "decision": null,
@@ -338,7 +359,22 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
     }
   ],
   "previous_id": null,
-  "cancel_requested": false
+  "cancel_requested": false,
+  "criteria": {
+    "version": "<criteria-version>",
+    "digest": "<criteria-digest>",
+    "snapshot_ref": "<local-content-reference>",
+    "implementation_revision": "<full-git-sha>"
+  },
+  "accounting": {
+    "verification": "verified",
+    "main_requests_used": 1,
+    "repair_requests_used": 0,
+    "supplemental_rounds_used": 0,
+    "upstream_attempts_used": 2,
+    "observed_upstream_attempts": 2,
+    "reason": null
+  }
 }
 ```
 
