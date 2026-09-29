@@ -1,0 +1,428 @@
+# 术语表
+
+状态：设计稿\
+版本：0.6\
+日期：2026-09-28\
+作者：Wynn\
+读者：产品、实现与评测\
+相关文档：[产品需求](prd.md)、[架构设计](architecture.md)、[测试方案](test-plan.md)、[技术选型](tech-stack.md)
+
+本文是结果标签、任务状态、阶段、错误码、结果和诊断包字段的唯一登记处。其他文档引用这些定义。
+
+- **规则**：设计稿中已决定的行为，不代表已实现。
+- **假设**：需要实验验证的命题。
+- **排除**：当前不在范围内的能力。
+- **待决**：需要后续证据才能选择的方案。
+
+## 1. 结果标签
+
+下表定义五种学术/来源标签及执行失败展示；另外 CANCELLED 显示「已取消」，INTERRUPTED 显示「运行中断」。后三者均不是学术标签，`label` 和 `decision` 保持 `null`。
+
+| 展示结果 | 使用条件 | 任务状态 |
+| --- | --- | --- |
+| 支持 | 指定文献的原文在对应对象、条件和范围下支持论断 | `COMPLETED` |
+| 部分支持 | 支持其中一部分，但数量、对象、因果性或范围有重要差异 | `COMPLETED` |
+| 相矛盾 | 对应条件下有明确相反证据，不能由没搜到支持证据推导；对应 AGENTS.md 的「反驳」 | `COMPLETED` |
+| 证据不足 | 来源可处理且有界检索已完成，但可核查片段仍不足；只能说本次未获得足够证据 | `COMPLETED` |
+| 无法核验来源 | 来源身份、可用范围、许可或内容完整性阻断 | `BLOCKED` |
+| 执行失败 | 外部请求、模型输出或执行预算导致任务未能完成，不是学术判断 | `FAILED` |
+
+BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案和报告按 error_code 显示具体原因。除下述三个处理类错误码外，其余映射为 BLOCKED 的 DOI/元数据、来源身份/许可/全文可用性问题列为来源阻断；REGISTRATION_AGENCY_UNSUPPORTED、SOURCE_LANGUAGE_UNSUPPORTED、CONTENT_INCOMPLETE 列为处理范围或内容阻断。后者分别显示「注册机构暂不支持」「正文语言暂不支持」「内容不完整或无法解析」，不能暗示来源身份错误或一律要求换论文。CONTENT_INCOMPLETE 还须在本地诊断区分源内容缺失、解析失败、图表能力不足；无法确定时明确未知，不猜成程序缺陷。
+
+首次检索为空只是中间观察，不直接生成最终标签。外部评审意见不改写任务状态；模型标签不等于客观真值。
+
+## 2. 任务状态
+
+| 状态 | 含义 | 终态 |
+| --- | --- | --- |
+| `QUEUED` | 已入队 | 否 |
+| `RUNNING` | 执行中，包括重试、补读及修复 | 否 |
+| `COMPLETED` | 已形成核验结果，包括证据不足 | 是 |
+| `BLOCKED` | 来源、许可、正文语言或完整性阻断 | 是 |
+| `FAILED` | 执行失败；`label` 为 `null` | 是 |
+| `CANCELLED` | 作者取消；保留已有诊断，`label` 和 `decision` 为 `null` | 是 |
+| `INTERRUPTED` | 进程启动时发现未带取消标记的遗留 RUNNING；`label` 为 `null` | 是 |
+
+用户重试创建新的 QUEUED 任务并保留原记录；工作流内部恢复不新建任务。只有终态任务可删除或由用户重试。重试须重新确认当前运行配置及云调用范围。
+
+## 3. 阶段
+
+| 阶段标识 | 界面文字 |
+| --- | --- |
+| `wait` | 等待 |
+| `source_identity` | 核对来源 |
+| `license` | 检查许可 |
+| `fetch` | 获取全文 |
+| `query_generation` | 生成检索词 |
+| `retrieval` | 检索证据 |
+| `decision` | 判断或申请补读 |
+| `evidence_validation` | 证据校验 |
+| `output_repair` | 修复输出 |
+
+补充检索复用 retrieval 阶段，用轮次区分。网络恢复不增加业务阶段，用尝试序号区分。
+
+## 4. 错误码
+
+下表是已创建任务的终态映射；解析预览尚未创建任务时，使用相同错误码及架构中的 HTTP 状态，不产生任务终态。执行记录也保留已恢复的错误，但不因此把成功任务改为失败。FAILED 的结果字段均为 `null`。
+
+| 错误码 | 条件 | 终态 |
+| --- | --- | --- |
+| `DOI_INVALID` | DOI 格式无效；入队前拒绝，已存任务重新校验失败时阻断 | `BLOCKED` |
+| `DOI_UNRESOLVABLE` | DOI 官方解析服务明确返回未找到；仅表示当前无法解析，不断言永久不存在 | `BLOCKED` |
+| `METADATA_NOT_FOUND` | DOI 能解析或属于 Crossref，但 Crossref 文献记录未找到 | `BLOCKED` |
+| `REGISTRATION_AGENCY_UNSUPPORTED` | 已确认注册机构不在首版 Crossref 支持范围 | `BLOCKED` |
+| `SOURCE_MISMATCH` | DOI、PMCID 或版本身份冲突，不替换文献 | `BLOCKED` |
+| `SOURCE_UNAVAILABLE` | 官方查询确认无首版可用 PMC 全文来源；网络错误不属此类 | `BLOCKED` |
+| `LICENSE_UNKNOWN` | 许可缺失或冲突，无法确认 | `BLOCKED` |
+| `LICENSE_UNSUPPORTED` | 许可已知但不在首版 CC0/CC BY 支持范围，不代表该许可非法 | `BLOCKED` |
+| `SOURCE_LANGUAGE_UNSUPPORTED` | 正文不是可确认的英文版本，或必要内容混有未支持语言；不翻译全文补结论 | `BLOCKED` |
+| `CONTENT_INCOMPLETE` | 已取得内容但 JATS 不完整、解析失败，或所需图表无法可靠读取 | `BLOCKED` |
+| `RETRIEVAL_FAILED` | 程序构造 MATCH 后仍发生数据库/索引查询错误，立即停止，不消耗模型修复预算 | `FAILED` |
+| `RETRIEVAL_EMPTY` | 完成允许的补充检索仍无候选，生成「证据不足」及检索限制 | `COMPLETED` |
+| `UPSTREAM_TIMEOUT` | 请求超时，恢复未成功 | `FAILED` |
+| `UPSTREAM_RATE_LIMITED` | 上游限流，恢复未成功 | `FAILED` |
+| `UPSTREAM_AUTH_FAILED` | 上游或网关认证/授权失败，不重试 | `FAILED` |
+| `UPSTREAM_INVALID_REQUEST` | 参数或协议不兼容，不重试 | `FAILED` |
+| `UPSTREAM_UNAVAILABLE` | 连接故障或暂时性服务错误，恢复未成功 | `FAILED` |
+| `TASK_TIMEOUT` | 从执行器领取任务起达到总执行时限，包含重试等待、不含排队 | `FAILED` |
+| `BUDGET_EXCEEDED` | 动作合法但执行将超出授权调用/补读额度；不含本步非法动作。提示查看已用/上限，调整配置并重新授权新任务，不能自动加额度 | `FAILED` |
+| `MODEL_INVALID_OUTPUT` | 结构或本步动作不合法，修复机会用尽后仍无效；包括请求 3 要求 retrieve，不因其涉及补读改判预算耗尽 | `FAILED` |
+| `QUOTE_MISMATCH` | 摘录或引用来源校验失败，修复机会用尽后仍无效 | `FAILED` |
+
+CANCELLED 的 error_code 为 null；取消不是错误。已受理取消优先于随后到达的 deadline，其他执行停止原因按架构规则处理。恢复后的终态保留最后导致停止的原因，完整错误链保存在 execution 与 attempts。来源 HTTP 响应先由连接器按接口语义解释，不能将所有 404 都当作参数错误。其他未恢复执行错误使用 FAILED 并保留脱敏的异常类别，`error_code` 为 `null`，不强行套用错误含义。
+
+## 5. 证据门槛
+
+「支持」「部分支持」「相矛盾」是确定判断。展示前必须通过来源身份、版本和许可检查，且每条摘录能在保存的同版本段落中逐字定位，结果结构与证据引用有效。模型还须解释对象、条件、数量、因果和否定方向的关系。
+
+确定性校验只能证明引用与结构有效，不能证明语义判断正确；语义质量由 [首版测试](test-plan.md) 和独立标注评估。修复后须重新经过同样的校验，不降低门槛。证据不足可以没有摘录；阻断、失败、中断和取消没有最终 decision。
+
+### 最终判断
+
+API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 `null`。多次模型输出保留在本地任务记录，不作为多个最终结论发布。
+
+| 字段 | 内容 |
+| --- | --- |
+| `agent` | 固定 `paper` |
+| `label` | 四类学术标签之一；来源阻断标签在任务顶层 |
+| `rationale` | 判断理由，不是模型内部思维链 |
+| `supported_parts` | 支持的论断部分，字符串数组 |
+| `scope_differences` | 对象、数量、条件、因果等差异，字符串数组 |
+| `limitations` | 覆盖范围及无法判定部分，字符串数组 |
+| `evidence[]` | 逐条证据，下表定义 |
+| `validation` | 最终结构与证据校验结果，发布的 decision 固定 `pass` |
+
+| 证据字段 | 内容 |
+| --- | --- |
+| `paragraph_id` | 冻结来源内段落标识 |
+| `quote` | 同版本原文逐字摘录 |
+| `section` | 原文章节 |
+| `source_url` | 原文入口或可用的定位链接 |
+| `paragraph_hash` | 段落哈希 |
+| `validation` | 该证据定位校验，发布时为 `pass` |
+
+### 文本与定位契约
+
+保存作者提交的 claim 原字符串；仅以去除首尾空白的临时副本检查是否为空，不改写持久化输入。冻结正文解析器版本：解析 JATS 实体并按文档顺序展开段内文本，段内 Unicode 空白连续串变成一个 U+0020 并去除段首尾空白；不改大小写、引号、连字符或 Unicode 规范形式。保存得到的段落文本作为逐字校验基准，不宣称它等同 XML 字节序列。quote 不再 trim 或模糊归一化，必须是该冻结段落文本的精确子串；位置以 Unicode 码点的半开区间表示，重复匹配保存全部区间并在界面消歧。
+
+source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为冻结段落文本 UTF-8 字节 SHA-256。本地 paragraph_id 统一为 `p:<source-key>:<version-hash>:<parser-version>:<ordinal>`：source-key 为标准化 PMCID，parser-version 使用无冒号的不可变版本标识，ordinal 为冻结解析器按正文文档顺序输出段落的从 1 开始序号（包括未进入索引的正文段落）。原生 JATS id 另存为来源定位提示，不能替代本地版本绑定。无原生定位链接时打开保存的获许可版本并定位，limitations 提示本地定位不保证远端网页锚点。
+
+同一来源字节和解析器版本须得到同一序列；来源字节、段落顺序或解析器变化产生新的命名空间，旧 ID 只能解析到旧快照，快照不存在则明确无法复现，不重定向到新段落。解析器版本不允许原地重定义；重复 ID 或相同哈希对应不同内容时阻止索引并报 CONTENT_INCOMPLETE。多个证据各自验证，evidence 数组的展示顺序不改变逐项校验门槛，不用一条真实摘录替其他证据背书。
+
+以下为构造的最终判断形状示例（已脱敏），不代表论文实测或语义验证通过：
+
+```json
+{
+  "agent": "paper",
+  "label": "部分支持",
+  "rationale": "<redacted>",
+  "supported_parts": [
+    "<redacted>"
+  ],
+  "scope_differences": [
+    "<redacted>"
+  ],
+  "limitations": [
+    "<redacted>"
+  ],
+  "evidence": [
+    {
+      "paragraph_id": "example-paragraph-1",
+      "quote": "<redacted>",
+      "section": "<section-1>",
+      "source_url": "<source-url>",
+      "paragraph_hash": "<hash-1>",
+      "validation": "pass"
+    },
+    {
+      "paragraph_id": "example-paragraph-2",
+      "quote": "<redacted>",
+      "section": "<section-2>",
+      "source_url": "<source-url>",
+      "paragraph_hash": "<hash-2>",
+      "validation": "pass"
+    }
+  ],
+  "validation": "pass"
+}
+```
+
+## 6. 诊断包
+
+输入诊断包与外部评审返回值分开。输入包不含故障注入真因、正式真值标签或 diagnosis。当前草案为 `2.2`，在 2.1 上增加判据归属、配置快照引用及调用账完整性；消费端须识别新增字段。当前没有运行数据，无数据库迁移。
+
+默认 `redacted` 包保留结构、标识、状态、用量及公开书目信息。明确保留 input.doi、source.title/doi/pmcid/access_url，以及证据的 section/source_url；章节取自公开原文，不能由用户输入或模型生成。此模式隐藏论断文本，不保证研究主题匿名。导出预览须提示“书目字段未遮盖，可识别文献及相关主题”，作者可放弃导出。仅遮标题而保留 DOI 不能实现匿名；首版不提供主题匿名模式。论断、查询、摘录、rationale、supported_parts、scope_differences、limitations 等自由文本均使用脱敏占位，不能借解释字段泄漏未发表论断。原始模型响应和密钥永不导出。`consented` 包仅在本地生成，由作者预览并对接收方单独授权后外传；可以包含获许可片段和判断文本，不自动包含完整提示词。无论断原句的包不能用于声称核实语义标签。
+
+### 输入诊断包
+
+| 字段 | 内容 |
+| --- | --- |
+| `schema_version` | 固定 `2.2` |
+| `criteria` | version、digest、snapshot_ref、implementation_revision；见下节版本归属，提交须为运行实现的完整 Git SHA |
+| `accounting` | verification=verified/unverified；main_requests_used、repair_requests_used、supplemental_rounds_used 为本地计数；upstream_attempts_used 完整时为整数，否则 null；observed_upstream_attempts 为已记录的下界；reason 未核实时为固定原因标识，否则 null |
+| `case_id`, `run_id`, `trace_id` | 任务、运行、轨迹标识 |
+| `previous_id` | 重试、修改或拆分所关联的原任务；无关联为 null |
+| `cancel_requested` | 是否已受理取消；boolean |
+| `status`, `label`, `error_code` | 任务状态、结果标签、终止原因；未产生或不适用为 null |
+| `input.doi`, `input.claim`, `input.privacy` | DOI、原句或占位、redacted/consented |
+| `input.recipient` | 诊断包授权接收方；未授权为 null，与模型接收方分开 |
+| `source` | 来源对象；解析未完成时允许 null；内部未知字段也为 null |
+| `source.title`, `source.doi`, `source.pmcid`, `source.license`, `source.version` | 已核对的书目、许可和版本，不伪造缺失值 |
+| `source.access_url`, `source.retrieved_at`, `source.version_hash` | 获取入口、时间和内容哈希 |
+| `run_config.profile`, `run_config.config_digest`, `run_config.snapshot_ref` | daily/evaluation、冻结有效配置的摘要与不可变本地快照引用；定义域见下节 |
+| `run_config.authorized_recipients` | 本次允许的模型服务接收方标识，不含密钥 |
+| `run_config.limits` | main_requests=3、repair_requests=1、attempts_per_request=2、supplemental_rounds=1 |
+| `run_config.timeouts` | model_attempt_seconds=45、source_request_seconds=15、task_seconds=180；实际采用值入配置摘要 |
+| `run_config.observability` | langfuse_enabled 默认 false；recipient 为已授权观测接收方或 null，不含凭据 |
+| `evidence_candidates[]` | 候选段落记录，字段见下表 |
+| `decision` | 上节的最终判断或 null；与尝试记录分开 |
+| `execution[]` | 所有已执行步骤，包括失败/阻断前的步骤，字段见下表 |
+| `model_calls[]` | 逻辑模型请求与逐次上游尝试，字段见下表 |
+
+| 候选字段 | 内容 |
+| --- | --- |
+| `paragraph_id`, `section`, `quote`, `paragraph_hash`, `source_url` | 来源定位；quote 服从脱敏模式 |
+| `round` | 初始检索 0，补充检索 1 |
+| `rank` | 当前轮候选顺序 |
+| `entered_context` | 是否进入任一模型请求；具体关联见 model_calls |
+
+| 执行字段 | 内容 |
+| --- | --- |
+| `stage`, `span_id`, `tool` | 阶段、span、工具名称 |
+| `status` | 步骤结果 success/error/blocked/cancelled，不复用任务状态 |
+| `error_code`, `duration_ms` | 原因与耗时，未知为 null |
+| `round` | 检索轮次，不适用为 null |
+| `request_id` | 关联逻辑模型请求，无模型调用时为 null |
+
+| 模型调用字段 | 内容 |
+| --- | --- |
+| `request_id`, `purpose`, `round` | 本地逻辑请求 ID；query_generation/decision/output_repair；对应轮次 |
+| `model_alias`, `prompt_version`, `params_digest` | 模型别名、提示词版本、脱敏参数摘要 |
+| `context_paragraph_ids` | 此次实际进入上下文的段落标识数组 |
+| `repairs_request_id` | 输出修复的目标请求 ID，非修复为 null |
+| `attempts[]` | 实际发起的上游尝试，下表定义；未发起则为空 |
+
+| 尝试字段 | 内容 |
+| --- | --- |
+| `attempt_id`, `attempt_index`, `span_id` | 本地唯一标识、从 1 开始的序号、关联 span |
+| `gateway_request_id`, `upstream_response_id` | 网关和上游返回标识，拿不到为 null |
+| `configured_model`, `deployment_id`, `recipient` | 此次实际路由配置与接收方，来自网关元数据 |
+| `response_model`, `verified_model_version` | 上游声称的模型及可验证版本；不能验证版本则为 null，不能用别名代替 |
+| `recovery_kind`, `recovery_reason` | none/retry/fallback，以及触发本次恢复的错误码；首次 reason 为 null |
+| `status`, `error_code`, `duration_ms` | success/error/cancelled、错误码和耗时；cancelled 表示本地等待停止，不代表上游计算已停止 |
+| `usage` | prompt_tokens/completion_tokens/total_tokens 对象；usage 或其缺失子项为 null，不补零 |
+
+### 调用账与版本归属
+
+调用账来自工作流在派发前持久化的逻辑请求/补读计数及网关逐次尝试记录，不能只数成功响应；派发未确认也保守占用额度。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
+
+必须在接入验收中证明网关能强制执行授权路由和额度；不能因最终响应成功而接纳不具备这些控制的网关。若控制仍可靠、只是运行后尝试元数据丢失，已通过证据门槛的学术结果可保持 COMPLETED 并带调用账未核实提示，不伪造失败或证据不足；缺口不改变学术指标分母，另列审计完整率，不能混入“预算已核实”或精确成本统计。发现控制本身无法保证时停止后续请求并按实际执行故障记录，不按本例发布成功。未知故障按错误码节既有 null error_code 规则处理。最终响应不能代表所有尝试；原始元数据先脱敏再落日志。
+
+criteria 保存可取回的不可变 JSON 判据快照，含证据门槛、四类学术标签及来源/执行展示条件、全部错误码到终态映射、动作合法性与预算判定顺序、文本与摘录比对规则。version 为不可原地重定义的人工版本；digest 为快照摘要；snapshot_ref 为内容寻址的本地引用，不是任意路径或远程 URL。实现提交同时记录在 implementation_revision。规则语义改变必须发布新版本，旧结果继续指向旧快照；快照找不到即明确不可复现，单有哈希不声称能回放。
+
+config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该快照。快照包含 profile、实际授权后的主/备用路由及接收方标识、模型别名和部署/模型配置、模型参数、提示词版本及内容摘要、检索词构造/分词/排序/上下文限制、来源解析器版本、重试/回退/缓存策略、limits、timeouts、观测启用及接收方、criteria.version/digest/implementation_revision。没有显式值的默认参数也须展开。私有地址以不可变的本地部署配置版本标识绑定，不存密钥或凭据。授权预览摘要用于创建前冲突检查；若用户缩小备用接收方范围，任务另存收窄后的有效快照与摘要，绝不能扩大预览范围。
+
+两种摘要都对规范 JSON 的 UTF-8 字节计算 SHA-256：对象键按 Unicode 码点升序递归排序，使用紧凑分隔符，不转义非 ASCII，字符串按 JSON 规则转义；数组保留顺序，字符串值不 trim 或归一化。数字仅用整数，非整数参数以无指数的最短十进制字符串保存（去除无意义的尾随零，负零统一为零），禁止 NaN/Infinity/重复键；不额外添加 BOM 或末尾换行。运行 ID、输入 claim/DOI、来源正文、evidence 数组、时间戳、计数、token、结果状态和摘要/引用自身不进入配置或判据摘要；这些通过任务记录和来源哈希另行关联。不可用正文哈希或摘要替代脱敏。
+
+下面是**构造的脱敏超时示例**，不是实测数据；展示一个逻辑请求的两次尝试；为便于阅读，execution 仅列模型阶段，完整导出须同时包含此前的来源检查步骤。成功包的 decision 按上一节定义。
+
+```json
+{
+  "schema_version": "2.2",
+  "case_id": "example-case",
+  "run_id": "example-run",
+  "trace_id": "example-trace",
+  "status": "FAILED",
+  "label": null,
+  "error_code": "UPSTREAM_TIMEOUT",
+  "input": {
+    "doi": "<normalized-doi>",
+    "claim": "<redacted>",
+    "privacy": "redacted",
+    "recipient": null
+  },
+  "source": {
+    "title": "<verified-title>",
+    "doi": "<normalized-doi>",
+    "pmcid": "<pmcid>",
+    "license": "CC BY",
+    "version": "<version>",
+    "access_url": "<source-url>",
+    "retrieved_at": "<timestamp>",
+    "version_hash": "<hash>"
+  },
+  "run_config": {
+    "profile": "evaluation",
+    "config_digest": "<digest>",
+    "authorized_recipients": [
+      "Agnes"
+    ],
+    "limits": {
+      "main_requests": 3,
+      "repair_requests": 1,
+      "attempts_per_request": 2,
+      "supplemental_rounds": 1
+    },
+    "timeouts": {
+      "model_attempt_seconds": 45,
+      "source_request_seconds": 15,
+      "task_seconds": 180
+    },
+    "observability": {
+      "langfuse_enabled": false,
+      "recipient": null
+    },
+    "snapshot_ref": "<local-config-reference>"
+  },
+  "evidence_candidates": [],
+  "decision": null,
+  "execution": [
+    {
+      "stage": "query_generation",
+      "span_id": "example-call-span",
+      "tool": "model_gateway",
+      "status": "error",
+      "error_code": "UPSTREAM_TIMEOUT",
+      "duration_ms": 2000,
+      "round": 0,
+      "request_id": "example-request"
+    }
+  ],
+  "model_calls": [
+    {
+      "request_id": "example-request",
+      "purpose": "query_generation",
+      "round": 0,
+      "model_alias": "paper-default",
+      "prompt_version": "<version>",
+      "params_digest": "<digest>",
+      "context_paragraph_ids": [],
+      "repairs_request_id": null,
+      "attempts": [
+        {
+          "attempt_id": "example-attempt-1",
+          "attempt_index": 1,
+          "span_id": "example-span-1",
+          "gateway_request_id": null,
+          "upstream_response_id": null,
+          "configured_model": "agnes-2.5-flash",
+          "deployment_id": "agnes-primary",
+          "recipient": "Agnes",
+          "response_model": null,
+          "verified_model_version": null,
+          "recovery_kind": "none",
+          "recovery_reason": null,
+          "status": "error",
+          "error_code": "UPSTREAM_TIMEOUT",
+          "duration_ms": 1000,
+          "usage": null
+        },
+        {
+          "attempt_id": "example-attempt-2",
+          "attempt_index": 2,
+          "span_id": "example-span-2",
+          "gateway_request_id": null,
+          "upstream_response_id": null,
+          "configured_model": "agnes-2.5-flash",
+          "deployment_id": "agnes-primary",
+          "recipient": "Agnes",
+          "response_model": null,
+          "verified_model_version": null,
+          "recovery_kind": "retry",
+          "recovery_reason": "UPSTREAM_TIMEOUT",
+          "status": "error",
+          "error_code": "UPSTREAM_TIMEOUT",
+          "duration_ms": 1000,
+          "usage": null
+        }
+      ]
+    }
+  ],
+  "previous_id": null,
+  "cancel_requested": false,
+  "criteria": {
+    "version": "<criteria-version>",
+    "digest": "<criteria-digest>",
+    "snapshot_ref": "<local-content-reference>",
+    "implementation_revision": "<full-git-sha>"
+  },
+  "accounting": {
+    "verification": "verified",
+    "main_requests_used": 1,
+    "repair_requests_used": 0,
+    "supplemental_rounds_used": 0,
+    "upstream_attempts_used": 2,
+    "observed_upstream_attempts": 2,
+    "reason": null
+  }
+}
+```
+
+### 外部评审的返回值
+
+**规则**：仓库外的评审 agent 使用这份结构写下缺陷分析。字段使用故障归因结论，不复用结果标签。`insufficient_evidence` 表示诊断证据不够，不等于结果标签「证据不足」。这份返回值不回写任务状态。
+
+| 字段 | 内容 |
+| --- | --- |
+| `outcome` | `confirmed`、`suspected` 或 `insufficient_evidence`。 |
+| `findings[].stage` | [阶段标识](#3-阶段)。 |
+| `findings[].error_code` | [错误码](#4-错误码)。 |
+| `findings[].observation` | 已观察到的异常。 |
+| `findings[].evidence_refs` | 引用的 `span_id`、段落标识或诊断包字段路径。 |
+| `findings[].cause_hypothesis` | 可能根因。 |
+| `findings[].reproduction_steps` | 只读复现步骤。 |
+| `findings[].regression_assertion` | 回归断言。 |
+| `findings[].uncertainty` | 仍不能确定的部分。 |
+
+**规则**：只有复现步骤或确定性校验支持时，`outcome` 才能是 `confirmed`。只有模型解释时必须是 `suspected`。评测按这些字段核对隐藏真因和引用是否有效。一段自由文本的“看起来合理”不算通过。外部评审默认只读，不修改论文、仓库、任务或来源缓存。
+
+```json
+{
+  "outcome": "suspected",
+  "findings": [
+    {
+      "stage": "retrieval",
+      "error_code": "RETRIEVAL_EMPTY",
+      "observation": "<observed-anomaly>",
+      "evidence_refs": [
+        "<span-id-or-paragraph-id-or-json-path>"
+      ],
+      "cause_hypothesis": "<hypothesis>",
+      "reproduction_steps": [
+        "<read-only-step>"
+      ],
+      "regression_assertion": "<assertion>",
+      "uncertainty": "<what-remains-unknown>"
+    }
+  ]
+}
+```
+
+## 7. 角色
+
+本仓库只有一类要实现的 agent。路径一的评审在仓库外完成。
+
+| 名称 | 属于 | 职责 |
+| --- | --- | --- |
+| paper agent | 本仓库实现的唯一 agent，包在 `agents/` | 在已确认的来源片段上提出判断和摘录。在预算内生成查询、提出判断或申请一次补充检索；必要时修复输出。 |
+| 外部评审 agent | 不在本仓库实现。例如 Claude、Cursor | 按 [测试方案](test-plan.md) 阅读诊断包和轨迹，并返回上一节的结构。不是 `agents/` 里的模块，也不进入用户核验流程。 |
