@@ -23,3 +23,11 @@ __pycache__/
 
 # Project-local temporary worktrees
 /.worktrees/
+
+# Frontend dependencies and builds
+node_modules/
+dist/
+
+# Python packaging artifacts
+build/
+*.egg-info/

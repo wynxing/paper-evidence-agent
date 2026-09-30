@@ -1,21 +1,71 @@
 # Paper Evidence Agent
 
-本项目旨在核对论文中的论断与所引文献之间的证据关系。目标是让 paper agent 提供可定位的原文依据。系统应标明「证据不足」或「无法核验来源」。paper agent 的标签不自动等于事实正确。
+Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证据关系，并提供可定位的原文依据。目标用户是在投稿前复查引文的生物医学论文作者。
 
-本仓库按[传智杯「AI赋能·智能测试创新挑战赛」](https://www.boxuegu.com/matchTrack/detail/?id=10041)的路径一施工。参赛实现只有 paper agent。路径一的评审由仓库外的成熟 agent 完成，例如 Claude、Cursor；本仓库不实现第二名评审。路径二的独立测试平台不在范围内。赛题举例中的校园助手、法律文书等不改变本场景。
+项目采用传智杯[「AI赋能·智能测试创新挑战赛」](https://www.boxuegu.com/matchTrack/detail/?id=10041)路径一：本仓库实现 paper agent，评审由仓库外的成熟 agent 完成。
 
-协作规范见 [AGENTS.md](AGENTS.md)。参赛首版按下面的顺序阅读。结果标签、任务状态、错误码和诊断包字段只在术语表定义。
+## 当前状态
 
-1. [术语表](docs/glossary.md)
-2. [产品需求](docs/prd.md)
-3. [架构设计](docs/architecture.md)
-4. [测试方案](docs/test-plan.md)
-5. [技术选型](docs/tech-stack.md)
+项目处于骨架阶段：
 
-模型标准入口为本机 LiteLLM Proxy，paper agent 在预算内执行查询生成、检索、判断与必要的补读/修复；日常核验与固定配置评测分别定义恢复策略。首版接受中英文论断与英文 PMC 正文，包含任务内修改澄清、取消与执行时限。保留本地轨迹，可选授权后导出 Langfuse，观测故障不阻断核验。首版测试包含人工核对原文的小规模语义验收，单列冲突类指标；摘录存在不等于判断正确。
+- FastAPI 后端可启动，`GET /health` 返回 `200`；业务接口已声明类型，当前返回 `501 Not Implemented`。
+- Vue 前端提供静态页面，显示“功能待实现”，输入和操作按钮禁用。
+- 来源解析、持久化、任务执行、模型调用及证据核验尚未实现。
 
-决策沿革见 [决策记录](docs/decisions.md)，本轮检查范围及未覆盖项见 [验证记录](docs/verification.md)。
+设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
 
-这些文档描述拟实施方案，不代表系统已开发或实验已完成。正文用「规则 / 假设 / 排除 / 待决」区分已决定的行为、研究命题、范围之外和尚未选择的点。四种标记的说明见 [术语表](docs/glossary.md)。
+## 环境要求
 
-[研究评测](docs/evaluation.md)不进入参赛首版施工。运行时代码不得依赖其中的数据集。
+- Python 3.12
+- Node.js 22.12 或更高版本、npm
+
+依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。当前骨架不需要模型密钥。
+
+## 快速开始
+
+在一个终端中，从仓库根目录启动后端：
+
+```bash
+cd backend
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+.venv/bin/python -m uvicorn paper_evidence.api.app:app --host 127.0.0.1 --port 8000
+```
+
+后端地址：<http://127.0.0.1:8000>。健康检查为 `/health`，接口声明为 `/docs`。
+
+在另一个终端中，从仓库根目录启动前端：
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。
+
+## 开发检查
+
+从仓库根目录执行：
+
+```bash
+backend/.venv/bin/python -m pytest -c backend/pyproject.toml
+backend/.venv/bin/python -m pip check
+npm --prefix frontend run build
+```
+
+前端构建包含 TypeScript 类型检查。接口占位行为、模块边界和 worker 入口说明见[开发指南](docs/development.md)。
+
+## 文档
+
+- [产品需求](docs/prd.md)
+- [术语表与数据契约](docs/glossary.md)
+- [架构设计](docs/architecture.md)
+- [测试方案](docs/test-plan.md)
+- [技术选型](docs/tech-stack.md)
+- [开发指南](docs/development.md)
+- [决策记录](docs/decisions.md)
+- [协作规范](AGENTS.md)
+
+[研究评测](docs/evaluation.md)属于后续研究，运行时代码不得依赖其中的数据集。
