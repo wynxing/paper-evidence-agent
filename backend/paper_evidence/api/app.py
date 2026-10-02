@@ -1,14 +1,16 @@
 """HTTP skeleton. Only health is implemented; all business routes return 501."""
 
+import logging
 from typing import Annotated, NoReturn
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
-from paper_evidence.domain import TaskStatus
+from paper_evidence.domain import ContractError, ErrorCode, TaskStatus
 from paper_evidence.domain.contracts import (
     ApiError,
     CancelResponse,
@@ -28,6 +30,22 @@ from paper_evidence.domain.contracts import (
     RunConfigPreview,
     SourcePreview,
 )
+
+
+logger = logging.getLogger(__name__)
+
+# Only the source preview has an HTTP mapping for these domain failures.
+SOURCE_PREVIEW_ERRORS = {
+    ErrorCode.DOI_INVALID: (400, "DOI 格式无效"),
+    ErrorCode.DOI_UNRESOLVABLE: (404, "DOI 无法解析"),
+    ErrorCode.METADATA_NOT_FOUND: (422, "未找到文献元数据"),
+    ErrorCode.REGISTRATION_AGENCY_UNSUPPORTED: (422, "暂不支持该 DOI 注册机构"),
+    ErrorCode.UPSTREAM_AUTH_FAILED: (502, "上游认证或授权失败"),
+    ErrorCode.UPSTREAM_INVALID_REQUEST: (502, "上游参数或协议不兼容"),
+    ErrorCode.UPSTREAM_RATE_LIMITED: (503, "上游请求受到限流"),
+    ErrorCode.UPSTREAM_UNAVAILABLE: (503, "上游服务暂不可用"),
+    ErrorCode.UPSTREAM_TIMEOUT: (504, "上游请求超时"),
+}
 
 
 class UnimplementedRoute(Exception):
@@ -54,18 +72,72 @@ async def handle_pending(request: Request, exc: UnimplementedRoute) -> JSONRespo
     return JSONResponse(status_code=501, content=_api_error("Not Implemented：功能待实现"))
 
 
+def _validation_location(request: Request, location: tuple[str | int, ...]) -> str:
+    """Expose declared field names and array/JSON offsets, never extra input keys."""
+
+    origin = location[0] if location and location[0] in {"body", "query", "path"} else "request"
+    route = request.scope.get("route")
+    names: set[str] = set()
+    if origin == "body":
+        body_field = getattr(route, "body_field", None)
+        model = body_field.field_info.annotation if body_field is not None else None
+        if isinstance(model, type) and issubclass(model, BaseModel):
+            names = {field.alias or name for name, field in model.model_fields.items()}
+    else:
+        dependant = getattr(route, "dependant", None)
+        names = {field.alias for field in getattr(dependant, f"{origin}_params", [])}
+    parts = [origin]
+    for part in location[1:]:
+        if isinstance(part, int):
+            parts.append(str(part))
+        elif len(parts) == 1 and part in names:
+            parts.append(part)
+        else:
+            parts.append("<unknown>")
+    return ".".join(parts)
+
+
 @app.exception_handler(RequestValidationError)
 async def handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return JSONResponse(status_code=422, content=_api_error("请求不合法"))
+    failures = [f"{_validation_location(request, error['loc'])}: {error['type']}" for error in exc.errors()]
+    message = "请求不合法：" + "；".join(failures)
+    return JSONResponse(status_code=422, content=_api_error(message))
 
 
 @app.exception_handler(HTTPException)
 async def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
-    message = exc.detail if isinstance(exc.detail, str) else "请求不被允许"
-    return JSONResponse(status_code=exc.status_code, content=_api_error(message))
+    if not isinstance(exc.detail, str):
+        # Business failures must use ContractError. Log structure and a known
+        # code only: raw keys/values may contain claims, credentials or URLs.
+        code = exc.detail.get("error_code") if isinstance(exc.detail, dict) else None
+        known_code = code if isinstance(code, str) and code in {item.value for item in ErrorCode} else None
+        size = len(exc.detail) if isinstance(exc.detail, (dict, list, tuple)) else None
+        logger.warning(
+            "Structured HTTPException detail: type=%s, size=%s, error_code=%s",
+            type(exc.detail).__name__, size, known_code,
+        )
+    message = {404: "请求的资源不存在", 405: "请求方法不被允许"}.get(
+        exc.status_code, exc.detail if isinstance(exc.detail, str) else "请求不被允许"
+    )
+    return JSONResponse(status_code=exc.status_code, content=_api_error(message), headers=exc.headers)
 
 
-def _error_responses(*codes: int) -> dict[int, dict[str, object]]:
+@app.exception_handler(ContractError)
+async def handle_contract_error(request: Request, exc: ContractError) -> JSONResponse:
+    """Map preview failures only; task execution failures need their own boundary."""
+
+    if (
+        request.method != "GET"
+        or request.url.path != "/api/sources/resolve"
+        or exc.error_code not in SOURCE_PREVIEW_ERRORS
+    ):
+        raise exc
+    status, message = SOURCE_PREVIEW_ERRORS[exc.error_code]
+    content = ApiError(error_code=exc.error_code, message=message).model_dump(mode="json")
+    return JSONResponse(status_code=status, content=content)
+
+
+def _error_responses(*codes: int, task_conflict: bool = True) -> dict[int, dict[str, object]]:
     """Declare only the error statuses the architecture assigns to a route.
 
     501 is a scaffold-only response. Remove it when that route is implemented.
@@ -73,7 +145,7 @@ def _error_responses(*codes: int) -> dict[int, dict[str, object]]:
 
     spec: dict[int, dict[str, object]] = {501: {"model": ApiError, "description": "功能待实现"}}
     for code in codes:
-        model = ConflictResponse if code == 409 else ApiError
+        model = ConflictResponse if code == 409 and task_conflict else ApiError
         spec[code] = {"model": model}
     return spec
 
@@ -123,7 +195,7 @@ def get_run_config() -> RunConfigPreview:
     "/api/checks",
     response_model=CheckCreated,
     status_code=202,
-    responses=_error_responses(400, 404, 409),
+    responses=_error_responses(400, 404, 409, task_conflict=False),
 )
 def create_check(body: CheckCreateRequest) -> CheckCreated:
     pending()

@@ -7,6 +7,7 @@ from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
 
 from paper_evidence.domain import ContractError, ErrorCode, ResultLabel, Stage, TaskStatus
+from paper_evidence.domain.contracts import default_limits, default_timeouts
 from paper_evidence.domain.records import Paragraph, TaskInput
 from paper_evidence.storage.ports import TaskRepository
 from paper_evidence.worker.__main__ import main
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_enums_match_glossary():
-    glossary = (ROOT / "docs/glossary.md").read_text()
+    glossary = (ROOT / "docs/glossary.md").read_text(encoding="utf-8")
     statuses = glossary.split("## 2. 任务状态\n")[1].split("## 3.")[0]
     stages = glossary.split("## 3. 阶段\n")[1].split("## 4.")[0]
     errors = glossary.split("## 4. 错误码\n")[1].split("## 5.")[0]
@@ -37,7 +38,7 @@ def test_worker_reports_pending(capsys):
 
 
 def test_frontend_literals_match_python_contracts():
-    source = (ROOT / "frontend/src/api/contracts.ts").read_text()
+    source = (ROOT / "frontend/src/api/contracts.ts").read_text(encoding="utf-8")
 
     def union(name: str) -> set[str]:
         match = re.search(rf"export type {name} =((?:.|\n)*?)\nexport ", source)
@@ -57,8 +58,8 @@ def _distribution_name(requirement: str) -> str:
 
 
 def test_lockfile_matches_declared_dependency_closure():
-    pyproject = tomllib.loads((ROOT / "backend/pyproject.toml").read_text())
-    lock = (ROOT / "backend/requirements.lock").read_text()
+    pyproject = tomllib.loads((ROOT / "backend/pyproject.toml").read_text(encoding="utf-8"))
+    lock = (ROOT / "backend/requirements.lock").read_text(encoding="utf-8")
     pinned = {
         line.split("==", 1)[0].lower().replace("_", "-")
         for line in lock.splitlines()
@@ -96,3 +97,19 @@ def test_repository_exposes_conditional_cancel_operations():
     assert "previous_id" in TaskInput.__annotations__
     assert "native_jats_id" in Paragraph.__annotations__
     assert ContractError(None).error_code is None
+
+
+def test_default_budgets_match_glossary_and_return_independent_instances():
+    glossary = (ROOT / "docs/glossary.md").read_text(encoding="utf-8")
+    for name, factory in (("limits", default_limits), ("timeouts", default_timeouts)):
+        row = re.search(rf"^\| `run_config\.{name}` \| ([^\n]+)\|$", glossary, re.MULTILINE)
+        assert row, name
+        documented = {field: int(value) for field, value in re.findall(r"([a-z_]+)=([0-9]+)", row.group(1))}
+        first, second = factory(), factory()
+        assert first.model_dump() == documented
+        assert second.model_dump() == documented
+        assert first is not second
+        field = next(iter(documented))
+        setattr(first, field, documented[field] + 1)
+        assert factory().model_dump() == documented
+        assert second.model_dump() == documented

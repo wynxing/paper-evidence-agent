@@ -16,7 +16,7 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 ## 环境要求
 
-- Python 3.12
+- Python 必须使用 3.12（当前后端要求 `>=3.12,<3.13`）
 - Node.js 22.12 或更高版本、npm
 
 依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。当前骨架不需要模型密钥。
@@ -50,12 +50,13 @@ npm run dev
 从仓库根目录执行：
 
 ```bash
+npm --prefix frontend ci
 backend/.venv/bin/python -m pytest -c backend/pyproject.toml
 backend/.venv/bin/python -m pip check
 npm --prefix frontend run build
 ```
 
-前端构建包含 TypeScript 类型检查。接口占位行为、模块边界和 worker 入口说明见[开发指南](docs/development.md)。
+pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前端构建包含 TypeScript 类型检查。接口占位行为、模块边界和 worker 入口说明见[开发指南](docs/development.md)。
 
 ## 文档
 

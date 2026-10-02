@@ -10,6 +10,24 @@ export type ErrorCode =
   | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_RATE_LIMITED' | 'UPSTREAM_AUTH_FAILED' | 'UPSTREAM_INVALID_REQUEST'
   | 'UPSTREAM_UNAVAILABLE' | 'TASK_TIMEOUT' | 'BUDGET_EXCEEDED' | 'MODEL_INVALID_OUTPUT' | 'QUOTE_MISMATCH'
 export interface ApiError { error_code: ErrorCode | null; message: string }
+export interface ConflictResponse { error_code: null; status: TaskStatus; stage: Stage; message: string }
+export interface HealthResponse { status: 'ok' }
+export interface DiagnosticExportRequest { recipient: string; semantic_export_consent: boolean }
+export interface FeedbackRequest { comment: string }
+export interface FeedbackSaved { id: string; saved: true }
+export interface CheckDeleted { id: string; deleted: true; message: string }
+export interface DiagnosticInput { doi: string; claim: string; privacy: 'redacted' | 'consented'; recipient: string | null }
+export interface TokenUsage { prompt_tokens: number | null; completion_tokens: number | null; total_tokens: number | null }
+/** Reference view; config_digest covers the full glossary snapshot. */
+export interface RunConfigSnapshot {
+  profile: 'daily' | 'evaluation'
+  config_digest: string
+  snapshot_ref: string
+  authorized_recipients: string[]
+  limits: Limits
+  timeouts: Timeouts
+  observability: Observability
+}
 export interface Limits { main_requests: number; repair_requests: number; attempts_per_request: number; supplemental_rounds: number }
 export interface Timeouts { model_attempt_seconds: number; source_request_seconds: number; task_seconds: number }
 export interface Observability { langfuse_enabled: boolean; recipient: string | null }
@@ -124,7 +142,7 @@ export interface ModelAttempt {
   status: 'success' | 'error' | 'cancelled'
   error_code: ErrorCode | null
   duration_ms: number | null
-  usage: { prompt_tokens: number | null; completion_tokens: number | null; total_tokens: number | null } | null
+  usage: TokenUsage | null
 }
 export interface ModelCall {
   request_id: string
@@ -149,18 +167,10 @@ export interface DiagnosticPacket {
   status: TaskStatus
   label: ResultLabel | null
   error_code: ErrorCode | null
-  input: { doi: string; claim: string; privacy: 'redacted' | 'consented'; recipient: string | null }
+  input: DiagnosticInput
   source: SourceRecord | null
   /** Reference view. config_digest covers the full glossary snapshot, not only these fields. */
-  run_config: {
-    profile: 'daily' | 'evaluation'
-    config_digest: string
-    snapshot_ref: string
-    authorized_recipients: string[]
-    limits: Limits
-    timeouts: Timeouts
-    observability: Observability
-  }
+  run_config: RunConfigSnapshot
   evidence_candidates: EvidenceCandidate[]
   decision: Decision | null
   execution: ExecutionRecord[]
@@ -173,9 +183,9 @@ export interface ApiClient {
   listChecks(status?: TaskStatus): Promise<CheckSummary[]>
   getCheck(id: string): Promise<CheckDetail>
   getDiagnosticPacket(id: string): Promise<DiagnosticPacket>
-  exportDiagnosticPacket(id: string, body: { recipient: string; semantic_export_consent: boolean }): Promise<DiagnosticPacket>
-  saveFeedback(id: string, body: { comment: string }): Promise<{ id: string; saved: true }>
+  exportDiagnosticPacket(id: string, body: DiagnosticExportRequest): Promise<DiagnosticPacket>
+  saveFeedback(id: string, body: FeedbackRequest): Promise<FeedbackSaved>
   retryCheck(id: string, body: RetryRequest): Promise<RetryCreated>
   cancelCheck(id: string): Promise<CancelResponse>
-  deleteCheck(id: string): Promise<{ id: string; deleted: true; message: string }>
+  deleteCheck(id: string): Promise<CheckDeleted>
 }

@@ -1,5 +1,6 @@
 """Verify the documented HTTP surface and the explicit, side-effect-free stubs."""
 
+from copy import deepcopy
 import re
 import socket
 import sqlite3
@@ -30,28 +31,38 @@ REQUESTS = [
     ("POST", "/api/checks/test-id/cancel", {}),
     ("DELETE", "/api/checks/test-id", {}),
 ]
-SUCCESS_CODES = {
-    ("POST", "/api/checks"): {"202"},
-    ("POST", "/api/checks/{id}/retry"): {"202"},
-    ("POST", "/api/checks/{id}/cancel"): {"200", "202"},
-}
-ERROR_CODES = {
-    ("GET", "/api/sources/resolve"): {"400": "ApiError", "404": "ApiError", "422": "ApiError", "502": "ApiError", "503": "ApiError", "504": "ApiError"},
-    ("POST", "/api/checks"): {"400": "ApiError", "404": "ApiError", "409": "ConflictResponse"},
-    ("GET", "/api/checks/{id}"): {"404": "ApiError"},
-    ("GET", "/api/checks/{id}/diagnostic-packet"): {"404": "ApiError"},
-    ("POST", "/api/checks/{id}/diagnostic-export"): {"400": "ApiError", "404": "ApiError", "409": "ConflictResponse"},
-    ("POST", "/api/checks/{id}/feedback"): {"404": "ApiError"},
-    ("POST", "/api/checks/{id}/retry"): {"400": "ApiError", "404": "ApiError", "409": "ConflictResponse"},
-    ("POST", "/api/checks/{id}/cancel"): {"404": "ApiError", "409": "ConflictResponse"},
-    ("DELETE", "/api/checks/{id}"): {"404": "ApiError", "409": "ConflictResponse"},
-}
+
+
+def documented_contracts(schema: dict, text: str | None = None) -> dict[tuple[str, str], dict[str, str]]:
+    """Read route-local response tables plus the documented shared 404/422 rules."""
+
+    if text is None:
+        text = (ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    sections = re.split(r"^### `(GET|POST|DELETE) ([^`]+)`\n", text, flags=re.MULTILINE)
+    shared = re.findall(r"^\| (路由包含 `\{id\}`|含请求体或路径/查询参数) \| `([1-5][0-9]{2})` \| `([^`]+)` \|$", sections[0], re.MULTILINE)
+    contracts = {}
+    for index in range(1, len(sections), 3):
+        method, path, section = sections[index:index + 3]
+        if not path.startswith("/api/"):
+            continue
+        match = re.search(r"\| HTTP 状态 \| 响应类型 \|\n\| --- \| --- \|\n((?:\|[^\n]+\n)+)", section)
+        assert match, f"Missing response table: {method} {path}"
+        rows = re.findall(r"^\| `([1-5][0-9]{2})` \| `([^`]+)` \|$", match.group(1), re.MULTILINE)
+        responses = dict(rows)
+        assert rows and len(rows) == len(match.group(1).splitlines()), f"Malformed response table: {method} {path}"
+        assert len(responses) == len(rows), f"Duplicate responses: {method} {path}"
+        operation = schema["paths"][path][method.lower()]
+        for condition, status, model in shared:
+            applies = "{id}" in path if condition == "路由包含 `{id}`" else bool(operation.get("parameters") or operation.get("requestBody"))
+            if applies:
+                assert status not in responses or responses[status] == model, (method, path, status)
+                responses[status] = model
+        contracts[method, path] = responses
+    return contracts
 
 
 def documented_routes() -> set[tuple[str, str]]:
-    text = (ROOT / "docs/architecture.md").read_text()
-    found = re.findall(r"^### `(GET|POST|DELETE) ([^`]+)`", text, re.MULTILINE)
-    return {(method, path) for method, path in found if path.startswith("/api/")}
+    return set(documented_contracts(app.openapi()))
 
 
 def declared_routes(schema: dict) -> set[tuple[str, str]]:
@@ -67,25 +78,64 @@ def declared_routes(schema: dict) -> set[tuple[str, str]]:
 
 def response_schema_name(operation: dict, status: str) -> str:
     schema = operation["responses"][status]["content"]["application/json"]["schema"]
-    ref = schema["$ref"]
-    return ref.rsplit("/", 1)[-1]
+    if schema.get("type") == "array":
+        return schema["items"]["$ref"].rsplit("/", 1)[-1] + "[]"
+    return schema["$ref"].rsplit("/", 1)[-1]
+
+
+def assert_response_contracts(schema: dict, text: str | None = None) -> None:
+    documented = documented_contracts(schema, text)
+    assert declared_routes(schema) == set(documented)
+    for (method, path), expected in documented.items():
+        operation = schema["paths"][path][method.lower()]
+        # 501 is temporary and checked separately by scaffold-marked tests.
+        actual = set(operation["responses"]) - {"501"}
+        assert actual == set(expected), (method, path, actual, set(expected))
+        for status, model in expected.items():
+            assert response_schema_name(operation, status) == model, (method, path, status)
 
 
 def test_documented_routes_have_typed_openapi_contracts():
     schema = app.openapi()
-    documented = documented_routes()
-    assert declared_routes(schema) == documented
-    for method, path in documented:
-        operation = schema["paths"][path][method.lower()]
-        for status in SUCCESS_CODES.get((method, path), {"200"}):
-            assert "schema" in operation["responses"][status]["content"]["application/json"]
-        for status, name in ERROR_CODES.get((method, path), {}).items():
-            assert response_schema_name(operation, status) == name
+    assert_response_contracts(schema)
     packet = schema["components"]["schemas"]["DiagnosticPacket"]
     assert packet["properties"]["schema_version"]["const"] == "2.2"
-    validation = schema["paths"]["/api/checks"]["post"]["responses"]["422"]
-    assert response_schema_name({"responses": {"422": validation}}, "422") == "ApiError"
     assert "HTTPValidationError" not in schema["components"]["schemas"]
+    assert "ValidationError" not in schema["components"]["schemas"]
+
+    def check_refs(value):
+        if isinstance(value, dict):
+            if "$ref" in value:
+                target = schema
+                for part in value["$ref"].removeprefix("#/").split("/"):
+                    target = target[part]
+            for child in value.values():
+                check_refs(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_refs(child)
+    check_refs(schema)
+
+
+@pytest.mark.parametrize("change", ["extra", "missing", "wrong_model", "docs_added", "docs_removed", "shared_removed"])
+def test_response_comparison_detects_drift_in_both_directions(change):
+    schema = deepcopy(app.openapi())
+    text = (ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    responses = schema["paths"]["/api/sources/resolve"]["get"]["responses"]
+    if change == "extra":
+        responses["418"] = deepcopy(responses["400"])
+    elif change == "missing":
+        del responses["404"]
+    elif change == "wrong_model":
+        responses["400"]["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/ConflictResponse"
+    elif change == "docs_added":
+        text = text.replace("| `504` | `ApiError` |", "| `504` | `ApiError` |\n| `418` | `ApiError` |", 1)
+    elif change == "docs_removed":
+        text = text.replace("| `504` | `ApiError` |\n", "", 1)
+    else:
+        text = text.replace("| 含请求体或路径/查询参数 | `422` | `ApiError` |\n", "", 1)
+    with pytest.raises(AssertionError):
+        assert_response_contracts(schema, text)
 
 
 @pytest.mark.scaffold
@@ -129,12 +179,13 @@ def test_invalid_requests_use_the_api_error_envelope():
     with TestClient(app) as client:
         missing = client.post("/api/checks", json={})
         unknown = client.get("/api/nope")
-        wrong_method = client.put("/api/checks/test-id")
+        wrong_method = client.post("/api/run-config")
     assert missing.status_code == 422
-    assert missing.json() == {"error_code": None, "message": "请求不合法"}
+    assert missing.json()["error_code"] is None
+    assert "body.claim: missing" in missing.json()["message"]
+    assert set(missing.json()) == {"error_code", "message"}
     assert unknown.status_code == 404
-    assert unknown.json()["error_code"] is None
-    assert "detail" not in unknown.json()
+    assert unknown.json() == {"error_code": None, "message": "请求的资源不存在"}
     assert wrong_method.status_code == 405
-    assert wrong_method.json()["error_code"] is None
-    assert "detail" not in wrong_method.json()
+    assert wrong_method.json() == {"error_code": None, "message": "请求方法不被允许"}
+    assert wrong_method.headers["allow"] == "GET"

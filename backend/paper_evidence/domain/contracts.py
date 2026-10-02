@@ -49,6 +49,16 @@ class Timeouts(Contract):
     task_seconds: int
 
 
+def default_limits() -> Limits:
+    """Return a fresh default budget; explicit configuration stays supported."""
+    return Limits(main_requests=3, repair_requests=1, attempts_per_request=2, supplemental_rounds=1)
+
+
+def default_timeouts() -> Timeouts:
+    """Return fresh default timeouts; actual values belong in config_digest."""
+    return Timeouts(model_attempt_seconds=45, source_request_seconds=15, task_seconds=180)
+
+
 class Observability(Contract):
     langfuse_enabled: bool
     recipient: str | None

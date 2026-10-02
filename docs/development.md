@@ -34,7 +34,11 @@
 
 HTTP 状态为 `501`。这些路由不创建任务、不访问来源或模型，也不生成学术判断。`501` 是骨架期临时契约：实现对应路由时，移除该状态的 OpenAPI 声明和带 `scaffold` 标记的断言。
 
-请求缺字段或不符合请求模型时返回 `422`，响应体为 `{"error_code": null, "message": "请求不合法"}`。未知路径和不允许的方法也使用同一 `ApiError` 形状，`error_code` 为 null。架构为来源预览规定的 `422` 仍表示 `METADATA_NOT_FOUND` 或 `REGISTRATION_AGENCY_UNSUPPORTED`，与请求不合法共用状态码，靠 `error_code` 区分。DOI、授权、预算和任务状态等业务校验尚未实现。
+请求缺字段或不符合请求模型时返回 `422`，响应体为 `ApiError`：error_code=null，message 形如「请求不合法：body.claim: missing」。只公开已声明字段的路径、数组/JSON 位置和错误类型，不回显输入值、未知字段名或原始校验上下文。未知路径和不允许的方法也使用同一形状及中文固定文案；405 保留框架提供的 Allow 等响应头。
+
+框架级错误使用 `HTTPException`，error_code=null；业务错误不使用结构化 `HTTPException`，而是在 API 边界映射 `ContractError`。来源预览已声明 DOI_INVALID→400、DOI_UNRESOLVABLE→404、METADATA_NOT_FOUND/REGISTRATION_AGENCY_UNSUPPORTED→422，及 sources 端口规定的 UPSTREAM 分类→502/503/504。映射保留真实 error_code，文案使用本地固定文本，不回显底层异常载荷；由此可区分业务 422 和请求校验 422。其他端点或未定义错误不借用这个预览映射，也不套用相近业务码。错误使用结构化 HTTPException 时记录脱敏结构摘要（类型、项数及已知错误码），不记录原始键名/值。DOI、授权、预算和任务状态等业务校验及来源调用尚未实现。
+
+创建任务的配置摘要冲突使用不含任务状态的 ApiError；已有任务的状态冲突使用 status/stage 必填的 ConflictResponse。default_limits()/default_timeouts() 提供术语表规定的默认配置，每次返回独立实例；具体任务仍须保存实际配置并纳入 config_digest。
 
 OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应，但当前路由没有成功实现。诊断包类型声明遵循 schema `2.2`，不代表已实现脱敏、证据校验、配置摘要或诊断包生成。
 
@@ -52,6 +56,8 @@ backend/.venv/bin/python -m paper_evidence.worker
 
 ## 检查范围
 
-README 中的检查验证接口表面、501 占位行为、领域枚举与文档的一致性、模块导入和前端构建。HTTP 测试使用合成请求，并禁用 `socket.create_connection`、`socket.getaddrinfo` 与 SQLite 连接。临时目录为空只说明相对路径没有落盘。
+检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败。
+
+README 中的检查验证接口表面、501 占位行为、领域枚举及默认配置与文档的一致性、模块导入和前端构建。响应状态表从架构文档解析并与 OpenAPI 双向比较；前端命名接口与所有 OpenAPI 对象模型比对字段、必填性和可空性（含继承及 Omit）。客户端方法接口不属于 JSON 对象契约。HTTP 测试使用合成请求，并禁用 `socket.create_connection`、`socket.getaddrinfo` 与 SQLite 连接。临时目录为空只说明相对路径没有落盘。
 
 这些检查不替代真实来源、模型接入、任务执行或论文语义验收。每次 PR 应在说明中记录实际运行的命令、结果和未覆盖范围；团队协作及独立评审要求见 [AGENTS.md](../AGENTS.md)。
