@@ -5,5 +5,10 @@ from typing import Protocol
 
 class TaskWorker(Protocol):
     async def run_once(self) -> bool:
-        """Return whether a task was processed; implementation is pending."""
+        """Process at most one claimed task.
+
+        Observe cancel_requested and the task's absolute monotonic deadline.
+        An accepted cancellation finishes as CANCELLED and is not replaced by
+        TASK_TIMEOUT. Return whether a task was processed. Implementation is pending.
+        """
         ...

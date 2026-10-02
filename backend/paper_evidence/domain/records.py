@@ -12,6 +12,7 @@ class TaskInput:
     doi: str
     config_digest: str
     authorized_recipients: tuple[str, ...]
+    previous_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class Paragraph:
     text: str
     paragraph_hash: str
     source_url: str
+    native_jats_id: str | None = None
 
 
 @dataclass(frozen=True)

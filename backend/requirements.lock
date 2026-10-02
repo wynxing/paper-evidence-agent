@@ -1,3 +1,6 @@
+# Combined lock for runtime, test, and build dependencies in pyproject.toml, including
+# their transitive dependencies. opentelemetry-api is required by fastapi; this scaffold
+# does not import it. Regenerate from those declarations rather than adding an unrelated pin.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

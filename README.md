@@ -43,7 +43,7 @@ npm ci
 npm run dev
 ```
 
-前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。
+前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
 ## 开发检查
 
@@ -66,6 +66,7 @@ npm --prefix frontend run build
 - [技术选型](docs/tech-stack.md)
 - [开发指南](docs/development.md)
 - [决策记录](docs/decisions.md)
+- [验证记录](docs/verification.md)
 - [协作规范](AGENTS.md)
 
 [研究评测](docs/evaluation.md)属于后续研究，运行时代码不得依赖其中的数据集。

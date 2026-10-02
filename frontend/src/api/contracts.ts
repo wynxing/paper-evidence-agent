@@ -21,7 +21,7 @@ export interface Accounting {
   supplemental_rounds_used: number
   upstream_attempts_used: number | null
   observed_upstream_attempts: number
-  reason: string | null
+  reason: 'attempt_records_missing' | null
 }
 export interface SourcePreview { doi: string; title: string; authors: string[]; year: number | null }
 export interface RunConfigPreview {
@@ -51,6 +51,7 @@ export interface Evidence {
   section: string
   source_url: string
   paragraph_hash: string
+  /** Published invariant. This is not a fallible validation result. */
   validation: 'pass'
 }
 export interface Decision {
@@ -61,6 +62,7 @@ export interface Decision {
   scope_differences: string[]
   limitations: string[]
   evidence: Evidence[]
+  /** Published invariant. This is not a fallible validation result. */
   validation: 'pass'
 }
 export interface CheckSummary { id: string; doi: string; status: TaskStatus; stage: Stage; label: ResultLabel | null }
@@ -149,6 +151,7 @@ export interface DiagnosticPacket {
   error_code: ErrorCode | null
   input: { doi: string; claim: string; privacy: 'redacted' | 'consented'; recipient: string | null }
   source: SourceRecord | null
+  /** Reference view. config_digest covers the full glossary snapshot, not only these fields. */
   run_config: {
     profile: 'daily' | 'evaluation'
     config_digest: string

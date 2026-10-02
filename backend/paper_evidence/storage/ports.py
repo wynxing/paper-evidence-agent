@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from paper_evidence.domain import TaskStatus
-from paper_evidence.domain.contracts import CheckDetail, CheckSummary
+from paper_evidence.domain.contracts import CancelResponse, CheckDetail, CheckSummary, ConflictResponse
 from paper_evidence.domain.records import TaskInput
 
 
@@ -18,6 +18,29 @@ class TaskRepository(Protocol):
         """Atomically claim one queued task; implementation is pending."""
         ...
 
-    def save(self, result: CheckDetail) -> None: ...
+    def request_cancel(self, task_id: str) -> CancelResponse | ConflictResponse | None:
+        """Atomically record cancellation without replacing the whole detail.
+
+        None when the task is missing. CancelResponse when cancellation is
+        accepted or the task is already CANCELLED. ConflictResponse when
+        another terminal state wins; the stored task stays unchanged.
+        """
+        ...
+
+    def settle_orphaned_running(self) -> int:
+        """On startup, settle leftover RUNNING tasks.
+
+        A persisted cancel_requested becomes CANCELLED. Any other leftover
+        RUNNING becomes INTERRUPTED. Return how many tasks changed.
+        """
+        ...
+
+    def save(self, result: CheckDetail) -> None:
+        """Conditionally store a terminal result.
+
+        Do not overwrite CANCELLED or another terminal state, including when
+        cancellation was accepted after this result was prepared.
+        """
+        ...
 
     def delete(self, task_id: str) -> None: ...

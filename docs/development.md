@@ -14,6 +14,8 @@
 
 模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，当前没有适配器或业务实现。LangGraph、LiteLLM Proxy、SQLite/FTS5 和遥测接入由后续实现任务完成。
 
+存储、检索、提示词和轨迹端口是同步接口。异步 worker 通过 `asyncio.to_thread` 调用它们，不在事件循环上直接执行 SQLite 或 FTS5。来源、模型和工作流的 `deadline` 是 `time.monotonic()` 的绝对时刻。
+
 ## 本地环境
 
 安装与启动命令见 [README](../README.md)。命令示例使用 Bash；如果 `python3.12` 不在 PATH，可将其替换为 Python 3.12 解释器的绝对路径。环境目录、依赖目录和构建产物由 `.gitignore` 排除。
@@ -30,9 +32,11 @@
 {"error_code": null, "message": "Not Implemented：功能待实现"}
 ```
 
-HTTP 状态为 `501`。这些路由不创建任务、不访问来源或模型，也不生成学术判断。缺少字段或不符合请求模型的输入由 FastAPI/Pydantic 返回 `422`；DOI、授权、预算和任务状态等业务校验尚未实现。
+HTTP 状态为 `501`。这些路由不创建任务、不访问来源或模型，也不生成学术判断。`501` 是骨架期临时契约：实现对应路由时，移除该状态的 OpenAPI 声明和带 `scaffold` 标记的断言。
 
-OpenAPI 声明了预期的成功响应类型，但当前路由没有成功实现。诊断包类型声明遵循 schema `2.2`，不代表已实现脱敏、证据校验、配置摘要或诊断包生成。
+请求缺字段或不符合请求模型时返回 `422`，响应体为 `{"error_code": null, "message": "请求不合法"}`。未知路径和不允许的方法也使用同一 `ApiError` 形状，`error_code` 为 null。架构为来源预览规定的 `422` 仍表示 `METADATA_NOT_FOUND` 或 `REGISTRATION_AGENCY_UNSUPPORTED`，与请求不合法共用状态码，靠 `error_code` 区分。DOI、授权、预算和任务状态等业务校验尚未实现。
+
+OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应，但当前路由没有成功实现。诊断包类型声明遵循 schema `2.2`，不代表已实现脱敏、证据校验、配置摘要或诊断包生成。
 
 前端只定义 API 客户端类型，没有 HTTP 客户端实现；静态页面不会提交任务或生成模拟结果。
 
@@ -48,6 +52,6 @@ backend/.venv/bin/python -m paper_evidence.worker
 
 ## 检查范围
 
-README 中的检查验证接口表面、501 占位行为、领域枚举与文档的一致性、模块导入和前端构建。HTTP 测试使用合成请求，并禁用外部 socket 连接与 SQLite 连接。
+README 中的检查验证接口表面、501 占位行为、领域枚举与文档的一致性、模块导入和前端构建。HTTP 测试使用合成请求，并禁用 `socket.create_connection`、`socket.getaddrinfo` 与 SQLite 连接。临时目录为空只说明相对路径没有落盘。
 
 这些检查不替代真实来源、模型接入、任务执行或论文语义验收。每次 PR 应在说明中记录实际运行的命令、结果和未覆盖范围；团队协作及独立评审要求见 [AGENTS.md](../AGENTS.md)。

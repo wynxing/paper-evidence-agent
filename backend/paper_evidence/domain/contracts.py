@@ -23,6 +23,15 @@ class ApiError(Contract):
     message: str
 
 
+class ConflictResponse(Contract):
+    """409 body from the architecture: the task exists, but this request is not allowed."""
+
+    error_code: Literal[None]
+    status: TaskStatus
+    stage: Stage
+    message: str
+
+
 class HealthResponse(Contract):
     status: Literal["ok"]
 
@@ -59,7 +68,7 @@ class Accounting(Contract):
     supplemental_rounds_used: int
     upstream_attempts_used: int | None
     observed_upstream_attempts: int
-    reason: str | None
+    reason: Literal["attempt_records_missing"] | None
 
 
 class SourcePreview(Contract):
@@ -118,6 +127,8 @@ class RetryCreated(CheckCreated):
 
 
 class Evidence(Contract):
+    """A published evidence item. validation is the constant pass, not a fallible check result."""
+
     paragraph_id: str
     quote: str
     section: str
@@ -127,6 +138,8 @@ class Evidence(Contract):
 
 
 class Decision(Contract):
+    """A published decision. validation is the constant pass, not a fallible check result."""
+
     agent: Literal["paper"]
     label: AcademicLabel
     rationale: str
@@ -198,6 +211,12 @@ class DiagnosticInput(Contract):
 
 
 class RunConfigSnapshot(Contract):
+    """Reference view embedded in a diagnostic packet.
+
+    config_digest summarizes the full frozen snapshot in the glossary section
+    「调用账与版本归属」, not only the fields on this view.
+    """
+
     profile: Profile
     config_digest: str
     snapshot_ref: str
