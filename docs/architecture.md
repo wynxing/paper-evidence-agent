@@ -185,13 +185,34 @@ flowchart TD
 {"error_code": null, "message": "<reason>"}
 ```
 
+下面每个路由的响应表列出业务状态和响应类型，并继承以下公共响应：
+
+| 请求条件 | HTTP 状态 | 响应类型 |
+| --- | --- | --- |
+| 路由包含 `{id}` | `404` | `ApiError` |
+| 含请求体或路径/查询参数 | `422` | `ApiError` |
+
+请求校验失败时 error_code=null，message 提供已声明字段的路径和错误类型，不回显输入值或未知字段名。公共 404 表示任务不存在。框架未知路径与方法错误分别返回 `404`、`405`，不作为每个业务路由的成功/错误分支；`405` 保留 Allow 响应头。骨架阶段额外声明临时 `501 ApiError`。
+
 已有任务但请求不被允许时返回 `409`，并带上当前状态：
 
 ```json
 {"error_code": null, "status": "<task-status>", "stage": "<stage-id>", "message": "<reason>"}
 ```
 
+创建任务时配置摘要冲突尚无任务，`POST /api/checks` 的 `409` 使用上面的 error_code/message 包络（`ApiError`），error_code=null，不虚构 status 或 stage。已有任务的 `409` 使用 `ConflictResponse`，status 和 stage 必填。
+
 ### `GET /api/sources/resolve`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `SourcePreview` |
+| `400` | `ApiError` |
+| `404` | `ApiError` |
+| `422` | `ApiError` |
+| `502` | `ApiError` |
+| `503` | `ApiError` |
+| `504` | `ApiError` |
 
 | 项 | 内容 |
 | --- | --- |
@@ -205,9 +226,20 @@ flowchart TD
 
 ### `GET /api/run-config`
 
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `RunConfigPreview` |
+
 返回当前配置的 `profile`、`config_digest`、主用/备用接收方、模型别名、数据发送范围和 [limits、timeouts、observability](glossary.md#6-诊断包)。观测授权由本机运行配置显式保存，模型授权不隐含授权 Langfuse；未授权时只用本地轨迹。返回观测启用状态及接收方供作者预览，不返回密钥或私有部署地址。同时返回 criteria 归属；配置摘要及授权收窄规则见 [调用账与版本归属](glossary.md#调用账与版本归属)。首版授权页明确“token/费用无法可靠预估”，说明候选长度、实际重试及上游价格可能未知，不把调用次数当作费用上限；未来估算须无模型调用并给出假设和未知原因。默认 daily；evaluation 由运行配置选择。前端据此展示整次任务授权，不逐次弹窗。
 
 ### `POST /api/checks`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `202` | `CheckCreated` |
+| `400` | `ApiError` |
+| `404` | `ApiError` |
+| `409` | `ApiError` |
 
 | 项 | 内容 |
 | --- | --- |
@@ -219,6 +251,10 @@ flowchart TD
 
 ### `GET /api/checks`
 
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CheckSummary[]` |
+
 | 项 | 内容 |
 | --- | --- |
 | 查询参数 | 可选 `status`，取值见 [任务状态](glossary.md#2-任务状态) |
@@ -226,6 +262,10 @@ flowchart TD
 | 约束 | 不返回缓存全文 |
 
 ### `GET /api/checks/{id}`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CheckDetail` |
 
 | 项 | 内容 |
 | --- | --- |
@@ -235,6 +275,10 @@ flowchart TD
 
 ### `GET /api/checks/{id}/diagnostic-packet`
 
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `DiagnosticPacket` |
+
 | 项 | 内容 |
 | --- | --- |
 | `200` | [输入诊断包](glossary.md#6-诊断包) |
@@ -242,9 +286,19 @@ flowchart TD
 
 ### `POST /api/checks/{id}/diagnostic-export`
 
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `DiagnosticPacket` |
+| `400` | `ApiError` |
+| `409` | `ConflictResponse` |
+
 请求含 `recipient` 和 `semantic_export_consent=true`。前端先在本地预览拟导出的字段；服务端核对授权及来源使用范围后返回 consented 包并记录接收方，不主动上传。缺少授权返回 400，来源范围不允许则返回 409。完整提示词、原始模型响应、密钥不在导出范围。
 
 ### `POST /api/checks/{id}/feedback`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `FeedbackSaved` |
 
 | 项 | 内容 |
 | --- | --- |
@@ -253,6 +307,12 @@ flowchart TD
 | 约束 | 与 paper agent 的判断分开保存。不是完成任务的前置条件 |
 
 ### `POST /api/checks/{id}/retry`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `202` | `RetryCreated` |
+| `400` | `ApiError` |
+| `409` | `ConflictResponse` |
 
 | 项 | 内容 |
 | --- | --- |
@@ -263,6 +323,12 @@ flowchart TD
 
 ### `POST /api/checks/{id}/cancel`
 
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CancelResponse` |
+| `202` | `CancelResponse` |
+| `409` | `ConflictResponse` |
+
 无请求体。QUEUED 取消及已为 CANCELLED 的重复请求返回 `200`；RUNNING 受理返回 `202`，含 `id`、当前 `status`、`cancel_requested=true`，不假称已经完成。重复取消仍在收尾的任务返回 202。其他终态返回 409 并保留原结果，不存在返回 404。已过执行 deadline 时先按上节结算为 TASK_TIMEOUT，再返回 409。取消是控制状态，不使用学术错误标签。
 
 ```json
@@ -270,6 +336,11 @@ flowchart TD
 ```
 
 ### `DELETE /api/checks/{id}`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CheckDeleted` |
+| `409` | `ConflictResponse` |
 
 | 项 | 内容 |
 | --- | --- |

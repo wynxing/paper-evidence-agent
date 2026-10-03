@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-evidence-agent"
+version = "0.1.0"
+description = "Local Paper Evidence Agent project skeleton"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.142.1",
+  "pydantic==2.13.5",
+  "uvicorn==0.54.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[project.scripts]
+paper-evidence-worker = "paper_evidence.worker.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paper_evidence*"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests"]
+pythonpath = ["."]
+markers = ["scaffold: temporary assertions removed when the declared route is implemented"]
