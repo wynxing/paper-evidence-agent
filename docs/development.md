@@ -9,7 +9,7 @@
 | `backend/paper_evidence/domain/` | 任务状态、标签、错误码和请求/响应类型；不执行网络或数据库操作。 |
 | `backend/paper_evidence/api/` | FastAPI 健康检查和业务路由占位。 |
 | `backend/paper_evidence/*/ports.py` | 来源、存储、检索、模型、工作流、诊断、轨迹和 worker 的类型化模块接口。 |
-| `frontend/src/` | Vue 核验工作台、任务状态管理、真实 HTTP 与显式模拟客户端；公共 API 类型声明保持与后端一致。 |
+| `frontend/src/` | Vue 静态页面和 API 客户端类型声明。 |
 | `tests/tools/`、`tests/boundary/` | HTTP 接口占位、文档契约和模块导入检查。 |
 
 模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，当前没有适配器或业务实现。LangGraph、LiteLLM Proxy、SQLite/FTS5 和遥测接入由后续实现任务完成。
@@ -42,7 +42,7 @@ HTTP 状态为 `501`。这些路由不创建任务、不访问来源或模型，
 
 OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应，但当前路由没有成功实现。诊断包类型声明遵循 schema `2.2`，不代表已实现脱敏、证据校验、配置摘要或诊断包生成。
 
-前端已实现 HTTP 客户端与工作台；默认真实模式按契约发起请求，当前收到业务 501 时保留草稿并显示功能尚未实现。`dev:demo` 显式启用只存于内存的构造数据，不请求后端、来源或模型。交互、接口缺口与验证范围见[前端工作台指南](frontend-workbench.md)。
+前端只定义 API 客户端类型，没有 HTTP 客户端实现；静态页面不会提交任务或生成模拟结果。
 
 ## Worker 入口
 

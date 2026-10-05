@@ -1,33 +1,5 @@
 # 验证记录
 
-## 前端工作台（2026-10-05）
-
-在更新后的 main `240e9ae` 创建独立工作树及 `feat/frontend-workbench` 分支。仅修改前端和相关文档；后端代码、公共 TS 契约、依赖版本及锁定文件均保持不变。没有来源或模型调用，也未部署。未配置仓库 CI，本节是本地验证，不替代未参与实现的团队成员独立评审。
-
-环境：Windows / PowerShell、Python 3.12.10、Node 24.18.1、npm 11.16.0；另从 Node.js 官方发行源取得 Node 22.12.0，放在 Git 忽略的 `.cache/node22`，核对最低版本的测试及构建。
-
-| 实际检查 | 结果 |
-| --- | --- |
-| `npm --prefix frontend ci` | 安装现有 45 个锁定包，未新增依赖，安装报告 0 vulnerabilities |
-| `npm --prefix frontend test` | 16 passed；Node 内置测试覆盖接口异常、响应中断不重发、授权失效、两种取消分支、串行轮询、迟到响应、重试保留、空历史、任务及接收方一致性、数据契约和导出字段投影 |
-| `.cache/node22/node.exe --experimental-strip-types --test frontend/tests/*.test.mjs` | 最低版本 Node 22.12.0：16 passed，保留类型擦除实验性警告 |
-| `npm --prefix frontend run build` | vue-tsc 类型检查和 Vite 构建通过 |
-| 在 frontend 目录以 Node 22.12.0 分别运行 `node_modules/vue-tsc/bin/vue-tsc.js --noEmit`、`node_modules/vite/bin/vite.js build` | 类型检查及构建通过 |
-| `backend/.venv/Scripts/python -m pytest -c backend/pyproject.toml -q` | 54 passed，1 条现有 Starlette TestClient/httpx 弃用警告；未隐藏或调整依赖 |
-| `backend/.venv/Scripts/python -m pip check` | No broken requirements found |
-| Node fetch 经开发代理读取 `/health`、空 body 创建任务、读取 `/api/run-config` | 分别为 200、422、501；422 返回已声明缺失字段，业务接口仍未实现 |
-| `git diff --check` | 无空白错误；Windows Git 有 LF/CRLF 工作副本提示 |
-
-内置浏览器使用本机演示端口检查了文献预览、未确认时禁用提交、编辑后云授权失效、重新确认并创建模拟任务、运行至部分支持、多证据展示、独立反馈、取消模拟运行任务、删除确认及执行、旧任务重新授权入口、诊断预览和导出确认。补充检查了长论断、手动拆分后提交关联任务、重新授权并重试，三条新记录及原记录均保留。真实模式 501 时输入保持、没有回退构造结果。桌面 1440px、平板 1024px 与窄屏 390px 检查布局、证据页签、导航与 Escape 焦点恢复，观察的页面宽度无横向溢出；平板证据页签可用 Enter 切换，hash 路由前进和后退正常。截图是构造输入及模拟结果，保留在 Git 忽略的本地缓存中。
-
-下载完成事件在内置浏览器和 Chrome 中均超时，未确认实际文件落盘；进一步查看下载管理页被浏览器 URL 安全策略阻断，没有绕过。导出投影与权限交互已验证，实际下载完成仍需独立验收；界面仅提示已发起下载。纯模块测试覆盖网络异常、空历史和轮询停止，但不能替代全部浏览器端场景；浏览器后台切换、短暂加载态、断网态和空历史，以及真实重试等实测范围须按后续记录补齐。
-
-初轮前端检查发现 TypeScript 对嵌套 unknown 的收窄错误及取消测试未区分排队/运行状态，修复为逐层响应校验，并分别覆盖排队直接 CANCELLED 与运行受理后收尾；没有削弱既有后端断言。窄屏检查发现遮罩点击区域与侧栏重叠，改为只覆盖抽屉右侧，并增加焦点约束。
-
-本节不验证真实论文语义、来源许可处理、后端任务持久化、模型调用、真实取消/超时时限或诊断包服务端脱敏。接口缺口和固定降级见 [前端工作台指南](frontend-workbench.md)。
-
----
-
 ## 本轮范围
 
 | 项目 | 记录 |

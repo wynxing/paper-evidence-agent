@@ -45,7 +45,7 @@ npm run dev
 
 前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
-只预览前端交互时，从仓库根目录执行 `npm --prefix frontend run dev:demo`。该模式无需后端，文献、摘录与结果均为构造数据，不访问文献来源或模型。默认 `dev` 为真实模式，开发服务器把 `/api` 和 `/health` 代理到 `127.0.0.1:8000`。使用、降级与联调缺口见[前端工作台指南](docs/frontend-workbench.md)。
+默认 `dev` 为真实接口模式。只预览前端交互时，从仓库根目录执行 `npm --prefix frontend run dev:demo`；该模式无需后端，文献、摘录与结果均为构造数据，不访问文献来源或模型。详细启动、接口缺口和验收进展见[联调 Issue #7](https://github.com/wynxing/paper-evidence-agent/issues/7)。
 
 ## 开发检查
 

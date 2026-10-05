@@ -40,7 +40,13 @@ watch(work.route, () => { if (window.innerWidth < 768) sidebar.value = false })
       <nav class="history-list"><button v-for="row in work.history.value" :key="row.id" :class="{ active: row.id === work.route.value.id }" :aria-current="row.id === work.route.value.id ? 'page' : undefined" :disabled="work.busy.value" @click="work.navigate(row.id)"><span class="history-doi">{{ row.doi }}</span><span class="history-state"><StatusBadge :status="row.status" :label="row.label" /><span v-if="row.label" class="small muted">{{ statuses[row.status] }}</span></span></button></nav>
       <div class="sidebar-footer"><span class="local-dot" aria-hidden="true"></span> {{ work.demo ? '模拟数据 · 仅本页内存' : '本机工作空间' }}<p>单条论断，逐条核对。</p></div>
     </aside>
-    <div class="main-shell" :inert="narrow && sidebar"><header class="toolbar"><div class="toolbar-path"><button ref="navToggle" class="icon-button" :aria-expanded="sidebar" aria-label="切换导航" @click="sidebar = !sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg></button><span class="muted">工作空间</span><span class="separator">/</span><span>{{ title }}</span></div><span class="mode-label" :class="{ demo: work.demo }">{{ work.demo ? '模拟演示 · 构造数据' : '真实接口模式' }}</span></header>
+    <div class="main-shell" :inert="narrow && sidebar"><header class="toolbar">
+      <div class="toolbar-path"><button ref="navToggle" class="icon-button" :aria-expanded="sidebar" aria-label="切换导航" @click="sidebar = !sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg></button><span class="muted">工作空间</span><span class="separator">/</span><span>{{ title }}</span></div>
+      <div class="toolbar-actions">
+        <span class="mode-label" :class="{ demo: work.demo }">{{ work.demo ? '模拟演示 · 构造数据' : '真实接口模式' }}</span>
+        <button v-if="work.route.value.view === 'check' && work.route.value.id" :disabled="work.busy.value" @click="work.navigate(work.route.value.id, true)">运行诊断</button>
+      </div>
+    </header>
       <main id="main-content" ref="main" tabindex="-1">
         <div v-if="work.message.value" class="page-notice" role="status">{{ work.message.value }}<button class="icon-button" aria-label="关闭提示" @click="work.message.value = ''">×</button></div>
         <div v-if="work.connectionError.value" class="page-notice" role="status">{{ work.connectionError.value }}<button @click="work.reload">重新读取</button></div>
