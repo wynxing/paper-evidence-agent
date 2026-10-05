@@ -6,10 +6,10 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 ## 当前状态
 
-项目处于骨架阶段：
+后端处于骨架阶段，前端已提供核验工作台：
 
 - FastAPI 后端可启动，`GET /health` 返回 `200`；业务接口已声明类型，当前返回 `501 Not Implemented`。
-- Vue 前端提供静态页面，显示“功能待实现”，输入和操作按钮禁用。
+- Vue 前端包含新建核验、任务详情、运行诊断，支持显式模拟演示和真实接口模式；真实业务调用仍返回 501，不回退模拟数据。
 - 来源解析、持久化、任务执行、模型调用及证据核验尚未实现。
 
 设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
@@ -45,6 +45,8 @@ npm run dev
 
 前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
+只预览前端交互时，从仓库根目录执行 `npm --prefix frontend run dev:demo`。该模式无需后端，文献、摘录与结果均为构造数据，不访问文献来源或模型。默认 `dev` 为真实模式，开发服务器把 `/api` 和 `/health` 代理到 `127.0.0.1:8000`。使用、降级与联调缺口见[前端工作台指南](docs/frontend-workbench.md)。
+
 ## 开发检查
 
 从仓库根目录执行：
@@ -53,6 +55,7 @@ npm run dev
 npm --prefix frontend ci
 backend/.venv/bin/python -m pytest -c backend/pyproject.toml
 backend/.venv/bin/python -m pip check
+npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
