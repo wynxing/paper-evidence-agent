@@ -11,7 +11,7 @@ const json = computed(() => p.value ? JSON.stringify(projectPacket(p.value), nul
 async function exportSemantic() { const data = await work.semanticExport(recipient.value); if (data) { downloadPacket(data); exporting.value = false; work.message.value = '诊断包下载已发起，未自动发送给接收方。请检查浏览器下载结果。' } }
 </script>
 <template>
-  <section class="diagnostics reading wide-reading" aria-labelledby="diagnostic-heading">
+  <section class="diagnostics reading" aria-labelledby="diagnostic-heading">
     <button class="text-button back-link" @click="work.navigate(work.route.value.id!)">← 返回核验意见</button><p class="eyebrow">执行记录 · 诊断包</p><h1 id="diagnostic-heading">运行诊断</h1><p class="lead">查看任务实际执行的步骤、调用与停止原因。</p>
     <div v-if="!p" class="empty"><p>诊断包尚未读取成功。</p><button :disabled="work.busy.value" @click="work.refreshPacket()">重新读取诊断包</button></div>
     <template v-else>
