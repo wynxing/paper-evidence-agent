@@ -6,20 +6,21 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 ## 当前状态
 
-项目处于骨架阶段：
+后端已实现首版业务流程，前端仍为静态页面：
 
-- FastAPI 后端可启动，`GET /health` 返回 `200`；业务接口已声明类型，当前返回 `501 Not Implemented`。
-- Vue 前端提供静态页面，显示“功能待实现”，输入和操作按钮禁用。
-- 来源解析、持久化、任务执行、模型调用及证据核验尚未实现。
+- FastAPI 后端可启动，`GET /health` 返回 `200`；运行配置预览、只读来源解析、任务创建/查询/取消/重试/反馈/删除和诊断包接口均为实现代码，不再返回 `501`。
+- 任务写入本地 SQLite + FTS5；来源解析按 Crossref、PMC ID 转换、PMC OAI-PMH 顺序核对身份、许可与语言，只自动处理许可为 CC0 或 CC BY 的英文 JATS 正文。
+- 模型调用经 OpenAI 兼容客户端发往本机 LiteLLM Proxy，客户端不重试；核验流程按有界预算执行查询生成、检索、判断、至多一轮补读和一次全局输出修复。
+- Vue 前端仍提供静态页面，显示“功能待实现”，输入和操作按钮禁用。
 
-设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
+尚未验证或未实现：真实 Crossref/PMC/OpenAlex/Proxy 连通性、论文语义验收、LangGraph 编排（当前以等价的显式状态机实现）、Langfuse 导出、Playwright 端到端用例。设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
 
 ## 环境要求
 
 - Python 必须使用 3.12（当前后端要求 `>=3.12,<3.13`）
 - Node.js 22.12 或更高版本、npm
 
-依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。当前骨架不需要模型密钥。
+依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。启动后端、查看配置和运行后端测试不需要模型密钥；执行核验任务需要按 [D6](docs/tech-stack.md#d6-模型适配) 配置本机 LiteLLM Proxy，并通过 `PAPER_EVIDENCE_GATEWAY_TOKEN` 提供网关访问凭据。
 
 ## 快速开始
 

@@ -32,9 +32,11 @@ def test_module_boundaries_are_importable():
         importlib.import_module(f"paper_evidence.{module}.ports")
 
 
-def test_worker_reports_pending(capsys):
-    assert main() == 2
-    assert "Not Implemented" in capsys.readouterr().err
+def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PAPER_EVIDENCE_DATA_DIR", str(tmp_path))
+    assert main() == 0
+    assert "队列已空" in capsys.readouterr().err
+    assert (tmp_path / "paper-evidence.sqlite3").exists()
 
 
 def test_frontend_literals_match_python_contracts():

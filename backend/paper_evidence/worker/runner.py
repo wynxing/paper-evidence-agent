@@ -1,0 +1,50 @@
+"""Single-process worker: one task at a time.
+
+The worker drains queued tasks, one per claim. The total deadline starts when the
+task is atomically claimed and becomes RUNNING; it covers source processing,
+model calls, retry waits and validation but not queue time.
+"""
+
+import asyncio
+import logging
+import time
+
+from paper_evidence.domain import ErrorCode, TaskStatus
+
+__all__ = ["SingleTaskWorker", "drain"]
+
+logger = logging.getLogger(__name__)
+
+
+class SingleTaskWorker:
+    def __init__(self, store, workflow_factory, settings) -> None:
+        self._store = store
+        self._workflow_factory = workflow_factory
+        self._settings = settings
+
+    async def run_once(self) -> bool:
+        """Claim and process at most one task; return whether one was processed."""
+
+        deadline = time.monotonic() + self._settings.timeouts.task_seconds
+        task = await asyncio.to_thread(self._store.claim_next, deadline)
+        if task is None:
+            return False
+        workflow = self._workflow_factory(task)
+        try:
+            await workflow.run(task, deadline)
+        except Exception:  # unclassified execution failure keeps a null error code
+            logger.exception("Workflow raised for task %s", task.id)
+            await asyncio.to_thread(
+                self._store.finish, task.id, status=TaskStatus.FAILED, stage="wait",
+                error_code=None, label=None, decision=None,
+            )
+        return True
+
+
+async def drain(worker: SingleTaskWorker) -> int:
+    """Process queued tasks until the queue is empty; return how many ran."""
+
+    count = 0
+    while await worker.run_once():
+        count += 1
+    return count
