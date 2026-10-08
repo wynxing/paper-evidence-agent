@@ -9,7 +9,7 @@ cannot be located is QUOTE_MISMATCH. Both are repairable once globally.
 import json
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from paper_evidence.domain.contracts import AcademicLabel
 
@@ -56,9 +56,25 @@ class DecisionDraft(_Contract):
 
 
 class RetrieveAction(_Contract):
+    """A legal retrieve supplies at least one query or one known neighbour id.
+
+    This is per-step action legality (架构设计「动作与预算」), so a violating
+    response is MODEL_INVALID_OUTPUT and repairable, not a retrieval failure.
+    Whether the first empty round additionally demands non-empty queries is
+    context-dependent and is checked by the workflow.
+    """
+
     action: str = "retrieve"
     queries: list[str] = Field(default_factory=list)
     neighbor_paragraph_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_a_target(self) -> "RetrieveAction":
+        if any(not item.strip() for item in self.queries):
+            raise ValueError("queries 含空白项")
+        if not any(item.strip() for item in self.queries) and not self.neighbor_paragraph_ids:
+            raise ValueError("retrieve 至少需要一个非空 queries 或已知 neighbor_paragraph_ids")
+        return self
 
 
 class FinalAction(_Contract):

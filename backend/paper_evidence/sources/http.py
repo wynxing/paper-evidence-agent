@@ -94,5 +94,6 @@ class Fetcher:
                         continue
             if attempt == 0:
                 continue
-        assert last is not None
+        if last is None:  # pragma: no cover - every loop exit records a failure first
+            raise ContractError(ErrorCode.UPSTREAM_UNAVAILABLE, "上游请求未能完成")
         raise last

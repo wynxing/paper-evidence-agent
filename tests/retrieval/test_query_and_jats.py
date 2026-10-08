@@ -106,7 +106,14 @@ def test_retrieval_is_source_scoped_and_fault_aware(store):
     # A paragraph id from another source resolves to nothing.
     foreign = store.read_neighbors("PMC999:" + VERSION_HASH, [hits[0].paragraph_id])
     assert foreign == []
-    assert retriever.read_neighbors(source.source_id, [hits[0].paragraph_id])[0].text == hits[0].text
+
+    # A neighbour read returns the given paragraph plus its ordinal±1 neighbours.
+    neighbors = retriever.read_neighbors(source.source_id, [hits[0].paragraph_id])
+    assert [p.native_jats_id for p in neighbors] == ["n1", "n2"]
+    assert retriever.read_neighbors(source.source_id, ["p:PMC123:x:jats-0.1.0:9"]) == []
+    # An exact read never widens to neighbours.
+    assert store.read_paragraph(source.source_id, hits[0].paragraph_id).text == hits[0].text
+    assert store.read_paragraph(source.source_id, "p:PMC123:x:jats-0.1.0:9") is None
 
 
 def test_retrieval_index_fault_is_retrieval_failed(store):

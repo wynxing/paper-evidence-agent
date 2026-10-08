@@ -32,7 +32,12 @@ _DECISION_SYSTEM = (
     "label 取 支持/部分支持/相矛盾/证据不足 之一。evidence 每项含 paragraph_id 与 quote，"
     "quote 必须是候选段落中的逐字精确子串，不得改写、拼接或翻译。"
     "仅在你需要额外检索或读取已知邻居段落时才使用 retrieve；"
-    "retrieve 至少给出一个 queries 或一个已知 neighbor_paragraph_ids。"
+    "retrieve 至少给出一个 queries 或一个已知 neighbor_paragraph_ids；"
+    "neighbor_paragraph_ids 里给出任一已见段落 ID 即可，系统会一并返回它相邻的段落"
+    "（ordinal 前后各一个），不需要自己推算相邻 ID。"
+    "首次检索为空时只能输出 retrieve 且 queries 必须非空。"
+    "确定判断（支持/部分支持/相矛盾）必须至少给出一条可逐字定位的 evidence；"
+    "只有证据不足可以没有 evidence。"
     "不要输出解释或推理过程。"
 )
 

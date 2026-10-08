@@ -286,9 +286,11 @@ def export_diagnostic_packet(
         return _conflict(ConflictResponse(error_code=None, status=detail.status, stage=detail.stage,
                                           message="来源使用范围不允许导出"))
     run_config = services.store.get_run_config(id)
-    authorized = run_config.authorized_recipients if run_config is not None else []
-    if body.recipient not in authorized:
-        return _fail(400, None, "接收方未获授权")
+    # 诊断接收方与模型接收方分开（术语表「6. 诊断包」）：模型调用授权不等于
+    # 诊断外传授权，这里只承认运行配置里的观测/诊断接收方。
+    authorized_recipient = run_config.observability.recipient if run_config is not None else None
+    if not authorized_recipient or body.recipient != authorized_recipient:
+        return _fail(400, None, "诊断接收方未获授权")
     return services.projector.consented(id, body.recipient)
 
 
@@ -384,7 +386,12 @@ def _validate_common(
         return _fail(400, ErrorCode.DOI_INVALID, "DOI 格式无效")
     if not authorized_recipients or services.settings.primary_recipient not in authorized_recipients:
         return _fail(400, None, "授权缺少主接收方")
-    full = tuple({services.settings.primary_recipient, *services.settings.fallback_recipients})
+    configured = {services.settings.primary_recipient, *services.settings.fallback_recipients}
+    if not set(authorized_recipients) <= configured:
+        # 授权只能收窄，不能通过请求体扩大预览范围（术语表「调用账与版本归属」）。
+        return _fail(400, None, "授权接收方不在已配置范围内")
+    # Ordered, so the "full" digest equals the /api/run-config digest.
+    full = (services.settings.primary_recipient, *services.settings.fallback_recipients)
     allowed = {
         services.settings.config_digest(full),
         services.settings.config_digest(tuple(authorized_recipients)),

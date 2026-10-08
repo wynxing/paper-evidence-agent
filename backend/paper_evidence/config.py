@@ -73,7 +73,13 @@ class Settings:
         profile = os.environ.get("PAPER_EVIDENCE_PROFILE", "daily")
         fallback = tuple(item for item in os.environ.get("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", "").split(",") if item)
         langfuse = os.environ.get("PAPER_EVIDENCE_LANGFUSE_ENABLED", "").lower() in {"1", "true", "yes"}
-        recipient = os.environ.get("PAPER_EVIDENCE_LANGFUSE_RECIPIENT") or None
+        # 已授权观测/诊断接收方，与模型接收方分开。它与 langfuse_enabled 解耦：
+        # 否则不开启观测导出就无法授权任何诊断接收方。
+        recipient = (
+            os.environ.get("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT")
+            or os.environ.get("PAPER_EVIDENCE_LANGFUSE_RECIPIENT")
+            or None
+        )
         return cls(
             profile="evaluation" if profile == "evaluation" else "daily",
             data_dir=Path(data_dir) if data_dir else Path.cwd() / ".paper-evidence",
@@ -81,7 +87,7 @@ class Settings:
             fallback_recipients=fallback,
             model_base_url=os.environ.get("PAPER_EVIDENCE_MODEL_BASE_URL", DEFAULT_MODEL_BASE_URL),
             contact_email=os.environ.get("PAPER_EVIDENCE_CONTACT_EMAIL", ""),
-            observability=Observability(langfuse_enabled=langfuse, recipient=recipient if langfuse else None),
+            observability=Observability(langfuse_enabled=langfuse, recipient=recipient),
         )
 
     def criteria(self) -> CriteriaReference:

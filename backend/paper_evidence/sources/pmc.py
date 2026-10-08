@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 
 from paper_evidence.domain import ContractError, ErrorCode
-from paper_evidence.sources.http import Fetcher
+from paper_evidence.sources.http import Fetcher, classify_status
 
 __all__ = ["PmcRecord", "PmcClient", "classify_license"]
 
@@ -65,19 +65,27 @@ class PmcClient:
         self._mailto = contact_email
 
     async def convert_to_pmcid(self, doi: str, deadline: float | None) -> str | None:
-        """Map a DOI to a PMCID; None means no PMC full-text source is confirmed."""
+        """Map a DOI to a PMCID; None means the official lookup confirmed no record.
+
+        Only a 200 whose payload has no pmcid means "no PMC full text"; any other
+        status is an upstream failure, because SOURCE_UNAVAILABLE must not absorb
+        authentication, parameter or protocol errors (术语表「4. 错误码」).
+        """
 
         params = {"ids": doi, "format": "json"}
         if self._mailto:
             params["email"] = self._mailto
         response = await self._fetcher.get(self._converter, params=params, deadline=deadline)
         if response.status_code != 200:
-            return None
+            raise ContractError(classify_status(response.status_code), "PMC ID 转换响应异常")
         try:
             payload = response.json()
         except ValueError as error:
             raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "PMC ID 转换响应无效") from error
-        for record in payload.get("records") or []:
+        records = payload.get("records")
+        if not isinstance(records, list):
+            raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "PMC ID 转换响应缺少 records")
+        for record in records:
             pmcid = record.get("pmcid")
             if pmcid:
                 return pmcid if pmcid.startswith("PMC") else f"PMC{pmcid}"

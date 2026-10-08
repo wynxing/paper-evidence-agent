@@ -57,9 +57,26 @@ def test_client_does_not_retry_a_transient_failure():
         complete(build(handler))
     assert raised.value.error_code is ErrorCode.UPSTREAM_RATE_LIMITED
     assert calls["n"] == 1  # recovery belongs to the Proxy, not the client
-    attempt = raised.value.attempt
+    attempt = raised.value.call.attempts[0]
     assert attempt.status == "error" and attempt.recovery_kind == "none"
     assert attempt.error_code is ErrorCode.UPSTREAM_RATE_LIMITED
+
+
+def test_failed_and_successful_calls_share_the_params_digest():
+    """失败路径写的是脱敏参数摘要，不是 request id。"""
+
+    def good(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    def bad(request):
+        return httpx.Response(503, json={})
+
+    reply = complete(build(good))
+    with pytest.raises(ModelFailure) as raised:
+        complete(build(bad))
+    failure = raised.value.call
+    assert failure.params_digest == reply.call.params_digest
+    assert failure.params_digest != "r1"
 
 
 @pytest.mark.parametrize("status,code", [

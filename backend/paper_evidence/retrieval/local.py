@@ -29,6 +29,10 @@ class StoreRetriever:
         return self._store.search(source_id, match, self._context_limit)
 
     def read_neighbors(self, source_id: str, paragraph_ids: list[str]) -> list[Paragraph]:
-        # The query is source-scoped, so ids from another source resolve to
-        # nothing instead of leaking paragraphs across frozen sources.
+        """Read the given paragraphs plus their ordinal±1 neighbours.
+
+        The query is source-scoped, so ids from another source resolve to
+        nothing instead of leaking paragraphs across frozen sources.
+        """
+
         return self._store.read_neighbors(source_id, paragraph_ids)

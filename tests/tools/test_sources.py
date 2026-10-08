@@ -164,9 +164,49 @@ def test_fetch_returns_a_licensed_snapshot_with_a_version_hash():
     snapshot = run(build(fetch_handler()), deadline=time.monotonic() + 60)
     assert snapshot.metadata.license == "CC BY"
     assert snapshot.metadata.pmcid == "PMC123"
-    assert snapshot.metadata.access_url == "https://open.example/x"
+    # access_url 必须指向实际冻结的 PMC 版本，而不是 OpenAlex 的 landing page。
+    assert snapshot.metadata.access_url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/"
+    assert snapshot.open_locations == ("https://open.example/x",)
     assert snapshot.metadata.version_hash == hashlib.sha256(JATS).hexdigest()
     assert snapshot.source_id == f"PMC123:{snapshot.metadata.version_hash}"
+
+
+@pytest.mark.parametrize("status,expected", [
+    (401, ErrorCode.UPSTREAM_AUTH_FAILED),
+    (403, ErrorCode.UPSTREAM_AUTH_FAILED),
+    (400, ErrorCode.UPSTREAM_INVALID_REQUEST),
+    (503, ErrorCode.UPSTREAM_UNAVAILABLE),
+])
+def test_pmc_id_conversion_upstream_errors_are_not_source_unavailable(status, expected):
+    """只有 200 且无 pmcid 才是 SOURCE_UNAVAILABLE；认证/参数问题不能伪装成它。"""
+
+    def handler(request):
+        if request.url.host == "crossref.test":
+            return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+        if request.url.host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(status, json={})
+        return httpx.Response(404)
+
+    import time
+
+    with pytest.raises(ContractError) as raised:
+        run(build(handler), deadline=time.monotonic() + 60)
+    assert raised.value.error_code is expected
+
+
+@pytest.mark.parametrize("status,expected", [
+    (401, ErrorCode.UPSTREAM_AUTH_FAILED),
+    (403, ErrorCode.UPSTREAM_AUTH_FAILED),
+])
+def test_crossref_auth_failure_is_not_an_invalid_request(status, expected):
+    def handler(request):
+        if request.url.host == "crossref.test":
+            return httpx.Response(status, json={})
+        return httpx.Response(404)
+
+    with pytest.raises(ContractError) as raised:
+        run(build(handler))
+    assert raised.value.error_code is expected
 
 
 def test_doi_mismatch_between_crossref_and_pmc_is_blocked():

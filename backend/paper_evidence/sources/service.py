@@ -61,14 +61,14 @@ class SourceService:
         self._pmc = pmc
         self._openalex = openalex
 
-    async def resolve(self, doi: str) -> SourcePreview:
+    async def resolve(self, doi: str, deadline: float | None = None) -> SourcePreview:
         normalized = require_valid_doi(doi)
-        message = await self._crossref.metadata(normalized, None)
+        message = await self._crossref.metadata(normalized, deadline)
         if message is None:
-            agency = await self._crossref.agency(normalized, None)
+            agency = await self._crossref.agency(normalized, deadline)
             if agency and agency.lower() != "crossref":
                 raise ContractError(ErrorCode.REGISTRATION_AGENCY_UNSUPPORTED, "注册机构不在首版支持范围")
-            if agency is None and not await self._doi_resolver.resolvable(normalized, None):
+            if agency is None and not await self._doi_resolver.resolvable(normalized, deadline):
                 raise ContractError(ErrorCode.DOI_UNRESOLVABLE, "DOI 官方解析服务未找到")
             raise ContractError(ErrorCode.METADATA_NOT_FOUND, "Crossref 未收录该文献")
         return SourcePreview(doi=normalized, title=_title(message), authors=_authors(message), year=_year(message))
@@ -87,10 +87,9 @@ class SourceService:
         require_english(record.language, record.jats_bytes)
 
         hint = await self._openalex.open_access_hint(normalized, deadline)
-        access_url = next(
-            (item["landing_page_url"] for item in hint.get("locations", []) if item.get("landing_page_url")),
-            f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/",
-        )
+        # access_url 与证据 source_url 必须指向实际读取并冻结的 PMC 版本。
+        # OpenAlex 的 landing page 可能指向出版商页面的另一个版本，只作本地线索另存。
+        access_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/"
         version_hash = sha256(record.jats_bytes).hexdigest()
         source = SourceRecord(
             title=_title(message) or record.title,
@@ -102,4 +101,18 @@ class SourceService:
             retrieved_at=datetime.now(timezone.utc).isoformat(),
             version_hash=version_hash,
         )
-        return SourceSnapshot(source_id=f"{pmcid}:{version_hash}", metadata=source, jats_bytes=record.jats_bytes)
+        return SourceSnapshot(
+            source_id=f"{pmcid}:{version_hash}", metadata=source, jats_bytes=record.jats_bytes,
+            open_locations=_open_locations(hint),
+        )
+
+
+def _open_locations(hint: dict) -> tuple[str, ...]:
+    """OpenAlex locations kept as local hints, never as the frozen access URL."""
+
+    seen: list[str] = []
+    for item in hint.get("locations", []):
+        url = item.get("landing_page_url")
+        if url and url not in seen:
+            seen.append(url)
+    return tuple(seen)

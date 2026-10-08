@@ -26,9 +26,9 @@ from paper_evidence.agents.output import (
     parse_query_output,
 )
 from paper_evidence.domain import ContractError, ErrorCode, ResultLabel, Stage, TaskStatus
-from paper_evidence.domain.contracts import Decision, Evidence, EvidenceCandidate, ModelCall
+from paper_evidence.domain.contracts import Decision, Evidence, EvidenceCandidate
 from paper_evidence.domain.records import Paragraph, TaskInput
-from paper_evidence.domain.rules import BudgetState, blocked_label, terminal_status
+from paper_evidence.domain.rules import DEFINITIVE_LABELS, BudgetState, blocked_label, terminal_status
 from paper_evidence.domain.text import quote_spans
 from paper_evidence.graph.support import StageRecorder
 from paper_evidence.models.gateway import ModelFailure
@@ -96,13 +96,15 @@ class BoundedWorkflow:
 
     async def _prepare_source(self, task, deadline, recorder):
         self._check_stop(deadline)
+        # The task deadline reaches the source connectors too (架构「取消与截止时间」).
         preview = await self._stage(recorder, Stage.SOURCE_IDENTITY, "source_resolver",
-                                    self._resolver.resolve(task.doi))
+                                    self._resolver.resolve(task.doi, deadline))
         snapshot = await self._stage(recorder, Stage.FETCH, "full_text_source",
                                      self._fulltext.fetch(task.doi, deadline))
         paragraphs = parse_jats(snapshot)
         await self._db(self._store.link_task_source, task.id, snapshot.source_id)
-        await self._db(self._store.index_source, snapshot.source_id, snapshot.metadata, snapshot.jats_bytes)
+        await self._db(self._store.index_source, snapshot.source_id, snapshot.metadata, snapshot.jats_bytes,
+                       snapshot.open_locations)
         await self._db(self._store.update_source, task.id, snapshot.metadata)
         await self._db(self._store.index_paragraphs, snapshot.source_id, paragraphs)
         return snapshot.source_id, preview
@@ -128,14 +130,15 @@ class BoundedWorkflow:
 
         decision = await self._decide(task, deadline, recorder, budget, claim, round0, round_index=0,
                                       final_only=False)
-        if not round0 and isinstance(decision, FinalAction):
-            # The first empty retrieval must request a supplemental query.
+        if not round0 and not _requests_supplement(decision):
+            # The first empty retrieval must request a supplemental *query*: a
+            # neighbour read cannot answer an empty round (架构「动作与预算」).
             decision = await self._repair_action(
                 task, deadline, recorder, budget, claim, [], round_index=0, final_only=False,
-                note="首次检索为空时必须输出 action=retrieve 申请补充查询。",
+                note="首次检索为空时只能输出 action=retrieve 并提供至少一个非空 queries。",
             )
-            if isinstance(decision, FinalAction):
-                raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "首次检索为空仍输出 final")
+            if not _requests_supplement(decision):
+                raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "首次检索为空时未申请补充查询")
 
         context = list(round0)
         if isinstance(decision, RetrieveAction):
@@ -158,10 +161,10 @@ class BoundedWorkflow:
                     task, deadline, recorder, budget, claim, merged, round_index=1, final_only=True,
                     note="本轮只能输出 action=final，不得再申请补读。",
                 )
-                if isinstance(decision, RetrieveAction):
-                    raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "最终请求要求补读")
 
-        assert isinstance(decision, FinalAction)
+        if not isinstance(decision, FinalAction):
+            # Explicit instead of assert: this must survive ``python -O``.
+            raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "请求未提交最终判断")
         published = await self._validate(task, deadline, recorder, budget, source_id, decision.decision, context)
         return _Outcome(decision=published, error_code=None, stage=Stage.EVIDENCE_VALIDATION)
 
@@ -176,7 +179,8 @@ class BoundedWorkflow:
         except OutputError as error:
             text = await self._repair_request(task, deadline, recorder, budget, stage=Stage.QUERY_GENERATION,
                                               purpose="query_generation", prompt=prompt, round_index=0,
-                                              context=[], note=str(error))
+                                              context=[], note=str(error),
+                                              repairs_request_id=f"{task.id}:query_generation:0")
             try:
                 return parse_query_output(text)
             except OutputError:
@@ -192,24 +196,36 @@ class BoundedWorkflow:
         except OutputError as error:
             text = await self._repair_request(task, deadline, recorder, budget, stage=Stage.DECISION,
                                               purpose="decision", prompt=prompt, round_index=round_index,
-                                              context=context, note=str(error))
+                                              context=context, note=str(error),
+                                              repairs_request_id=f"{task.id}:decision:{round_index}")
             try:
                 return parse_decision_output(text)
             except OutputError:
                 raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "判断输出结构不合法")
 
     async def _repair_action(self, task, deadline, recorder, budget, claim, candidates, *, round_index,
-                             final_only, note, stage=Stage.OUTPUT_REPAIR):
+                             final_only, note, stage=Stage.OUTPUT_REPAIR,
+                             unparsable_code=ErrorCode.MODEL_INVALID_OUTPUT,
+                             exhausted_code=ErrorCode.MODEL_INVALID_OUTPUT):
+        """Repair a decision response once; never return an unparsed action.
+
+        A structurally unusable repair output and an exhausted repair budget are
+        both terminal here, so callers see a typed ContractError instead of a
+        ``None`` or a bare assert. ``exhausted_code`` lets the quote-validation
+        caller report QUOTE_MISMATCH while every other caller stays
+        MODEL_INVALID_OUTPUT.
+        """
+
         prompt = self._prompts.decision(claim, candidates, final_only=final_only)
         text = await self._repair_request(
             task, deadline, recorder, budget, stage=stage, purpose="decision", prompt=prompt,
             round_index=round_index, context=[item.paragraph_id for item in candidates], note=note,
-            repairs_request_id=f"{task.id}:decision:{round_index}",
+            repairs_request_id=f"{task.id}:decision:{round_index}", exhausted_code=exhausted_code,
         )
         try:
             return parse_decision_output(text)
-        except OutputError:
-            return None
+        except OutputError as error:
+            raise ContractError(unparsable_code, "修复后输出仍不合法") from error
 
     async def _main_request(self, task, deadline, recorder, budget, *, stage, purpose, prompt, round_index,
                             context) -> str:
@@ -225,11 +241,15 @@ class BoundedWorkflow:
                                   repairs_request_id=None)
 
     async def _repair_request(self, task, deadline, recorder, budget, *, stage, purpose, prompt, round_index,
-                              context, note, repairs_request_id) -> str:
+                              context, note, repairs_request_id,
+                              exhausted_code=ErrorCode.MODEL_INVALID_OUTPUT) -> str:
         await self._check_cancel(task.id)
         self._check_stop(deadline)
         if not budget.can_dispatch_repair():
-            raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "输出修复额度已用尽")
+            # The caller owns which code describes the still-unfixed defect:
+            # a quote failure that ran out of repairs is QUOTE_MISMATCH, not a
+            # structural failure (术语表「4. 错误码」).
+            raise ContractError(exhausted_code, "输出修复额度已用尽")
         budget.take_repair()
         await self._db(self._store.take_request, task.id, "repair_requests_used")
         request_id = f"{task.id}:output_repair:{round_index}"
@@ -251,10 +271,9 @@ class BoundedWorkflow:
                 repairs_request_id=repairs_request_id,
             )
         except ModelFailure as failure:
-            await self._db(self._store.record_model_call, task.id,
-                           _call_from_failure(request_id, purpose, round_index, self._prompts.version,
-                                              context, repairs_request_id, self._settings.model_alias,
-                                              failure.attempt))
+            # The gateway builds the call record for both outcomes, so a failed
+            # attempt keeps the same params_digest as a successful one.
+            await self._db(self._store.record_model_call, task.id, failure.call)
             await recorder.fail(stage, "model_gateway", failure.error_code, started,
                                 round_index=round_index, request_id=request_id)
             raise ContractError(failure.error_code, "模型上游失败") from failure
@@ -267,8 +286,11 @@ class BoundedWorkflow:
         self._check_stop(deadline)
         await recorder.enter(Stage.RETRIEVAL, "fts5")
         started = time.monotonic()
+        terms = [item for item in queries if item.strip()]
         try:
-            results = await self._db(self._retriever.search, source_id, [item for item in queries if item.strip()])
+            # A neighbour-only retrieve is legal: skip MATCH instead of asking
+            # FTS5 to compile an empty expression.
+            results = await self._db(self._retriever.search, source_id, terms) if terms else []
             if neighbor_ids:
                 neighbors = await self._db(self._retriever.read_neighbors, source_id, list(neighbor_ids))
                 results = _dedupe([*results, *neighbors])
@@ -295,30 +317,38 @@ class BoundedWorkflow:
     async def _validate(self, task, deadline, recorder, budget, source_id, draft: DecisionDraft, context):
         await recorder.enter(Stage.EVIDENCE_VALIDATION, "quote_check")
         started = time.monotonic()
+        allowed = {item.paragraph_id for item in context}
         try:
-            published = await self._build_decision(source_id, draft)
+            published = await self._build_decision(source_id, draft, allowed)
         except QuoteError as error:
             await recorder.fail(Stage.EVIDENCE_VALIDATION, "quote_check", ErrorCode.QUOTE_MISMATCH, started)
             repaired = await self._repair_action(
                 task, deadline, recorder, budget, task.claim, context, round_index=1, final_only=True,
                 note=f"摘录无法在冻结段落中逐字定位：{error}", stage=Stage.EVIDENCE_VALIDATION,
+                exhausted_code=ErrorCode.QUOTE_MISMATCH,
             )
             if not isinstance(repaired, FinalAction):
                 raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "修复后输出不是最终判断")
             try:
-                published = await self._build_decision(source_id, repaired.decision)
+                published = await self._build_decision(source_id, repaired.decision, allowed)
             except QuoteError:
                 raise ContractError(ErrorCode.QUOTE_MISMATCH, "摘录校验失败")
         await recorder.ok(Stage.EVIDENCE_VALIDATION, "quote_check", started)
         return published
 
-    async def _build_decision(self, source_id: str, draft: DecisionDraft) -> Decision:
+    async def _build_decision(self, source_id: str, draft: DecisionDraft, allowed_ids: set[str]) -> Decision:
+        if draft.label in DEFINITIVE_LABELS and not draft.evidence:
+            # A definitive label without a locatable quote would be published as
+            # COMPLETED + validation=pass, which 术语表「5. 证据门槛」 forbids.
+            raise QuoteError(f"确定判断「{draft.label}」必须至少给出一条可逐字定位的摘录")
         evidence: list[Evidence] = []
         for item in draft.evidence:
-            rows = await self._db(self._store.read_neighbors, source_id, [item.paragraph_id])
-            if not rows:
+            if item.paragraph_id not in allowed_ids:
+                # Only paragraphs that entered this decision's context may back it.
+                raise QuoteError(f"段落 {item.paragraph_id} 未进入本次判断的上下文")
+            paragraph = await self._db(self._store.read_paragraph, source_id, item.paragraph_id)
+            if paragraph is None:
                 raise QuoteError(f"未知段落 {item.paragraph_id}")
-            paragraph: Paragraph = rows[0]
             if not quote_spans(paragraph.text, item.quote):
                 raise QuoteError(f"摘录不在段落 {item.paragraph_id} 中")
             evidence.append(
@@ -381,10 +411,11 @@ def _dedupe(paragraphs):
     return list(seen.values())
 
 
-def _call_from_failure(request_id, purpose, round_index, prompt_version, context, repairs_request_id,
-                       model_alias, attempt) -> ModelCall:
-    return ModelCall(
-        request_id=request_id, purpose=purpose, round=round_index, model_alias=model_alias,
-        prompt_version=prompt_version, params_digest=request_id, context_paragraph_ids=list(context),
-        repairs_request_id=repairs_request_id, attempts=[attempt],
-    )
+def _requests_supplement(decision) -> bool:
+    """True when the response is a retrieve that actually asks for new material.
+
+    An empty first round additionally requires non-empty queries, because a
+    neighbour read alone cannot answer it (架构设计「动作与预算」).
+    """
+
+    return isinstance(decision, RetrieveAction) and any(item.strip() for item in decision.queries)

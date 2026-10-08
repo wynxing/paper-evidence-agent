@@ -9,7 +9,7 @@ DOI_UNRESOLVABLE. Authentication, 429, 5xx and timeout remain upstream failures.
 import httpx
 
 from paper_evidence.domain import ContractError, ErrorCode
-from paper_evidence.sources.http import Fetcher
+from paper_evidence.sources.http import Fetcher, classify_status
 
 __all__ = ["CrossrefClient", "DoiResolver"]
 
@@ -44,7 +44,8 @@ class CrossrefClient:
         if response.status_code == 404:
             return None
         if response.status_code != 200:
-            raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "Crossref 元数据响应无效")
+            # 401/403 是认证失败，不能报成参数错误（术语表「4. 错误码」）。
+            raise ContractError(classify_status(response.status_code), "Crossref 元数据响应无效")
         try:
             return response.json()["message"]
         except (ValueError, KeyError) as error:
@@ -79,4 +80,4 @@ class DoiResolver:
             return False
         if 300 <= response.status_code < 400 or response.status_code == 200:
             return True
-        raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "DOI 解析服务响应异常")
+        raise ContractError(classify_status(response.status_code), "DOI 解析服务响应异常")

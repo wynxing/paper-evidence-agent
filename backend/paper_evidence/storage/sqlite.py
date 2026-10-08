@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS sources (
     access_url TEXT,
     retrieved_at TEXT,
     version_hash TEXT,
+    open_locations TEXT,
     jats_bytes BLOB
 );
 CREATE TABLE IF NOT EXISTS paragraphs (
@@ -271,6 +272,12 @@ class SqliteStore:
         ]
 
     def claim_next(self, deadline_at: float | None = None) -> TaskInput | None:
+        """Atomically claim one queued task.
+
+        ``deadline_at`` is a wall-clock epoch second kept for the API's expiry
+        check; the worker's own run deadline stays a monotonic timestamp.
+        """
+
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
@@ -285,7 +292,7 @@ class SqliteStore:
                 self._conn.execute(
                     """UPDATE tasks SET status = ?, stage = 'source_identity', claimed_at = ?,
                            deadline_at = ?, updated_at = ? WHERE id = ? AND status = ?""",
-                    (TaskStatus.RUNNING.value, _monotonic(), deadline_at, _now(), row["id"], TaskStatus.QUEUED.value),
+                    (TaskStatus.RUNNING.value, _epoch(), deadline_at, _now(), row["id"], TaskStatus.QUEUED.value),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
@@ -332,7 +339,7 @@ class SqliteStore:
                         return self._cancel_response(row, cancel_requested=True)
                     return self._conflict(row, "任务已结束，不能取消")
                 deadline = row["deadline_at"]
-                if deadline is not None and not row["cancel_requested"] and _monotonic() > deadline:
+                if deadline is not None and not row["cancel_requested"] and _epoch() > deadline:
                     # An expired task settles as TASK_TIMEOUT before this conflict.
                     self._conn.execute(
                         "UPDATE tasks SET status = ?, error_code = ?, updated_at = ? WHERE id = ?",
@@ -356,7 +363,10 @@ class SqliteStore:
                 self._conn.execute("ROLLBACK")
                 raise
         refreshed = self._row(task_id)
-        assert refreshed is not None
+        if refreshed is None:
+            # The row was deleted between the transaction and this read; the API
+            # maps None to 404 instead of failing on a missing dict.
+            return None
         return self._cancel_response(refreshed, cancel_requested=True)
 
     def _cancel_response(self, row: sqlite3.Row | dict, cancel_requested: bool) -> CancelResponse:
@@ -413,38 +423,40 @@ class SqliteStore:
         )
 
     def delete(self, task_id: str) -> str:
-        """Delete a terminal task; return 'deleted', 'missing' or 'conflict'."""
+        """Delete a terminal task in one transaction; return 'deleted', 'missing' or 'conflict'."""
 
-        row = self._row(task_id)
-        if row is None:
-            return "missing"
-        if TaskStatus(row["status"]) not in TERMINAL_STATUSES:
-            return "conflict"
-        source_ids = [item["source_id"] for item in self._query(
-            "SELECT source_id FROM check_sources WHERE task_id = ?", (task_id,))]
-        for table in ("feedback", "execution", "model_calls", "candidates", "diagnostic_exports"):
-            self._write(f"DELETE FROM {table} WHERE task_id = ?", (task_id,))
-        self._write("DELETE FROM check_sources WHERE task_id = ?", (task_id,))
-        self._write("DELETE FROM tasks WHERE id = ?", (task_id,))
-        for source_id in source_ids:
-            remaining = self._query("SELECT 1 FROM check_sources WHERE source_id = ? LIMIT 1", (source_id,))
-            if not remaining:
-                self._delete_source(source_id)
-        return "deleted"
-
-    def _delete_source(self, source_id: str) -> None:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
-                self._conn.execute(
-                    "DELETE FROM paragraphs_fts WHERE paragraph_id IN "
-                    "(SELECT paragraph_id FROM paragraphs WHERE source_id = ?)", (source_id,))
-                self._conn.execute("DELETE FROM paragraphs WHERE source_id = ?", (source_id,))
-                self._conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
+                rows = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchall()
+                if not rows:
+                    self._conn.execute("COMMIT")
+                    return "missing"
+                if TaskStatus(rows[0]["status"]) not in TERMINAL_STATUSES:
+                    self._conn.execute("COMMIT")
+                    return "conflict"
+                source_ids = [item["source_id"] for item in self._conn.execute(
+                    "SELECT source_id FROM check_sources WHERE task_id = ?", (task_id,)).fetchall()]
+                for table in ("feedback", "execution", "model_calls", "candidates", "diagnostic_exports"):
+                    self._conn.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,))
+                self._conn.execute("DELETE FROM check_sources WHERE task_id = ?", (task_id,))
+                self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+                for source_id in source_ids:
+                    remaining = self._conn.execute(
+                        "SELECT 1 FROM check_sources WHERE source_id = ? LIMIT 1", (source_id,)).fetchall()
+                    if not remaining:
+                        # A source cache is dropped only with its last reference, in the
+                        # same transaction, so no half-deleted state can survive a failure.
+                        self._conn.execute(
+                            "DELETE FROM paragraphs_fts WHERE paragraph_id IN "
+                            "(SELECT paragraph_id FROM paragraphs WHERE source_id = ?)", (source_id,))
+                        self._conn.execute("DELETE FROM paragraphs WHERE source_id = ?", (source_id,))
+                        self._conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
                 self._conn.execute("COMMIT")
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
+        return "deleted"
 
     # ------------------------------------------------------- records & index
 
@@ -503,13 +515,15 @@ class SqliteStore:
     def link_task_source(self, task_id: str, source_id: str) -> None:
         self._write("INSERT OR IGNORE INTO check_sources (task_id, source_id) VALUES (?, ?)", (task_id, source_id))
 
-    def index_source(self, source_id: str, source: SourceRecord, jats_bytes: bytes) -> None:
+    def index_source(self, source_id: str, source: SourceRecord, jats_bytes: bytes,
+                     open_locations: tuple[str, ...] = ()) -> None:
         self._write(
             """INSERT OR REPLACE INTO sources (source_id, doi, pmcid, title, license, version,
-                   access_url, retrieved_at, version_hash, jats_bytes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   access_url, retrieved_at, version_hash, open_locations, jats_bytes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (source_id, source.doi, source.pmcid, source.title, source.license, source.version,
-             source.access_url, source.retrieved_at, source.version_hash, jats_bytes),
+             source.access_url, source.retrieved_at, source.version_hash,
+             json.dumps(list(open_locations), ensure_ascii=False), jats_bytes),
         )
 
     def index_paragraphs(self, source_id: str, paragraphs: list[Paragraph]) -> None:
@@ -543,7 +557,10 @@ class SqliteStore:
         if not rows:
             return None
         row = rows[0]
-        return {key: row[key] for key in row.keys() if key != "jats_bytes"}
+        stored = {key: row[key] for key in row.keys() if key != "jats_bytes"}
+        # Local OpenAlex hint; not part of the public SourceRecord contract.
+        stored["open_locations"] = json.loads(row["open_locations"]) if row["open_locations"] else []
+        return stored
 
     def source_for_task(self, task_id: str) -> str | None:
         rows = self._query("SELECT source_id FROM check_sources WHERE task_id = ? LIMIT 1", (task_id,))
@@ -562,14 +579,35 @@ class SqliteStore:
             raise ContractError(ErrorCode.RETRIEVAL_FAILED, f"检索失败：{type(error).__name__}") from error
         return [_paragraph(row) for row in rows]
 
+    def read_paragraph(self, source_id: str, paragraph_id: str) -> Paragraph | None:
+        """Read exactly one paragraph from the frozen source, or None."""
+
+        rows = self._query("SELECT * FROM paragraphs WHERE source_id = ? AND paragraph_id = ?",
+                           (source_id, paragraph_id))
+        return _paragraph(rows[0]) if rows else None
+
     def read_neighbors(self, source_id: str, paragraph_ids: list[str]) -> list[Paragraph]:
+        """Read the given paragraphs plus their immediate neighbours.
+
+        邻居按冻结解析器写入的 ordinal±1 展开（术语表「文本与定位契约」），所以补读
+        一次就能同时拿到相邻段落。Unknown or foreign ids resolve to nothing: both
+        queries stay source-scoped, so no paragraph leaks across frozen sources.
+        """
+
         if not paragraph_ids:
             return []
         placeholders = ",".join("?" for _ in paragraph_ids)
-        rows = self._query(
-            f"""SELECT * FROM paragraphs WHERE source_id = ? AND paragraph_id IN ({placeholders})
-                ORDER BY ordinal""",
+        known = self._query(
+            f"SELECT ordinal FROM paragraphs WHERE source_id = ? AND paragraph_id IN ({placeholders})",
             (source_id, *paragraph_ids),
+        )
+        if not known:
+            return []
+        ordinals = sorted({value for row in known for value in (row["ordinal"] - 1, row["ordinal"], row["ordinal"] + 1)})
+        marks = ",".join("?" for _ in ordinals)
+        rows = self._query(
+            f"SELECT * FROM paragraphs WHERE source_id = ? AND ordinal IN ({marks}) ORDER BY ordinal",
+            (source_id, *ordinals),
         )
         return [_paragraph(row) for row in rows]
 
@@ -600,7 +638,12 @@ def _ordinal(paragraph_id: str) -> int:
         return 0
 
 
-def _monotonic() -> float:
-    import time
+def _epoch() -> float:
+    """Wall-clock seconds since the epoch.
 
-    return time.monotonic()
+    ``claimed_at``/``deadline_at`` are persisted and read by another process, so
+    they must not use ``time.monotonic()`` (meaningless across a restart). The
+    worker keeps its own in-memory monotonic deadline for the run itself.
+    """
+
+    return datetime.now(timezone.utc).timestamp()

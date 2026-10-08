@@ -17,6 +17,7 @@ __all__ = [
     "BLOCKED_SOURCE_CODES",
     "BudgetState",
     "CRITERIA_VERSION",
+    "DEFINITIVE_LABELS",
     "FAILED_CODES",
     "blocked_label",
     "criteria_reference",
@@ -27,6 +28,10 @@ __all__ = [
 CRITERIA_VERSION = "0.6"
 
 ACADEMIC_LABELS: tuple[AcademicLabel, ...] = ("支持", "部分支持", "相矛盾", "证据不足")
+
+# 「支持」「部分支持」「相矛盾」是确定判断：展示前每条摘录都要能在冻结段落中
+# 逐字定位，所以这些标签不允许零摘录（术语表「5. 证据门槛」）。
+DEFINITIVE_LABELS: frozenset[str] = frozenset({"支持", "部分支持", "相矛盾"})
 
 # DOI / metadata / identity / licence / full-text availability problems.
 BLOCKED_SOURCE_CODES = frozenset({
@@ -140,6 +145,7 @@ def criteria_snapshot() -> dict[str, object]:
             ],
             "published_validation": "pass",
             "insufficient_evidence_may_have_no_quote": True,
+            "definitive_labels_require_quote": True,
             "semantic_quality_checked_by": "evaluation",
         },
         "labels": {

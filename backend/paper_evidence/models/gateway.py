@@ -21,11 +21,16 @@ __all__ = ["ModelFailure", "OpenAIChatGateway"]
 
 
 class ModelFailure(ContractError):
-    """A failed logical request carrying the attempt record that must be stored."""
+    """A failed logical request carrying the call record that must be stored.
 
-    def __init__(self, error_code: ErrorCode, attempt: ModelAttempt, message: str = "") -> None:
+    The gateway builds the record for both outcomes, so a failed attempt keeps
+    the same ``params_digest`` as a successful one instead of reusing the
+    request id.
+    """
+
+    def __init__(self, error_code: ErrorCode, call: ModelCall, message: str = "") -> None:
         super().__init__(error_code, message)
-        self.attempt = attempt
+        self.call = call
 
 
 def _status_error(status: int) -> ErrorCode:
@@ -108,6 +113,21 @@ class OpenAIChatGateway:
             "cache": {"no-cache": True},
         }
 
+        def call(attempts: list[ModelAttempt]) -> ModelCall:
+            """One logical request record, shared by the success and failure paths."""
+
+            return ModelCall(
+                request_id=request_id,
+                purpose=purpose,
+                round=round_index,
+                model_alias=self._alias,
+                prompt_version=prompt_version,
+                params_digest=digest_of({"model": self._alias, "temperature": 0, "stream": False, "cache": False}),
+                context_paragraph_ids=list(context_paragraph_ids or []),
+                repairs_request_id=repairs_request_id,
+                attempts=attempts,
+            )
+
         def attempt(error_code: ErrorCode | None, payload: dict | None, duration_ms: int,
                     response: httpx.Response | None = None) -> ModelAttempt:
             return ModelAttempt(
@@ -135,13 +155,15 @@ class OpenAIChatGateway:
                 f"{self._base}/v1/chat/completions", json=body, headers=headers, timeout=timeout
             )
         except httpx.TimeoutException:
-            raise ModelFailure(ErrorCode.UPSTREAM_TIMEOUT, attempt(ErrorCode.UPSTREAM_TIMEOUT, None, _ms(started)))
+            raise ModelFailure(ErrorCode.UPSTREAM_TIMEOUT,
+                               call([attempt(ErrorCode.UPSTREAM_TIMEOUT, None, _ms(started))]))
         except (httpx.ConnectError, httpx.TransportError, httpx.RemoteProtocolError):
-            raise ModelFailure(ErrorCode.UPSTREAM_UNAVAILABLE, attempt(ErrorCode.UPSTREAM_UNAVAILABLE, None, _ms(started)))
+            raise ModelFailure(ErrorCode.UPSTREAM_UNAVAILABLE,
+                               call([attempt(ErrorCode.UPSTREAM_UNAVAILABLE, None, _ms(started))]))
 
         if response.status_code != 200:
             code = _status_error(response.status_code)
-            raise ModelFailure(code, attempt(code, None, _ms(started), response))
+            raise ModelFailure(code, call([attempt(code, None, _ms(started), response)]))
 
         try:
             payload = response.json()
@@ -149,21 +171,11 @@ class OpenAIChatGateway:
         except (ValueError, KeyError, IndexError, TypeError):
             raise ModelFailure(
                 ErrorCode.UPSTREAM_INVALID_REQUEST,
-                attempt(ErrorCode.UPSTREAM_INVALID_REQUEST, None, _ms(started), response),
+                call([attempt(ErrorCode.UPSTREAM_INVALID_REQUEST, None, _ms(started), response)]),
             )
 
-        call = ModelCall(
-            request_id=request_id,
-            purpose=purpose,
-            round=round_index,
-            model_alias=self._alias,
-            prompt_version=prompt_version,
-            params_digest=digest_of({"model": self._alias, "temperature": 0, "stream": False, "cache": False}),
-            context_paragraph_ids=list(context_paragraph_ids or []),
-            repairs_request_id=repairs_request_id,
-            attempts=[attempt(None, payload, _ms(started), response)],
-        )
-        return ModelReply(text=text if isinstance(text, str) else str(text), call=call)
+        return ModelReply(text=text if isinstance(text, str) else str(text),
+                          call=call([attempt(None, payload, _ms(started), response)]))
 
 
 def _ms(started: float) -> int:

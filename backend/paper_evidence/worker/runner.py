@@ -25,8 +25,11 @@ class SingleTaskWorker:
     async def run_once(self) -> bool:
         """Claim and process at most one task; return whether one was processed."""
 
-        deadline = time.monotonic() + self._settings.timeouts.task_seconds
-        task = await asyncio.to_thread(self._store.claim_next, deadline)
+        task_seconds = self._settings.timeouts.task_seconds
+        # The run itself is bounded by a monotonic clock; the value persisted for
+        # the API's expiry check is a wall-clock epoch (same clock, same duration).
+        deadline = time.monotonic() + task_seconds
+        task = await asyncio.to_thread(self._store.claim_next, time.time() + task_seconds)
         if task is None:
             return False
         workflow = self._workflow_factory(task)
