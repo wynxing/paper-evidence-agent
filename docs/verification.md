@@ -128,3 +128,56 @@ PY
 覆盖：OpenAPI 响应表与架构文档双向一致（不再放宽 `501`）、前端对象形状、领域枚举与默认预算、规范 JSON 摘要与文本/定位契约、FTS5 查询编译与 JATS 确定性、来源内检索与索引故障返回 `RETRIEVAL_FAILED`、任务路由的创建/授权/取消/重试/删除/反馈/诊断脱敏、来源与网关的状态映射（含 `httpx.MockTransport` 桩）、有界工作流的正常/补读/全局修复/预算耗尽/来源阻断/总超时/已受理取消出口。
 
 未覆盖：真实 Crossref、DOI 官方解析服务、PMC ID 转换与 OAI-PMH、OpenAlex 和本机 LiteLLM Proxy 的连通性与契约；Agnes 或任何真实模型调用；LangGraph 编排（当前为等价的显式状态机 `graph/workflow.py`）；Langfuse 导出；Playwright 端到端；论文语义验收与研究评测。单 worker、一次一任务的并发假设未做压力验证。该提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+
+## PR #8 复审修正（2026-10-08）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `b0ace2963625b7d584edba766bb91d939a21f1d7`；本记录在独立提交中写入，避免提交哈希自指 |
+| 关联 | [PR #8 复审](https://github.com/wynxing/paper-evidence-agent/pull/8#pullrequestreview-5455493360)（`2cf33e6` 上 4 项阻塞、3 项建议同 PR 修、8 项非阻塞建议）；分支 `feat/backend-implementation`，仍在工作树 `.worktrees/backend-impl` |
+| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖或 CI |
+| 对象 | `graph/workflow.py`、`agents/output.py`、`agents/prompts.py`、`api/app.py`、`config.py`、`domain/rules.py`、`domain/records.py`、`models/gateway.py`、`retrieval/`、`sources/`、`storage/sqlite.py`、`worker/runner.py` 及对应测试与开发指南 |
+
+### 复审意见的处置
+
+| 复审意见 | 处置 |
+| --- | --- |
+| 阻塞 1：确定判断零摘录也会发布 | `_build_decision` 对「支持/部分支持/相矛盾」要求至少一条摘录，否则抛 `QuoteError` 走一次全局修复；`DEFINITIVE_LABELS` 与判据快照同步记录该门槛。「证据不足」仍可无摘录 |
+| 阻塞 2：修复输出不可解析时撞 assert | `_repair_action` 解析失败改为抛 `ContractError(MODEL_INVALID_OUTPUT)`；`_verify` 的 `assert` 改为显式 raise；后端已无 `assert`（`python -O` 下不再出现 `None.decision`） |
+| 阻塞 3：只给邻居 ID 的 retrieve 必然失败 | `_search` 在 queries 为空时跳过 MATCH 只读邻居；`RetrieveAction` 校验「至少一个非空 queries 或已知邻居 ID」；首次检索为空时要求非空 queries，两类都在派发前走输出校验与修复 |
+| 阻塞 4：授权快照可被扩大；诊断接收方用错列表 | 入队前校验 `set(authorized_recipients) ⊆ {primary, *fallback}`，越界 400；全量接收方改为有序元组，使摘要与 `/api/run-config` 一致；诊断导出改由运行配置的观测/诊断接收方授权，未配置或不等时 400 |
+| 建议 5：摘录错误的错误码 | `_repair_request` 增加 `exhausted_code`：摘录校验失败且修复额度用尽报 `QUOTE_MISMATCH`，结构/动作修复仍报 `MODEL_INVALID_OUTPUT` |
+| 建议 6：上游认证/参数错误被当成无来源 | `convert_to_pmcid`、`crossref.metadata` 和 DOI 解析探测改用 `classify_status()`；只有 200 且无 pmcid 才是 `SOURCE_UNAVAILABLE` |
+| 建议 7：`access_url` 指向非冻结版本 | `access_url` 与证据 `source_url` 固定为实际冻结的 PMC 版本 URL；OpenAlex 位置改存本地线索列 `sources.open_locations`，不进入诊断包 |
+| 非阻塞：墙钟时间戳 | `claimed_at`/`deadline_at` 改为墙钟 UTC 秒，取消入口的到期判定与 API 读同一时钟 |
+| 非阻塞：worker 未传 deadline | `SourceResolver.resolve` 增加可选 deadline，worker 的 `source_identity` 阶段把任务剩余时间传入来源连接器 |
+| 非阻塞：证据段落未限定上下文 | `_build_decision` 只接受进入本次判断上下文的段落 ID |
+| 非阻塞：邻居读取是空操作 | `read_neighbors` 真正返回 `ordinal±1` 相邻段落，新增 `read_paragraph` 精确读取；提示词与端口说明同步 |
+| 非阻塞：`delete` 多次事务 | 删除（含按引用回收来源缓存）合并为单个事务 |
+| 非阻塞：失败路径 `params_digest` | `ModelFailure` 携带完整 `ModelCall`，成功与失败路径共用同一 `params_digest` |
+| 非阻塞：ElementTree 前提 | 开发指南注明 PMC OAI-PMH 使用标准库 `xml.etree.ElementTree`（expat）及其实体膨胀限制为前提 |
+
+### 实际检查
+
+以下命令均从工作树仓库根目录执行。
+
+| 检查 | 结果 |
+| --- | --- |
+| `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml -q --basetemp=<临时目录>` | **138 passed，1 warning**（净增 30 条用例）。警告仍为 Starlette TestClient 对 httpx 的既有弃用提示，未隐藏 |
+| `backend/.venv/Scripts/python.exe -m pip check` | No broken requirements found |
+| `npm --prefix frontend run build` | vue-tsc 类型检查与 Vite 生产构建通过（前端未改动） |
+| `PAPER_EVIDENCE_DATA_DIR=<临时目录> backend/.venv/Scripts/python.exe -m paper_evidence.worker` | 退出码 `0`，输出“本次处理了 0 个任务，队列已空” |
+| `grep -rn "assert " backend/paper_evidence/` | 无匹配；后端不再依赖运行时断言 |
+| `backend/.venv/Scripts/python.exe -O -c "..."`（导入 workflow 与 gateway） | 优化模式下导入正常 |
+
+说明：不加 `--basetemp` 时，测试进度到 100% 后本机沙箱的 safe-delete 守卫会拦截 pytest 清理历史临时目录（`SAFE_DELETE_BULK_GUARD_ERROR`），导致汇总行未打印、退出码为 1；进度点共 138 个且无 `F`/`E`。使用独立 `--basetemp` 可得完整汇总，即上表的 138 passed。
+
+### 失败与修复过程
+
+首轮完整测试为 **11 failed / 97 passed**，其中 9 条是测试替身与期望未随接口同步（`FakeResolver.resolve` 新增 deadline 形参、`ModelFailure` 改为携带 `ModelCall`、`access_url` 期望值），2 条是实现缺陷。新增回归用例又暴露一处复审未提到的既有缺陷：`_decide` 与 `_generate_queries` 的修复路径漏传 `repairs_request_id`，一旦输出结构错误就会抛 `TypeError` 并被记成 `FAILED + error_code=null`；已补齐目标请求 ID 并留下用例。另移除 `sources/http.py` 与 `storage/sqlite.py` 中两处同类断言依赖。未削弱任何断言。
+
+### 覆盖与限制
+
+新增覆盖：确定判断零摘录（修复后发布 / 修复后仍失败为 `QUOTE_MISMATCH`）、「证据不足」可无摘录、修复输出不可解析与请求 3 修复不可解析均为 `MODEL_INVALID_OUTPUT`、仅邻居 retrieve 成功且不消耗修复额度、无 queries 无邻居的 retrieve 被修复、首次空检索拒绝仅邻居 retrieve、引用上下文外段落被修复、摘录错误在修复额度用尽时报 `QUOTE_MISMATCH`、失败与成功路径 `params_digest` 一致、接收方越权 400 与收窄 202、诊断导出只认观测接收方、PMC 转换与 Crossref 的 401/403/400/503 映射、`access_url` 归属、邻居读取与精确读取、墙钟截止时间与到期结算、RUNNING 取消结算、删除的引用计数与单事务。
+
+未覆盖（与上一节相同并新增）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测。已知限制：任务在 RUNNING 期间被受理取消后，若结果写入恰好落在工作流最后一次取消检查与终态写入之间，该终态仍会按结果提交（存储层的条件写入只保护已提交的终态）；已受理取消与完成结果之间的优先级需在实现取消先行语义时一并处理，本轮未改动该写入条件。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
