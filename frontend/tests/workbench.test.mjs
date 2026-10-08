@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHttpClient, ClientError } from '../src/api/http.ts'
+import { createHttpClient, ClientError, pollingShouldStop } from '../src/api/http.ts'
 import { createDemoClient } from '../src/api/demo.ts'
-import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl } from '../src/state/model.ts'
-import { createPoller } from '../src/state/poller.ts'
-import { validateDetail, validatePacket, validateConfig, validateSource } from '../src/api/validation.ts'
+import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute } from '../src/state/model.ts'
+import { createPoller, POLL_INTERVAL_MS } from '../src/state/poller.ts'
+import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel } from '../src/api/validation.ts'
 import { projectPacket } from '../src/api/export.ts'
 
 test('501 is explicit and never falls back to demo', async () => {
@@ -120,6 +120,62 @@ test('response body transport loss leaves mutation outcome unconfirmed without r
 test('completed evidence cannot appear on a failed task', async () => {
   const d = await createDemoClient().getCheck('demo-1'); d.status = 'FAILED'
   assert.equal(validateDetail(d), false)
+})
+test('retry keeps the source DOI on the new history row', async () => {
+  const c = createDemoClient(); const old = (await c.listChecks())[0]
+  const config = await c.getRunConfig()
+  const consent = { config_digest: config.config_digest, authorized_recipients: [config.primary_recipient], cloud_consent: true, source_confirmed: true }
+  const newer = await c.retryCheck(old.id, consent)
+  const row = (await c.listChecks()).find(item => item.id === newer.id)
+  assert.ok(row)
+  assert.equal(row.doi, old.doi)
+  assert.equal(newer.previous_id, old.id)
+})
+test('blocked result without an error code is rejected', async () => {
+  const c = createDemoClient()
+  const blocked = (await c.listChecks()).find(row => row.status === 'BLOCKED')
+  const detail = await c.getCheck(blocked.id)
+  assert.equal(validateDetail(detail), true)
+  detail.error_code = null
+  assert.equal(validateDetail(detail), false)
+  const packet = await c.getDiagnosticPacket(blocked.id)
+  assert.equal(validatePacket(packet), true)
+  packet.error_code = null
+  assert.equal(validatePacket(packet), false)
+  packet.error_code = ' '
+  assert.equal(validatePacket(packet), false)
+  const cancel = { id: blocked.id, status: 'BLOCKED', cancel_requested: false, label: '无法核验来源', decision: null, error_code: null }
+  assert.equal(validateCancel(cancel), false)
+  cancel.error_code = 'LICENSE_UNKNOWN'
+  assert.equal(validateCancel(cancel), true)
+})
+test('failed history row carrying a label is rejected', async () => {
+  const c = createDemoClient()
+  const rows = await c.listChecks()
+  assert.equal(validateHistory(rows), true)
+  const failed = rows.find(row => row.status === 'FAILED')
+  assert.equal(failed.label, null)
+  assert.equal(validateHistory([{ ...failed, label: '支持' }]), false)
+  assert.equal(validateHistory([{ ...failed, status: 'COMPLETED', label: null }]), false)
+})
+test('malformed check routes are reported instead of a silent new page', () => {
+  assert.deepEqual(parseRoute(''), { view: 'new', id: null, invalid: false })
+  assert.deepEqual(parseRoute('#/new'), { view: 'new', id: null, invalid: false })
+  assert.deepEqual(parseRoute('#/checks/demo-1'), { view: 'check', id: 'demo-1', invalid: false })
+  assert.deepEqual(parseRoute('#/checks/%E4%B8%AD'), { view: 'check', id: '中', invalid: false })
+  assert.deepEqual(parseRoute('#/checks/%E4'), { view: 'new', id: null, invalid: true })
+  assert.deepEqual(parseRoute('#/checks/'), { view: 'new', id: null, invalid: true })
+  assert.deepEqual(parseRoute('#/checks/%20'), { view: 'new', id: null, invalid: true })
+})
+test('polling continues through server errors and stops on contract or missing-task failures', () => {
+  assert.equal(POLL_INTERVAL_MS, 1500)
+  assert.equal(pollingShouldStop(new ClientError('invalid', '契约不一致', 200)), true)
+  assert.equal(pollingShouldStop(new ClientError('business', '任务不存在。', 404)), true)
+  assert.equal(pollingShouldStop(new ClientError('business', '任务已结束。', 409)), true)
+  assert.equal(pollingShouldStop(new ClientError('business', '上游暂不可用。', 503)), false)
+  assert.equal(pollingShouldStop(new ClientError('network', '连接失败。', null)), false)
+  assert.equal(pollingShouldStop(new ClientError('pending', '尚未实现。', 501)), false)
+  assert.equal(pollingShouldStop(new TypeError('offline')), false)
 })
 test('empty history can be reached without deleting active tasks', async () => {
   const c = createDemoClient()

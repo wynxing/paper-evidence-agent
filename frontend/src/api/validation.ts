@@ -21,17 +21,30 @@ const evidenceFields = { paragraph_id: text, quote: text, section: text, source_
 const evidence = shape({ ...evidenceFields, validation: oneOf('pass') })
 const decision = nullable(shape({ agent: oneOf('paper'), label, rationale: text, supported_parts: strings, scope_differences: strings, limitations: strings, evidence: array(evidence), validation: oneOf('pass') }))
 const detailFields = { id: text, status, stage, label: nullable(oneOf('支持', '部分支持', '相矛盾', '证据不足', '无法核验来源')), error_code: errorCode, decision, previous_id: nullable(text), cancel_requested: bool, criteria, accounting, limits }
-function coherentResult(value: unknown): boolean {
+const academicLabels = new Set(['支持', '部分支持', '相矛盾', '证据不足'])
+/** Status, label, decision, and error_code must agree. History rows omit decision and error_code, so those checks run only when the field is present. */
+export function coherentOutcome(value: unknown): boolean {
   if (!record(value)) return false
-  if (value.status === 'COMPLETED') return record(value.decision) && value.label === value.decision.label && (value.label === '证据不足' || (Array.isArray(value.decision.evidence) && value.decision.evidence.length > 0))
-  return value.decision === null && (value.status === 'BLOCKED' ? value.label === '无法核验来源' : value.label === null)
+  const { status, label } = value
+  if (status === 'COMPLETED') {
+    if (typeof label !== 'string' || !academicLabels.has(label)) return false
+    if (!Object.hasOwn(value, 'decision')) return true
+    const outcome = value.decision
+    if (!record(outcome) || outcome.label !== label) return false
+    return label === '证据不足' || (Array.isArray(outcome.evidence) && outcome.evidence.length > 0)
+  }
+  if (label !== (status === 'BLOCKED' ? '无法核验来源' : null)) return false
+  if (Object.hasOwn(value, 'decision') && value.decision !== null) return false
+  if (status === 'BLOCKED' && Object.hasOwn(value, 'error_code')) return typeof value.error_code === 'string' && value.error_code.trim() !== ''
+  return true
 }
-export const validateDetail: Validator = value => shape(detailFields)(value) && coherentResult(value)
+export const validateDetail: Validator = value => shape(detailFields)(value) && coherentOutcome(value)
 export const validateCreated = shape({ id: text, status: oneOf('QUEUED') })
 export const validateSource = shape({ doi: text, title: text, authors: strings, year: nullable(number) })
 export const validateConfig = shape({ profile: oneOf('daily', 'evaluation'), config_digest: text, primary_recipient: text, fallback_recipients: strings, model_alias: text, data_scope: strings, limits, timeouts, observability, criteria })
-export const validateHistory = array(shape({ id: text, doi: text, status, stage, label: detailFields.label }))
-export const validateCancel: Validator = value => shape({ id: text, status, cancel_requested: bool, label: detailFields.label, decision, error_code: errorCode })(value) && coherentResult(value)
+const summary = shape({ id: text, doi: text, status, stage, label: detailFields.label })
+export const validateHistory = array(value => summary(value) && coherentOutcome(value))
+export const validateCancel: Validator = value => shape({ id: text, status, cancel_requested: bool, label: detailFields.label, decision, error_code: errorCode })(value) && coherentOutcome(value)
 export const validateSaved = shape({ id: text, saved: oneOf(true) })
 export const validateDeleted = shape({ id: text, deleted: oneOf(true), message: text })
 export const validateRetry = shape({ id: text, status: oneOf('QUEUED'), previous_id: text })
@@ -40,4 +53,4 @@ const execution = shape({ stage, span_id: text, tool: text, status: oneOf('succe
 const usage = nullable(shape({ prompt_tokens: nullable(number), completion_tokens: nullable(number), total_tokens: nullable(number) }))
 const attempt = shape({ attempt_id: text, attempt_index: number, span_id: text, gateway_request_id: nullable(text), upstream_response_id: nullable(text), configured_model: nullable(text), deployment_id: nullable(text), recipient: nullable(text), response_model: nullable(text), verified_model_version: nullable(text), recovery_kind: oneOf('none', 'retry', 'fallback'), recovery_reason: errorCode, status: oneOf('success', 'error', 'cancelled'), error_code: errorCode, duration_ms: nullable(number), usage })
 const call = shape({ request_id: text, purpose: oneOf('query_generation', 'decision', 'output_repair'), round: oneOf(null, 0, 1), model_alias: text, prompt_version: text, params_digest: text, context_paragraph_ids: strings, repairs_request_id: nullable(text), attempts: array(attempt) })
-export const validatePacket: Validator = value => shape({ schema_version: oneOf('2.2'), criteria, accounting, case_id: text, run_id: text, trace_id: text, previous_id: nullable(text), cancel_requested: bool, status, label: detailFields.label, error_code: nullable(text), input: shape({ doi: text, claim: text, privacy: oneOf('redacted', 'consented'), recipient: nullable(text) }), source, run_config: shape({ profile: oneOf('daily', 'evaluation'), config_digest: text, snapshot_ref: text, authorized_recipients: strings, limits, timeouts, observability }), evidence_candidates: array(shape({ ...evidenceFields, round: oneOf(0, 1), rank: number, entered_context: bool })), decision, execution: array(execution), model_calls: array(call) })(value) && coherentResult(value)
+export const validatePacket: Validator = value => shape({ schema_version: oneOf('2.2'), criteria, accounting, case_id: text, run_id: text, trace_id: text, previous_id: nullable(text), cancel_requested: bool, status, label: detailFields.label, error_code: nullable(text), input: shape({ doi: text, claim: text, privacy: oneOf('redacted', 'consented'), recipient: nullable(text) }), source, run_config: shape({ profile: oneOf('daily', 'evaluation'), config_digest: text, snapshot_ref: text, authorized_recipients: strings, limits, timeouts, observability }), evidence_candidates: array(shape({ ...evidenceFields, round: oneOf(0, 1), rank: number, entered_context: bool })), decision, execution: array(execution), model_calls: array(call) })(value) && coherentOutcome(value)

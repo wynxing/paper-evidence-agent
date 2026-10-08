@@ -8,7 +8,9 @@ const { work } = defineProps<{ work: Workbench }>()
 const panel = ref(true); const tab = ref('decision'); const deletion = ref(false); const feedback = ref('')
 const d = computed(() => work.detail.value)
 const terminal = computed(() => d.value && isTerminal(d.value.status))
-const editable = computed(() => !!work.context.value?.claim)
+const doi = computed(() => work.context.value?.doi || work.history.value.find(row => row.id === d.value?.id)?.doi || '')
+const canRetry = computed(() => !!terminal.value && !!doi.value)
+const canRevise = computed(() => !!work.context.value?.claim && !!doi.value)
 </script>
 <template>
   <div v-if="d" class="detail-layout" :class="{ 'panel-open': panel }">
@@ -28,8 +30,9 @@ const editable = computed(() => !!work.context.value?.claim)
         <p class="help">该意见仅针对指定文献与当前论断的关系，模型标签不等于客观真值。</p>
       </section>
       <details class="disclosure"><summary>调用账与运行信息</summary><dl class="facts"><dt>主请求</dt><dd>{{ d.accounting.main_requests_used }} / {{ d.limits.main_requests }}</dd><dt>输出修复</dt><dd>{{ d.accounting.repair_requests_used }} / {{ d.limits.repair_requests }}</dd><dt>上游尝试</dt><dd>{{ attemptText(d.accounting) }} / 上限 {{ (d.limits.main_requests + d.limits.repair_requests) * d.limits.attempts_per_request }}</dd><dt>费用</dt><dd>未知</dd><dt>排队 / 执行用时</dt><dd>暂无数据</dd><dt>任务标识</dt><dd class="mono">{{ d.id }}</dd></dl></details>
-      <div class="task-actions"><button :disabled="work.busy.value || !terminal" @click="work.prepareEdit(false, true)">重新授权并重试</button><button :disabled="work.busy.value || !editable" @click="work.prepareEdit()">修改原句</button><button :disabled="work.busy.value || !editable" @click="work.prepareEdit(true)">拆分论断</button></div>
-      <p v-if="!editable" class="help">原句不可读取，修改与拆分暂不可用；重试由后端使用原任务输入。</p>
+      <div class="task-actions"><button :disabled="work.busy.value || !canRetry" @click="work.prepareEdit(false, true)">重新授权并重试</button><button :disabled="work.busy.value || !canRevise" @click="work.prepareEdit()">修改原句</button><button :disabled="work.busy.value || !canRevise" @click="work.prepareEdit(true)">拆分论断</button></div>
+      <p v-if="!doi" class="help">无法读取原任务 DOI，请刷新本地历史后再重新核验。</p>
+      <p v-else-if="!work.context.value?.claim" class="help">原句不可读取，修改与拆分暂不可用；重试由后端使用原任务输入。</p>
       <section class="form-section"><label for="feedback">留下意见 <span class="muted">可选</span></label><textarea id="feedback" v-model="feedback" rows="2" placeholder="记录你对本次核验的意见。" /><div class="feedback-actions"><button :disabled="!feedback.trim() || work.busy.value" @click="work.feedback(feedback)">保存意见</button><button class="text-button danger" :disabled="!terminal || work.busy.value" @click="deletion = true">删除本地记录</button></div></section>
     </article>
     <aside class="evidence-panel" :class="{ 'desktop-hidden': !panel, 'mobile-hidden': tab !== 'evidence' }" aria-labelledby="evidence-heading"><div class="section-heading"><h2 id="evidence-heading">原文证据</h2><span class="small muted">{{ d.decision?.evidence.length ?? 0 }} 条</span></div><p class="help">摘录与原文位置。相邻上下文当前接口未提供。</p>

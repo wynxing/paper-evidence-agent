@@ -1,9 +1,9 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import type { ApiClient, CheckDetail, CheckSummary, DiagnosticPacket } from '../api/contracts.ts'
-import { createHttpClient, ClientError } from '../api/http.ts'
+import { createHttpClient, ClientError, pollingShouldStop } from '../api/http.ts'
 import { createDemoClient, type DemoScenario } from '../api/demo.ts'
 import { canSubmit, createDraft, invalidateDraft, isTerminal, normalizeDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
-import { createPoller } from './poller.ts'
+import { createPoller, POLL_INTERVAL_MS } from './poller.ts'
 
 export function useWorkbench() {
   const demo = import.meta.env.MODE === 'demo'; const simulation = demo ? createDemoClient() : null
@@ -42,6 +42,7 @@ export function useWorkbench() {
   async function loadRoute() {
     const version = ++routeVersion; reads?.abort(); packetReads?.abort(); abortPreview(); poll?.stop(); poll = null
     detail.value = null; packet.value = null; message.value = ''; connectionError.value = ''; loading.value = false
+    if (route.value.invalid) { message.value = '链接中的任务标识无法识别，已打开新的核验。'; return }
     const { id, view } = route.value; if (!id) return
     reads = new AbortController(); const signal = reads.signal; loading.value = true
     try {
@@ -57,7 +58,11 @@ export function useWorkbench() {
             void refreshHistory()
             if (view === 'diagnostic') void refreshPacket(id, version)
           }
-        }, error => { connectionError.value = describe(error); if (error instanceof ClientError && error.kind !== 'network') poll?.stop() })
+        }, error => {
+          const reason = describe(error)
+          if (pollingShouldStop(error)) { connectionError.value = `${reason} 已停止自动刷新。`; poll?.stop(); return }
+          connectionError.value = reason
+        }, POLL_INTERVAL_MS)
         if (!document.hidden) poll.start()
       }
     } catch (error) { if (version === routeVersion && !signal.aborted) message.value = describe(error) }
@@ -121,12 +126,19 @@ export function useWorkbench() {
     catch (error) { if (version === routeVersion) message.value = describe(error) }
     finally { busy.value = false }
   }
-  async function semanticExport(recipient: string): Promise<DiagnosticPacket | null> {
-    const id = route.value.id; if (!id || busy.value) return null
+  async function semanticExport(recipient: string, consent: boolean): Promise<DiagnosticPacket | null> {
+    if (consent !== true) { message.value = '导出语义诊断包前需要确认授权。'; return null }
+    const id = route.value.id
+    if (!id || busy.value) { message.value = '当前无法导出语义诊断包。'; return null }
     const version = routeVersion; busy.value = true
-    try { const data = await api.exportDiagnosticPacket(id, { recipient: recipient.trim(), semantic_export_consent: true }); return version === routeVersion ? data : null }
-    catch (error) { if (version === routeVersion) message.value = describe(error); return null }
-    finally { busy.value = false }
+    try {
+      const data = await api.exportDiagnosticPacket(id, { recipient: recipient.trim(), semantic_export_consent: consent })
+      if (version !== routeVersion) { message.value = '页面已切换，这次导出结果未使用。'; return null }
+      return data
+    } catch (error) {
+      message.value = version === routeVersion ? describe(error) : '页面已切换，这次导出结果未使用。'
+      return null
+    } finally { busy.value = false }
   }
   function selectScenario(value: DemoScenario) { scenario.value = value; simulation?.selectScenario(value) }
   function hashChanged() { route.value = parseRoute(location.hash); void loadRoute() }

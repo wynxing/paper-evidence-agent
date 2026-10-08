@@ -5,6 +5,8 @@ export class ClientError extends Error {
   kind: 'pending' | 'network' | 'invalid' | 'business'; status: number | null; code: string | null
   constructor(kind: ClientError['kind'], message: string, status: number | null = null, code: string | null = null) { super(message); this.kind = kind; this.status = status; this.code = code }
 }
+/** Contract mismatches and missing or conflicting tasks cannot be recovered by another poll. */
+export function pollingShouldStop(error: unknown) { return error instanceof ClientError && (error.kind === 'invalid' || error.status === 404 || error.status === 409) }
 export function createHttpClient(fetcher: typeof fetch = fetch, signal?: AbortSignal): ApiClient {
   async function request<T>(path: string, check: (x: unknown) => boolean, method = 'GET', body?: unknown): Promise<T> {
     let response: Response

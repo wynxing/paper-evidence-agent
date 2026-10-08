@@ -25,7 +25,14 @@ export const errors: Record<string, string> = {
 }
 export function attemptText(a: Accounting) { return a.verification === 'verified' && a.upstream_attempts_used !== null ? `${a.upstream_attempts_used} 次` : `至少 ${a.observed_upstream_attempts} 次，实际次数未知` }
 export function safeSourceUrl(value: string): string | null { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
-export function parseRoute(hash: string): { view: 'new' | 'check' | 'diagnostic'; id: string | null } {
-  const m = /^#\/checks\/([^/]+)(\/diagnostic)?$/.exec(hash)
-  try { return m ? { view: m[2] ? 'diagnostic' : 'check', id: decodeURIComponent(m[1]!) } : { view: 'new', id: null } } catch { return { view: 'new', id: null } }
+export function parseRoute(hash: string): { view: 'new' | 'check' | 'diagnostic'; id: string | null; invalid: boolean } {
+  const path = hash.startsWith('#') ? hash.slice(1) : hash
+  if (path === '' || path === '/' || path === '/new') return { view: 'new', id: null, invalid: false }
+  const m = /^\/checks\/([^/]+)(\/diagnostic)?$/.exec(path)
+  if (!m) return { view: 'new', id: null, invalid: true }
+  try {
+    const id = decodeURIComponent(m[1]!)
+    if (!id.trim()) return { view: 'new', id: null, invalid: true }
+    return { view: m[2] ? 'diagnostic' : 'check', id, invalid: false }
+  } catch { return { view: 'new', id: null, invalid: true } }
 }
