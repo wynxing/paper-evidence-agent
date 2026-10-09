@@ -112,6 +112,40 @@ class FakeGateway:
         return ModelReply(text=item, call=call)
 
 
+class CancellingGateway(FakeGateway):
+    """Accepts a cancel as the canned final-decision response is returned.
+
+    This reproduces the review's window exactly: the last ``_check_cancel`` (at
+    the start of ``_main_request``) already passed, the cancel then lands while
+    the final model call is in flight, and the terminal write follows. The
+    cancel must win (测试方案「取消先于完成」).
+    """
+
+    def __init__(self, responses, store, task_id, *, purpose="decision", round_index=0, when="after"):
+        super().__init__(responses)
+        self._store = store
+        self._task_id = task_id
+        self._purpose = purpose
+        self._round = round_index
+        self._when = when
+
+    async def complete(self, request_id, prompt, deadline, *, purpose, round_index, prompt_version="",
+                       context_paragraph_ids=None, repairs_request_id=None):
+        target = purpose == self._purpose and round_index == self._round
+        if target and self._when == "before":
+            # Cancel lands inside the model call, after the request's own
+            # `_check_cancel` already passed.
+            self._store.request_cancel(self._task_id)
+        reply = await super().complete(
+            request_id, prompt, deadline, purpose=purpose, round_index=round_index,
+            prompt_version=prompt_version, context_paragraph_ids=context_paragraph_ids,
+            repairs_request_id=repairs_request_id,
+        )
+        if target and self._when == "after":
+            self._store.request_cancel(self._task_id)
+        return reply
+
+
 @pytest.fixture
 def settings(tmp_path):
     return replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
@@ -349,3 +383,50 @@ def test_quote_error_after_the_single_repair_is_used_reports_quote_mismatch(stor
     # The structural repair consumed the single global repair slot.
     assert detail.accounting.repair_requests_used == 1
     assert gateway.calls[2]["purpose"] == "output_repair"
+
+
+# ------------------------------------------- cancel-vs-completion race (round 3)
+
+
+def test_cancel_accepted_during_the_final_model_call_wins(store, settings):
+    """最终模型调用期间受理的取消必须赢过完成结果（复审复现路径）。
+
+    走真实认领路径进入 RUNNING，取消在最终 decision 响应返回时落库；此前的实现会把
+    任务落成 COMPLETED 并带确定判断。
+    """
+
+    gateway = CancellingGateway([QUERIES, final_json()], store, "t1")
+    workflow = BoundedWorkflow(
+        store=store, resolver=FakeResolver(), fulltext=FakeFulltext(),
+        retriever=StoreRetriever(store, settings.retrieval_context_limit),
+        prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+    )
+    task = make_task(store, settings)
+    store.claim_next(time.time() + 180)  # QUEUED -> RUNNING via the real claim path
+    assert store.cancel_accepted("t1") is False
+
+    detail = asyncio.run(workflow.run(task, time.monotonic() + 180))
+
+    assert store.cancel_accepted("t1") is True
+    assert detail.status is TaskStatus.CANCELLED
+    assert detail.label is None and detail.decision is None
+    assert detail.error_code is None
+
+
+def test_cancel_accepted_before_a_failure_still_wins(store, settings):
+    """取消先于失败受理时，终态是 CANCELLED，而不是 FAILED。"""
+
+    gateway = CancellingGateway([QUERIES, ContractError(ErrorCode.UPSTREAM_TIMEOUT, "timeout")], store, "t1",
+                                when="before")
+    workflow = BoundedWorkflow(
+        store=store, resolver=FakeResolver(), fulltext=FakeFulltext(),
+        retriever=StoreRetriever(store, settings.retrieval_context_limit),
+        prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+    )
+    task = make_task(store, settings)
+    store.claim_next(time.time() + 180)
+
+    detail = asyncio.run(workflow.run(task, time.monotonic() + 180))
+
+    assert detail.status is TaskStatus.CANCELLED
+    assert detail.label is None and detail.decision is None

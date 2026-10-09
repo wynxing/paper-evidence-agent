@@ -37,11 +37,24 @@ class SingleTaskWorker:
             await workflow.run(task, deadline)
         except Exception:  # unclassified execution failure keeps a null error code
             logger.exception("Workflow raised for task %s", task.id)
-            await asyncio.to_thread(
-                self._store.finish, task.id, status=TaskStatus.FAILED, stage="wait",
-                error_code=None, label=None, decision=None,
-            )
+            await asyncio.to_thread(self._settle_failure, task.id)
         return True
+
+    def _settle_failure(self, task_id: str) -> None:
+        """Store the unclassified failure, letting an accepted cancel win.
+
+        ``finish`` refuses a non-CANCELLED terminal on a task whose cancel was
+        already accepted, so this settles that row as CANCELLED rather than
+        leaving it RUNNING until the next orphan sweep.
+        """
+
+        written = self._store.finish(
+            task_id, status=TaskStatus.FAILED, stage="wait", error_code=None, label=None, decision=None,
+        )
+        if not written and self._store.cancel_accepted(task_id):
+            self._store.finish(
+                task_id, status=TaskStatus.CANCELLED, stage="wait", error_code=None, label=None, decision=None,
+            )
 
 
 async def drain(worker: SingleTaskWorker) -> int:

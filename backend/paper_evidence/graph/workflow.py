@@ -379,14 +379,41 @@ class BoundedWorkflow:
         )
 
     async def _complete(self, task, recorder, outcome: _Outcome):
-        await self._finish(task, TaskStatus.COMPLETED, outcome.stage, outcome.error_code,
-                           outcome.decision.label, outcome.decision)
+        # A cancel accepted while the final model call was in flight wins over
+        # the result (测试方案「取消先于完成」, FR-4). This pre-check narrows the
+        # window; the conditional write in finish() closes it atomically.
+        if await self._db(self._store.cancel_accepted, task.id):
+            return await self._cancel(task, recorder, recorder.stage or Stage.WAIT)
+        written = await self._finish(task, TaskStatus.COMPLETED, outcome.stage, outcome.error_code,
+                                     outcome.decision.label, outcome.decision)
+        if not written:
+            return await self._after_refused_write(task, recorder)
         return await self._db(self._store.get, task.id)
 
     async def _terminal(self, task, recorder, error_code, stage: Stage):
         status = terminal_status(error_code)
         label = blocked_label() if status is TaskStatus.BLOCKED else None
-        await self._finish(task, status, stage, error_code, label, None)
+        # A non-CANCELLED terminal never overrides an accepted cancel; the
+        # cancel is not an academic result, so it takes precedence over both a
+        # completion and a failure that raced it.
+        if await self._db(self._store.cancel_accepted, task.id):
+            return await self._cancel(task, recorder, stage)
+        written = await self._finish(task, status, stage, error_code, label, None)
+        if not written:
+            return await self._after_refused_write(task, recorder)
+        return await self._db(self._store.get, task.id)
+
+    async def _after_refused_write(self, task, recorder):
+        """Reconcile a refused terminal write.
+
+        ``finish`` refuses either because another writer already committed a
+        terminal state, or because the cancel was accepted on this task. In the
+        latter case the cancel must win, so the stored RUNNING + cancel_requested
+        row is settled as CANCELLED instead of being reread as a live task.
+        """
+
+        if await self._db(self._store.cancel_accepted, task.id):
+            return await self._cancel(task, recorder, recorder.stage or Stage.WAIT)
         return await self._db(self._store.get, task.id)
 
     async def _cancel(self, task, recorder, stage: Stage):
@@ -396,8 +423,10 @@ class BoundedWorkflow:
         await self._finish(task, TaskStatus.CANCELLED, stage, None, None, None)
         return await self._db(self._store.get, task.id)
 
-    async def _finish(self, task, status, stage, error_code, label, decision):
-        await self._db(
+    async def _finish(self, task, status, stage, error_code, label, decision) -> bool:
+        """Write a terminal state; ``False`` means the guard refused the write."""
+
+        return await self._db(
             self._store.finish, task.id, status=status, stage=stage.value, error_code=error_code,
             label=label,
             decision=decision.model_dump(mode="json") if decision is not None else None,

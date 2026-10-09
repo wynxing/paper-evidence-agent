@@ -116,6 +116,49 @@ def test_worker_finishes_a_claimed_cancelled_task_as_cancelled(store):
     assert stored.label is None and stored.decision is None
 
 
+def test_completion_without_a_cancel_still_lands(store):
+    """没有受理取消时，普通终态照常写入（守卫只挡已受理的取消）。"""
+
+    make_task(store)
+    store.claim_next(time.time() + 180)
+
+    assert store.finish("t1", status=TaskStatus.COMPLETED, stage="evidence_validation",
+                        error_code=None, label="支持", decision=None) is True
+    stored = store.get("t1")
+    assert stored.status is TaskStatus.COMPLETED
+    assert stored.label == "支持"
+
+
+def test_accepted_cancel_blocks_a_later_completion_and_wins(store):
+    """RUNNING 期间受理的取消必须先落：完成结果不得覆盖（测试方案「取消先于完成」）。
+
+    必须经 ``claim_next`` 进入 RUNNING —— 若仍是 QUEUED，``request_cancel`` 会直接把
+    任务落成 CANCELLED，测不出这个窗口。
+    """
+
+    make_task(store)
+    store.claim_next(time.time() + 180)  # QUEUED -> RUNNING via the real claim path
+    store.request_cancel("t1")
+    assert store.cancel_accepted("t1") is True
+
+    # A completed result must not overwrite the accepted cancel.
+    assert store.finish("t1", status=TaskStatus.COMPLETED, stage="evidence_validation",
+                        error_code=None, label="支持", decision=None) is False
+    running = store.get("t1")
+    assert running.status is TaskStatus.RUNNING
+    assert running.label is None and running.decision is None
+
+    # A failure must not overwrite it either.
+    assert store.finish("t1", status=TaskStatus.FAILED, stage="wait",
+                        error_code=None, label=None, decision=None) is False
+    assert store.get("t1").status is TaskStatus.RUNNING
+
+    # The cancel path then commits CANCELLED.
+    assert store.finish("t1", status=TaskStatus.CANCELLED, stage="wait",
+                        error_code=None, label=None, decision=None) is True
+    assert store.get("t1").status is TaskStatus.CANCELLED
+
+
 def test_settle_orphaned_running_splits_cancelled_from_interrupted(store):
     make_task(store, "t1")
     make_task(store, "t2")

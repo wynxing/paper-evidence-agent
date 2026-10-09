@@ -405,14 +405,25 @@ class SqliteStore:
         label: str | None,
         decision: dict | None,
     ) -> bool:
-        """Conditionally store a terminal result; never overwrite another terminal state."""
+        """Conditionally store a terminal result under two atomic guards.
+
+        Following 架构设计「取消与截止时间」and 测试方案「取消先于完成」:
+
+        * no terminal write replaces an already-committed terminal state;
+        * a non-``CANCELLED`` terminal state never lands on a task whose cancel
+          was already accepted (``cancel_requested = 1``). The window between the
+          workflow's last ``_check_cancel`` and this write spans a whole model
+          call, so the guard belongs here, not only in the workflow. When this
+          returns ``False`` for that reason the caller commits ``CANCELLED``.
+        """
 
         cursor = self._write(
             """UPDATE tasks SET status = ?, stage = ?, error_code = ?, label = ?, decision = ?, updated_at = ?
-               WHERE id = ? AND status IN (?, ?)""",
+               WHERE id = ? AND status IN (?, ?) AND (? = ? OR cancel_requested = 0)""",
             (status.value, stage, error_code.value if error_code else None, label,
              json.dumps(decision, ensure_ascii=False) if decision is not None else None,
-             _now(), task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value),
+             _now(), task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
+             status.value, TaskStatus.CANCELLED.value),
         )
         return cursor.rowcount > 0
 
