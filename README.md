@@ -60,7 +60,7 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 
 ## 持续集成
 
-推送到 `main` 以及拉取请求会运行 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。GitHub 上的检查名是 `CI / backend` 和 `CI / frontend`。
+推送到 `main` 以及拉取请求会运行 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。GitHub 上的检查名是 `backend` 和 `frontend`。
 
 - `backend`：Python 3.12，按锁定文件安装后端依赖并以 `--no-deps --no-build-isolation` 安装本地包，然后运行完整 pytest。契约检查会调用前端的 TypeScript 编译器，因此该作业也会执行 `npm --prefix frontend ci`。
 - `frontend`：Node.js 22，执行 `npm --prefix frontend ci`，再执行 `npm --prefix frontend run build`（vue-tsc 与 Vite）。
