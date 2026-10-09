@@ -58,6 +58,15 @@ npm --prefix frontend run build
 
 pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前端构建包含 TypeScript 类型检查。接口占位行为、模块边界和 worker 入口说明见[开发指南](docs/development.md)。
 
+## 持续集成
+
+推送到 `main` 以及拉取请求会运行 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。GitHub 上的检查名是 `CI / backend` 和 `CI / frontend`。
+
+- `backend`：Python 3.12，按锁定文件安装后端依赖并以 `--no-deps --no-build-isolation` 安装本地包，然后运行完整 pytest。契约检查会调用前端的 TypeScript 编译器，因此该作业也会执行 `npm --prefix frontend ci`。
+- `frontend`：Node.js 22，执行 `npm --prefix frontend ci`，再执行 `npm --prefix frontend run build`（vue-tsc 与 Vite）。
+
+`frontend/package.json` 没有 `test` 脚本，CI 不运行 `npm test`。这些检查不调用真实模型或来源接口。
+
 ## 文档
 
 - [产品需求](docs/prd.md)
