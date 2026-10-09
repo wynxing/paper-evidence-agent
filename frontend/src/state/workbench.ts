@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import type { ApiClient, CheckDetail, CheckSummary, DiagnosticPacket } from '../api/contracts.ts'
 import { createHttpClient, ClientError, pollingShouldStop } from '../api/http.ts'
 import { createDemoClient, type DemoScenario } from '../api/demo.ts'
-import { canSubmit, createDraft, invalidateDraft, isTerminal, normalizeDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
+import { canSubmit, createDraft, diagnosticExportRequest, invalidateDraft, isTerminal, normalizeDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
 import { createPoller, POLL_INTERVAL_MS } from './poller.ts'
 
 export function useWorkbench() {
@@ -126,14 +126,18 @@ export function useWorkbench() {
     catch (error) { if (version === routeVersion) message.value = describe(error) }
     finally { busy.value = false }
   }
-  async function semanticExport(recipient: string, consent: boolean): Promise<DiagnosticPacket | null> {
-    if (consent !== true) { message.value = '导出语义诊断包前需要确认授权。'; return null }
+  async function semanticExport(recipient: string, consent: boolean, authorizedPacket: DiagnosticPacket | null): Promise<DiagnosticPacket | null> {
     const id = route.value.id
     if (!id || busy.value) { message.value = '当前无法导出语义诊断包。'; return null }
+    let request
+    try { request = diagnosticExportRequest(packet.value, id, recipient, consent, authorizedPacket) }
+    catch (error) { message.value = error instanceof Error ? error.message : '当前无法导出语义诊断包。'; return null }
     const version = routeVersion; busy.value = true
     try {
-      const data = await api.exportDiagnosticPacket(id, { recipient: recipient.trim(), semantic_export_consent: consent })
+      const data = await api.exportDiagnosticPacket(id, request)
       if (version !== routeVersion) { message.value = '页面已切换，这次导出结果未使用。'; return null }
+      try { diagnosticExportRequest(packet.value, route.value.id, recipient, consent, authorizedPacket) }
+      catch (error) { message.value = error instanceof Error ? error.message : '诊断包已变化，请重新预览并授权。'; return null }
       return data
     } catch (error) {
       message.value = version === routeVersion ? describe(error) : '页面已切换，这次导出结果未使用。'
