@@ -36,12 +36,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # The lockfile already pins runtime, test, and build dependencies.
+      # --no-deps --no-build-isolation matches the local editable install.
       - name: Install backend
         run: |
           python -m pip install -r backend/requirements.lock
           python -m pip install --no-deps --no-build-isolation -e backend
 
-      # Contract checks invoke the TypeScript compiler from the frontend install.
+      # Contract checks run node frontend/scripts/inspect-contracts.mjs, which
+      # imports typescript from this install. They fail, rather than skip, without it.
+      # npm ci reports one high-severity advisory in the locked tree; do not bump versions to clear it.
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
 
@@ -63,6 +67,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # package.json has no test script, so this job only builds (vue-tsc plus Vite).
+      # npm ci reports one high-severity advisory in the locked tree; do not bump versions to clear it.
       - name: Install dependencies
         run: npm --prefix frontend ci
 
