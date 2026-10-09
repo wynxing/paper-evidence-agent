@@ -180,4 +180,50 @@ PY
 
 新增覆盖：确定判断零摘录（修复后发布 / 修复后仍失败为 `QUOTE_MISMATCH`）、「证据不足」可无摘录、修复输出不可解析与请求 3 修复不可解析均为 `MODEL_INVALID_OUTPUT`、仅邻居 retrieve 成功且不消耗修复额度、无 queries 无邻居的 retrieve 被修复、首次空检索拒绝仅邻居 retrieve、引用上下文外段落被修复、摘录错误在修复额度用尽时报 `QUOTE_MISMATCH`、失败与成功路径 `params_digest` 一致、接收方越权 400 与收窄 202、诊断导出只认观测接收方、PMC 转换与 Crossref 的 401/403/400/503 映射、`access_url` 归属、邻居读取与精确读取、墙钟截止时间与到期结算、RUNNING 取消结算、删除的引用计数与单事务。
 
-未覆盖（与上一节相同并新增）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测。已知限制：任务在 RUNNING 期间被受理取消后，若结果写入恰好落在工作流最后一次取消检查与终态写入之间，该终态仍会按结果提交（存储层的条件写入只保护已提交的终态）；已受理取消与完成结果之间的优先级需在实现取消先行语义时一并处理，本轮未改动该写入条件。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+未覆盖（与上一节相同并新增）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测。已知限制：任务在 RUNNING 期间被受理取消后，若结果写入恰好落在工作流最后一次取消检查与终态写入之间，该终态仍会按结果提交（存储层的条件写入只保护已提交的终态）；已受理取消与完成结果之间的优先级需在实现取消先行语义时一并处理，本轮未改动该写入条件。该已知限制已由下一节「取消竞态修正（2026-10-09）」关闭。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+
+## 取消竞态修正（2026-10-09）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `0f786da840ee243d63a4a4bcc0e29351d08d8d95`；本记录在独立提交中写入，避免提交哈希自指 |
+| 关联 | [独立复审复现](https://github.com/wynxing/paper-evidence-agent/pull/8#issuecomment-6062135693)（`283819e0`）与 [复审更新](https://github.com/wynxing/paper-evidence-agent/pull/8#pullrequestreview-5458224438)：上轮被定为「已知限制」的取消竞态改判阻塞，`283819e0` 上的 APPROVE 撤回 |
+| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖或 CI |
+| 对象 | `storage/sqlite.py`、`graph/workflow.py`、`worker/runner.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/session/test_workflow.py`、`docs/development.md` |
+
+### 缺陷与根因
+
+复审复现：任务经 `claim_next` 进入 `RUNNING` 后受理取消，最终仍落 `COMPLETED` 并带确定判断。根因有两处：
+
+- `SqliteStore.finish()` 的写入条件为 `status IN ('QUEUED', 'RUNNING')`，只保护已提交的终态，不检查 `cancel_requested`；
+- `_check_cancel` 只在 `run` / `_main_request` / `_repair_request` / `_search` 调用，`_validate → _build_decision → _complete → _finish` 之间没有检查点，窗口跨过整次最终模型调用。
+
+这与 `docs/prd.md` FR-4（受理取消时显示「正在取消」，本地执行结束后显示「已取消」）和 `docs/test-plan.md`「取消先于完成」不符。
+
+### 处置
+
+| 建议 | 处置 |
+| --- | --- |
+| `_complete` / `_terminal` 落库前复查 `cancel_accepted` | 已实现：两处在写入前复查，已受理则走 `_cancel` |
+| `finish()` 不得让非 `CANCELLED` 终态覆盖 `cancel_requested = 1` 的 RUNNING 任务 | 已实现：SQL 条件加 `(? = 'CANCELLED' OR cancel_requested = 0)`，在同一事务内判定；`_finish` 返回写入是否成功，被拒时 `_after_refused_write` 收敛为取消优先，否则读取已提交终态 |
+| 补回归：必须经 `claim_next` 进入 RUNNING 后再 `request_cancel`，断言终态 `CANCELLED` | 已补：storage 与 session 两处；session 用例用网关钩子在最终 decision 响应返回时受理取消，复现复审路径 |
+
+两条建议都做了：流程内复查缩小窗口，存储层条件写入把窗口原子关闭。取消现在同时优先于「完成」与「失败」。
+
+### 实际检查
+
+以下命令均从工作树仓库根目录执行。
+
+| 检查 | 结果 |
+| --- | --- |
+| `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml -q --basetemp=<临时目录>` | **142 passed，1 warning**（净增 4 条用例）。警告仍为 Starlette TestClient 对 httpx 的既有弃用提示，未隐藏 |
+| `git stash push -- backend/paper_evidence/storage/sqlite.py backend/paper_evidence/graph/workflow.py` 后重跑 4 条新用例 | **3 failed / 1 passed**：取消优先级用例全部失败，护栏用例（无取消时普通完成照常写入）仍通过；随后 `git stash pop` 恢复。确认回归用例可复现该缺陷，不是恒真断言 |
+| `backend/.venv/Scripts/python.exe -m pip check` | No broken requirements found |
+| `npm --prefix frontend run build` | vue-tsc 类型检查与 Vite 生产构建通过（前端未改动） |
+| `PAPER_EVIDENCE_DATA_DIR=<临时目录> backend/.venv/Scripts/python.exe -m paper_evidence.worker` | 退出码 `0`，输出“本次处理了 0 个任务，队列已空” |
+
+### 覆盖与限制
+
+新增覆盖：RUNNING + 已受理取消时 `COMPLETED` 与 `FAILED` 写入均被拒且状态保持 `RUNNING`、随后 `CANCELLED` 落库；无取消时普通完成仍写入（守卫不误伤）；取消在最终 decision 响应返回时受理 → 终态 `CANCELLED` 且 `label`/`decision` 为 `null`；取消先于上游失败受理 → 终态 `CANCELLED` 而非 `FAILED`。
+
+未覆盖（沿用上节）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测，单 worker、一次一任务的假设未做压力验证。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
