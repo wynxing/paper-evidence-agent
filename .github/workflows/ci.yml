@@ -67,10 +67,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # package.json has no test script, so this job only builds (vue-tsc plus Vite).
       # npm ci reports one high-severity advisory in the locked tree; do not bump versions to clear it.
       - name: Install dependencies
         run: npm --prefix frontend ci
+
+      # Node's built-in runner (frontend/package.json "test"). This job used to only build because that script did not exist yet.
+      # The job id and name stay `frontend`; this step does not add a third check.
+      - name: Test
+        run: npm --prefix frontend test
 
       - name: Build
         run: npm --prefix frontend run build
