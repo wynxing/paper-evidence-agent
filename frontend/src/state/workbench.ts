@@ -5,9 +5,44 @@ import { createDemoClient, type DemoScenario } from '../api/demo.ts'
 import { canSubmit, createDraft, invalidateDraft, isTerminal, normalizeDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
 import { createPoller, POLL_INTERVAL_MS } from './poller.ts'
 
-export function useWorkbench() {
-  const demo = import.meta.env.MODE === 'demo'; const simulation = demo ? createDemoClient() : null
-  const api: ApiClient = simulation ?? createHttpClient()
+/** Browser pieces the page already provides. Tests pass fakes; omitted values stay the page globals. */
+export interface WorkbenchHost {
+  location?: { hash: string }
+  document?: { hidden: boolean; addEventListener(type: string, listener: () => void): void; removeEventListener(type: string, listener: () => void): void }
+  window?: { addEventListener(type: string, listener: () => void): void; removeEventListener(type: string, listener: () => void): void }
+}
+/**
+ * Optional dependencies for orchestration tests.
+ * The app calls useWorkbench() with no arguments, so demo mode, the HTTP client, and the poller stay on the page path.
+ * A supplied client is used as given and does not switch the page into demo mode.
+ */
+export interface WorkbenchOptions extends WorkbenchHost {
+  /** Vite mode. Omitted reads import.meta.env.MODE. Only `demo` selects the in-memory client. */
+  mode?: string
+  /**
+   * Client instance, or a factory called once for mutations and again per read with that read's AbortSignal.
+   * Omitted uses the demo client when mode is `demo`, otherwise createHttpClient.
+   */
+  client?: ApiClient | ((signal?: AbortSignal) => ApiClient)
+  /** Poller factory. Omitted uses createPoller. */
+  createPoller?: typeof createPoller
+  /** Poll spacing in milliseconds. Omitted uses POLL_INTERVAL_MS. */
+  pollIntervalMs?: number
+  fetch?: typeof fetch
+}
+export function useWorkbench(options: WorkbenchOptions = {}) {
+  const mode = options.mode ?? import.meta.env?.MODE
+  // An injected client stays in charge. Demo mode applies only when the caller leaves the client unset.
+  const demo = options.client == null && mode === 'demo'
+  const simulation = demo ? createDemoClient() : null
+  const fetchImpl = options.fetch ?? fetch
+  const supplied = options.client
+  const api: ApiClient = simulation ?? (typeof supplied === 'function' ? supplied() : supplied ?? createHttpClient(fetchImpl))
+  const location = options.location ?? globalThis.location
+  const document = options.document ?? globalThis.document
+  const window = options.window ?? globalThis.window
+  const startPoller = options.createPoller ?? createPoller
+  const pollInterval = options.pollIntervalMs ?? POLL_INTERVAL_MS
   const route = ref(parseRoute(location.hash)); const draft = reactive(createDraft())
   const history = ref<CheckSummary[]>([]); const detail = ref<CheckDetail | null>(null); const packet = ref<DiagnosticPacket | null>(null)
   const contexts = reactive(new Map<string, SubmissionContext>())
@@ -18,7 +53,12 @@ export function useWorkbench() {
   let reads: AbortController | null = null; let previewReads: AbortController | null = null; let historyReads: AbortController | null = null; let packetReads: AbortController | null = null
   let routeVersion = 0; let previewVersion = 0; let historyVersion = 0
   let poll: ReturnType<typeof createPoller<CheckDetail>> | null = null
-  function client(signal: AbortSignal): ApiClient { return simulation ?? createHttpClient(fetch, signal) }
+  function client(signal: AbortSignal): ApiClient {
+    if (simulation) return simulation
+    if (typeof supplied === 'function') return supplied(signal)
+    if (supplied) return supplied
+    return createHttpClient(fetchImpl, signal)
+  }
   function describe(error: unknown) { return error instanceof ClientError ? error.message : '操作未完成，请检查连接后重试。' }
   function abortPreview() { previewVersion++; previewReads?.abort(); resolving.value = false }
   function changeClaim(value: string) { draft.claim = value; invalidateDraft(draft, false); abortPreview() }
@@ -51,7 +91,7 @@ export function useWorkbench() {
       detail.value = result
       if (view === 'diagnostic') { const data = await c.getDiagnosticPacket(id); if (version === routeVersion) packet.value = data }
       if (!isTerminal(result.status)) {
-        poll = createPoller(s => client(s).getCheck(id), value => {
+        poll = startPoller(s => client(s).getCheck(id), value => {
           if (version !== routeVersion) return
           detail.value = value; connectionError.value = ''
           if (isTerminal(value.status)) {
@@ -62,7 +102,7 @@ export function useWorkbench() {
           const reason = describe(error)
           if (pollingShouldStop(error)) { connectionError.value = `${reason} 已停止自动刷新。`; poll?.stop(); return }
           connectionError.value = reason
-        }, POLL_INTERVAL_MS)
+        }, pollInterval)
         if (!document.hidden) poll.start()
       }
     } catch (error) { if (version === routeVersion && !signal.aborted) message.value = describe(error) }
