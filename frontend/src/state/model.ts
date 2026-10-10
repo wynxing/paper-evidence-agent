@@ -1,4 +1,4 @@
-import type { Accounting, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
+import type { Accounting, DiagnosticExportRequest, DiagnosticPacket, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
 
 export interface Draft {
   claim: string; doi: string; source: SourcePreview | null; config: RunConfigPreview | null
@@ -13,6 +13,14 @@ export function invalidateDraft(d: Draft, sourceChanged: boolean) {
 export function normalizeDoi(value: string) { return value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '') }
 export function validDoi(value: string) { return /^10\.\d{4,9}\/\S+$/i.test(normalizeDoi(value)) }
 export function canSubmit(d: Draft) { return !!((d.claim.trim() || d.retryId) && validDoi(d.doi) && d.source && d.config && d.sourceConfirmed && d.cloudConsent) }
+export function diagnosticExportRequest(packet: DiagnosticPacket | null, id: string | null, recipient: string, consent: boolean, authorizedPacket: DiagnosticPacket | null): DiagnosticExportRequest {
+  if (!packet || packet !== authorizedPacket || packet.case_id !== id) throw new Error('诊断包或任务已变化，请重新预览并授权。')
+  const configured = packet.run_config.observability.recipient
+  if (!configured?.trim()) throw new Error('当前任务未配置语义诊断接收方，可下载脱敏包。')
+  if (recipient !== configured) throw new Error('接收方必须与当前诊断包配置一致，请重新预览。')
+  if (consent !== true) throw new Error('导出语义诊断包前需要确认授权。')
+  return { recipient: configured, semantic_export_consent: true }
+}
 export const isTerminal = (status: TaskStatus) => !['QUEUED', 'RUNNING'].includes(status)
 export const statuses: Record<TaskStatus, string> = { QUEUED: '排队中', RUNNING: '执行中', COMPLETED: '已完成', BLOCKED: '核验受阻', FAILED: '执行失败', CANCELLED: '已取消', INTERRUPTED: '运行中断' }
 export const stages: Record<string, string> = { wait: '等待', source_identity: '核对来源', license: '检查许可', fetch: '获取全文', query_generation: '生成检索词', retrieval: '检索证据', decision: '判断或申请补读', evidence_validation: '证据校验', output_repair: '修复输出' }
