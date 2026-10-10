@@ -20,6 +20,7 @@ __pycache__/
 /corpus/
 /artifacts/
 /runs/
+.paper-evidence/
 
 # Project-local temporary worktrees
 /.worktrees/
