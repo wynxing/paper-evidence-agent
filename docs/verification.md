@@ -227,3 +227,29 @@ PY
 新增覆盖：RUNNING + 已受理取消时 `COMPLETED` 与 `FAILED` 写入均被拒且状态保持 `RUNNING`、随后 `CANCELLED` 落库；无取消时普通完成仍写入（守卫不误伤）；取消在最终 decision 响应返回时受理 → 终态 `CANCELLED` 且 `label`/`decision` 为 `null`；取消先于上游失败受理 → 终态 `CANCELLED` 而非 `FAILED`。
 
 未覆盖（沿用上节）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测，单 worker、一次一任务的假设未做压力验证。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+
+## 前端工作台编排层（2026-10-10）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `af780eb06601ade2ef86dea4ac4ab32e5063a251`；本节在其后的独立提交中写入，避免提交哈希自指 |
+| 关联 | PR #5 评审延后的 N4（`useWorkbench` 可注入并补编排测试）与 N5（本记录）；CI 的 `frontend` 作业增加 `npm --prefix frontend test`，作业名仍为 `backend` 与 `frontend` |
+| 环境 | Linux、Node.js v22.14.0、npm 10.9.7。命令从仓库根目录执行。未新增依赖，未改锁定文件、后端或公共契约 |
+| 对象 | `frontend/src/state/workbench.ts`、`frontend/tests/workbench-orchestration.test.mjs`、`.github/workflows/ci.yml`、README 持续集成两句 |
+
+### 实际检查
+
+`npm ci` 在改代码之前执行，锁定文件与对象提交相同。测试与构建在对象提交落地且工作区干净时执行。差异检查比较的是该提交与 main。
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm --prefix frontend ci` | 安装 45 个锁定包。安装输出报告 1 个 high severity advisory。未升级依赖 |
+| `npm --prefix frontend test` | **32 passed，0 failed**（1 suite）。其中编排层 11 条，原 `frontend/tests/workbench.test.mjs` 21 条。Node 打印 Type Stripping 实验特性警告，未隐藏 |
+| `npm --prefix frontend run build` | `vue-tsc --noEmit` 通过，Vite 生产构建通过 |
+| `git diff --check origin/main...HEAD` | 无输出，退出码 0。范围是对象提交相对 main，不含本节 |
+
+### 覆盖与限制
+
+编排测试在 Node 内置测试运行器里挂载 `useWorkbench`，注入替身客户端、短间隔的真实轮询器或可控轮询器，以及 hash / 可见性替身。覆盖：提交（含 DOI 规范化、进行中的第二次提交不重发）、轮询推进到终态后停止、网络错误与 503 后续轮询、契约不一致 / 404 / 409 停止轮询、导航后的迟到读取不覆盖当前任务、重试走 `retryCheck` 且新历史行保留 DOI、取消成功后停止轮询、取消失败后续轮询、409 后刷新配置、501 保留草稿且不进入模拟模式、隐藏页面不启动轮询、畸形 hash 提示、注入客户端优先于 demo 模式、未注入时 demo 模式仍用内存客户端、语义导出缺少同意标记时不发请求。
+
+未覆盖：未运行 pytest；未在浏览器中操作工作台；未连接真实后端、文献来源或模型。替身挂载不是 Playwright 端到端。本节不把尚未看到的 CI 结果写成通过。
