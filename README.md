@@ -6,14 +6,12 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 ## 当前状态
 
-后端已实现首版业务流程，前端仍为静态页面：
+后端已实现首版业务流程，前端已提供核验工作台：
 
-- FastAPI 后端可启动，`GET /health` 返回 `200`；运行配置预览、只读来源解析、任务创建/查询/取消/重试/反馈/删除和诊断包接口均为实现代码，不再返回 `501`。
-- 任务写入本地 SQLite + FTS5；来源解析按 Crossref、PMC ID 转换、PMC OAI-PMH 顺序核对身份、许可与语言，只自动处理许可为 CC0 或 CC BY 的英文 JATS 正文。
-- 模型调用经 OpenAI 兼容客户端发往本机 LiteLLM Proxy，客户端不重试；核验流程按有界预算执行查询生成、检索、判断、至多一轮补读和一次全局输出修复。
-- Vue 前端仍提供静态页面，显示“功能待实现”，输入和操作按钮禁用。
+- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部来源与模型连通性、论文语义验收尚未验证。
+- 前端包含新建核验、任务详情和运行诊断，支持显式模拟演示和真实接口模式。模拟材料为构造数据，不访问后端或模型；真实模式调用后端，不回退模拟数据。
 
-尚未验证或未实现：真实 Crossref/PMC/OpenAlex/Proxy 连通性、论文语义验收、LangGraph 编排（当前以等价的显式状态机实现）、Langfuse 导出、Playwright 端到端用例。设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
+设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
 
 ## 环境要求
 
@@ -46,6 +44,8 @@ npm run dev
 
 前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
+默认 `dev` 为真实接口模式。只预览前端交互时，从仓库根目录执行 `npm --prefix frontend run dev:demo`；该模式无需后端，文献、摘录与结果均为构造数据，不访问文献来源或模型。详细启动、接口缺口和验收进展见[联调 Issue #7](https://github.com/wynxing/paper-evidence-agent/issues/7)。
+
 ## 开发检查
 
 从仓库根目录执行：
@@ -54,6 +54,7 @@ npm run dev
 npm --prefix frontend ci
 backend/.venv/bin/python -m pytest -c backend/pyproject.toml
 backend/.venv/bin/python -m pip check
+npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
