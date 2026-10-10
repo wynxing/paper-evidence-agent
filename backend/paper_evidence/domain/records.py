@@ -20,6 +20,9 @@ class SourceSnapshot:
     source_id: str
     metadata: SourceRecord
     jats_bytes: bytes
+    # OpenAlex open-location hints kept locally only; they are not the frozen
+    # access URL and never enter the diagnostic packet.
+    open_locations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

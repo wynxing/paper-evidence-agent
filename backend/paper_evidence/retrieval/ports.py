@@ -11,5 +11,9 @@ class EvidenceRetriever(Protocol):
         ...
 
     def read_neighbors(self, source_id: str, paragraph_ids: list[str]) -> list[Paragraph]:
-        """Read known paragraphs from the same frozen source."""
+        """Read the given paragraphs and their immediate ordinal±1 neighbours.
+
+        Only the frozen source is read; unknown or foreign ids resolve to
+        nothing instead of leaking paragraphs across sources.
+        """
         ...

@@ -6,11 +6,10 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 ## 当前状态
 
-后端处于骨架阶段，前端已提供核验工作台：
+后端已实现首版业务流程，前端已提供核验工作台：
 
-- FastAPI 后端可启动，`GET /health` 返回 `200`；业务接口已声明类型，当前返回 `501 Not Implemented`。
-- Vue 前端包含新建核验、任务详情、运行诊断，支持显式模拟演示和真实接口模式；真实业务调用仍返回 501，不回退模拟数据。
-- 来源解析、持久化、任务执行、模型调用及证据核验尚未实现。
+- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部来源与模型连通性、论文语义验收尚未验证。
+- 前端包含新建核验、任务详情和运行诊断，支持显式模拟演示和真实接口模式。模拟材料为构造数据，不访问后端或模型；真实模式调用后端，不回退模拟数据。
 
 设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
 
@@ -19,7 +18,7 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 - Python 必须使用 3.12（当前后端要求 `>=3.12,<3.13`）
 - Node.js 22.12 或更高版本、npm
 
-依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。当前骨架不需要模型密钥。
+依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。启动后端、查看配置和运行后端测试不需要模型密钥；执行核验任务需要按 [D6](docs/tech-stack.md#d6-模型适配) 配置本机 LiteLLM Proxy，并通过 `PAPER_EVIDENCE_GATEWAY_TOKEN` 提供网关访问凭据。
 
 ## 快速开始
 
@@ -60,6 +59,12 @@ npm --prefix frontend run build
 ```
 
 pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前端构建包含 TypeScript 类型检查。接口占位行为、模块边界和 worker 入口说明见[开发指南](docs/development.md)。
+
+## 持续集成
+
+拉取请求和推送到 `main` 会运行两个检查：`backend` 执行 pytest，`frontend` 执行前端构建。
+
+本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend run build`。
 
 ## 文档
 

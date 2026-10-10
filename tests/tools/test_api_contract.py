@@ -1,9 +1,7 @@
-"""Verify the documented HTTP surface and the explicit, side-effect-free stubs."""
+"""Verify the documented HTTP surface against the OpenAPI schema."""
 
 from copy import deepcopy
 import re
-import socket
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -12,25 +10,6 @@ from fastapi.testclient import TestClient
 from paper_evidence.api.app import app
 
 ROOT = Path(__file__).resolve().parents[2]
-AUTHORIZATION = {
-    "config_digest": "unimplemented-config",
-    "authorized_recipients": ["unimplemented-recipient"],
-    "cloud_consent": True,
-    "source_confirmed": True,
-}
-REQUESTS = [
-    ("GET", "/api/sources/resolve", {"params": {"doi": "10.1234/unimplemented"}}),
-    ("GET", "/api/run-config", {}),
-    ("POST", "/api/checks", {"json": {"claim": "Synthetic input, no paper evidence", "doi": "10.1234/unimplemented", **AUTHORIZATION}}),
-    ("GET", "/api/checks", {"params": {"status": "QUEUED"}}),
-    ("GET", "/api/checks/test-id", {}),
-    ("GET", "/api/checks/test-id/diagnostic-packet", {}),
-    ("POST", "/api/checks/test-id/diagnostic-export", {"json": {"recipient": "unimplemented-recipient", "semantic_export_consent": True}}),
-    ("POST", "/api/checks/test-id/feedback", {"json": {"comment": "Synthetic feedback"}}),
-    ("POST", "/api/checks/test-id/retry", {"json": AUTHORIZATION}),
-    ("POST", "/api/checks/test-id/cancel", {}),
-    ("DELETE", "/api/checks/test-id", {}),
-]
 
 
 def documented_contracts(schema: dict, text: str | None = None) -> dict[tuple[str, str], dict[str, str]]:
@@ -88,11 +67,11 @@ def assert_response_contracts(schema: dict, text: str | None = None) -> None:
     assert declared_routes(schema) == set(documented)
     for (method, path), expected in documented.items():
         operation = schema["paths"][path][method.lower()]
-        # 501 is temporary and checked separately by scaffold-marked tests.
-        actual = set(operation["responses"]) - {"501"}
+        actual = set(operation["responses"])
         assert actual == set(expected), (method, path, actual, set(expected))
         for status, model in expected.items():
             assert response_schema_name(operation, status) == model, (method, path, status)
+
 
 
 def test_documented_routes_have_typed_openapi_contracts():
@@ -139,33 +118,12 @@ def test_response_comparison_detects_drift_in_both_directions(change):
 
 
 @pytest.mark.scaffold
-def test_scaffold_routes_declare_pending_response():
+def test_no_route_declares_a_pending_response():
+    """The temporary 501 scaffold contract is removed once routes are implemented."""
+
     schema = app.openapi()
     for method, path in documented_routes():
-        assert "501" in schema["paths"][path][method.lower()]["responses"]
-
-
-@pytest.mark.scaffold
-@pytest.mark.parametrize("method,path,kwargs", REQUESTS)
-def test_business_routes_are_pending_without_network_or_database(method, path, kwargs, monkeypatch, tmp_path):
-    """Relative writes under the temp directory stay empty.
-
-    Absolute paths are outside this assertion. The guard covers connection
-    setup, not the event-loop self-pipe, so Windows can enter TestClient.
-    """
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("A scaffold route attempted network or database I/O")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(socket, "create_connection", forbidden)
-    monkeypatch.setattr(socket, "getaddrinfo", forbidden)
-    monkeypatch.setattr(sqlite3, "connect", forbidden)
-    with TestClient(app) as client:
-        response = client.request(method, path, **kwargs)
-    assert response.status_code == 501
-    assert response.json() == {"error_code": None, "message": "Not Implemented：功能待实现"}
-    assert list(tmp_path.iterdir()) == []
+        assert "501" not in schema["paths"][path][method.lower()]["responses"]
 
 
 def test_health_is_live():
