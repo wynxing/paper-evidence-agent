@@ -2,7 +2,7 @@ import type { ApiClient } from './contracts.ts'
 import { record, text, validateCancel, validateConfig, validateCreated, validateDeleted, validateDetail, validateHistory, validatePacket, validateRetry, validateSaved, validateSource } from './validation.ts'
 
 export class ClientError extends Error {
-  kind: 'pending' | 'network' | 'invalid' | 'business'; status: number | null; code: string | null
+  kind: 'network' | 'invalid' | 'business'; status: number | null; code: string | null
   constructor(kind: ClientError['kind'], message: string, status: number | null = null, code: string | null = null) { super(message); this.kind = kind; this.status = status; this.code = code }
 }
 /** Contract mismatches and missing or conflicting tasks cannot be recovered by another poll. */
@@ -16,7 +16,6 @@ export function createHttpClient(fetcher: typeof fetch = fetch, signal?: AbortSi
       if (signal?.aborted) throw error
       throw new ClientError('network', method === 'GET' ? '连接失败，请检查服务后重新读取。' : '连接失败，操作结果尚未确认。请刷新任务列表后再决定是否重试。')
     }
-    if (response.status === 501) throw new ClientError('pending', '该功能后端尚未实现。草稿保留，未切换模拟数据。', 501)
     let value: unknown
     try { value = await response.json() } catch (error) {
       if (signal?.aborted) throw error

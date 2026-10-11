@@ -7,12 +7,6 @@ import { createPoller, POLL_INTERVAL_MS } from '../src/state/poller.ts'
 import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel } from '../src/api/validation.ts'
 import { projectPacket } from '../src/api/export.ts'
 
-test('501 is explicit and never falls back to demo', async () => {
-  let calls = 0
-  const client = createHttpClient(async () => { calls++; return new Response(JSON.stringify({ error_code: null, message: 'pending' }), { status: 501 }) })
-  await assert.rejects(client.createCheck({}), e => e instanceof ClientError && e.kind === 'pending')
-  assert.equal(calls, 1)
-})
 test('invalid successful responses and transport failures remain distinct', async () => {
   await assert.rejects(createHttpClient(async () => new Response('{}')).getCheck('a'), e => e.kind === 'invalid')
   await assert.rejects(createHttpClient(async () => { throw new TypeError('private content') }).listChecks(), e => e.kind === 'network' && !e.message.includes('private'))
@@ -174,7 +168,6 @@ test('polling continues through server errors and stops on contract or missing-t
   assert.equal(pollingShouldStop(new ClientError('business', '任务已结束。', 409)), true)
   assert.equal(pollingShouldStop(new ClientError('business', '上游暂不可用。', 503)), false)
   assert.equal(pollingShouldStop(new ClientError('network', '连接失败。', null)), false)
-  assert.equal(pollingShouldStop(new ClientError('pending', '尚未实现。', 501)), false)
   assert.equal(pollingShouldStop(new TypeError('offline')), false)
 })
 test('empty history can be reached without deleting active tasks', async () => {
