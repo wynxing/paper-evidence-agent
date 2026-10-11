@@ -39,6 +39,58 @@ def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "paper-evidence.sqlite3").exists()
 
 
+def test_worker_loop_options_come_from_arguments_or_environment():
+    from paper_evidence.worker.__main__ import DEFAULT_INTERVAL, MIN_INTERVAL, parse_options
+
+    assert parse_options([], {}) == (False, DEFAULT_INTERVAL)
+    assert parse_options(["--loop"], {}) == (True, DEFAULT_INTERVAL)
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_LOOP": "YES"})[0] is True
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_LOOP": "0"})[0] is False
+    assert parse_options(["--interval", "2.5"], {})[1] == 2.5
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_POLL_SECONDS": "3"})[1] == 3.0
+    # 参数覆盖环境变量；非法与非正值回落到安全默认，不会忙等。
+    assert parse_options(["--interval", "9"], {"PAPER_EVIDENCE_WORKER_POLL_SECONDS": "3"})[1] == 9.0
+    assert parse_options(["--interval", "nonsense"], {})[1] == DEFAULT_INTERVAL
+    assert parse_options(["--interval", "0"], {})[1] == MIN_INTERVAL
+    assert parse_options(["--interval"], {})[1] == DEFAULT_INTERVAL
+
+
+def test_drain_forever_keeps_polling_and_stops_on_cancellation():
+    """常驻模式：队列空时按间隔等待，停止时能退出，而不是把任务留在 QUEUED。"""
+
+    import asyncio
+
+    from paper_evidence.worker.runner import drain_forever
+
+    class FakeWorker:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.processed = 0
+
+        async def run_once(self) -> bool:
+            self.calls += 1
+            if self.processed >= 2:
+                return False
+            self.processed += 1
+            return True
+
+    async def scenario() -> tuple[int, int]:
+        worker = FakeWorker()
+        task = asyncio.create_task(drain_forever(worker, 0.01))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return worker.processed, worker.calls
+
+    processed, calls = asyncio.run(scenario())
+    assert processed == 2
+    # 队列空后仍继续轮询（而不是退出），这正是让 QUEUED 任务被执行的前提。
+    assert calls > processed
+
+
 def test_frontend_literals_match_python_contracts():
     source = (ROOT / "frontend/src/api/contracts.ts").read_text(encoding="utf-8")
 
