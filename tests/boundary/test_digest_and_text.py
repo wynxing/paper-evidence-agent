@@ -14,6 +14,8 @@ from paper_evidence.domain.rules import (
     terminal_status,
 )
 from paper_evidence.domain.text import (
+    CLAIM_EXCERPT_LIMIT,
+    claim_excerpt,
     is_blank_claim,
     normalize_paragraph_text,
     paragraph_hash,
@@ -91,3 +93,16 @@ def test_criteria_reference_is_stable_and_content_addressed():
     assert first["snapshot_ref"] == f"criteria:sha256:{first['digest']}"
     assert first["implementation_revision"] == "abc123"
     assert criteria_snapshot()["text_rules"]["quote"] == "精确子串，不 trim，不模糊归一化"
+
+
+def test_claim_excerpt_is_a_bounded_single_line_display_copy():
+    # 摘要只影响展示：换行与连续空白折叠成单个空格，末尾裁剪。
+    assert claim_excerpt("  该干预\n\n 降低了  死亡率 ") == "该干预 降低了 死亡率"
+    assert claim_excerpt("短句") == "短句"
+    long_claim = "甲" * (CLAIM_EXCERPT_LIMIT + 20)
+    excerpt = claim_excerpt(long_claim)
+    assert excerpt == "甲" * CLAIM_EXCERPT_LIMIT + "…"
+    assert len(excerpt) == CLAIM_EXCERPT_LIMIT + 1
+    # 裁剪处不留尾随空格。
+    assert claim_excerpt("x" * CLAIM_EXCERPT_LIMIT + "  rest") == "x" * CLAIM_EXCERPT_LIMIT + "…"
+    assert claim_excerpt("任意长度", limit=0) == "任意长度"

@@ -20,7 +20,10 @@ const accounting = shape({ verification: oneOf('verified', 'unverified'), main_r
 const evidenceFields = { paragraph_id: text, quote: text, section: text, source_url: text, paragraph_hash: text }
 const evidence = shape({ ...evidenceFields, validation: oneOf('pass') })
 const decision = nullable(shape({ agent: oneOf('paper'), label, rationale: text, supported_parts: strings, scope_differences: strings, limitations: strings, evidence: array(evidence), validation: oneOf('pass') }))
-const detailFields = { id: text, status, stage, label: nullable(oneOf('支持', '部分支持', '相矛盾', '证据不足', '无法核验来源')), error_code: errorCode, decision, previous_id: nullable(text), cancel_requested: bool, criteria, accounting, limits }
+const timestamp = text
+/** The bibliography the checker resolved for a claim, shared by the detail view and the diagnostic packet. */
+const source = nullable(shape({ title: nullable(text), authors: strings, year: nullable(number), doi: nullable(text), pmcid: nullable(text), license: nullable(text), version: nullable(text), access_url: nullable(text), retrieved_at: nullable(text), version_hash: nullable(text) }))
+const detailFields = { id: text, claim: text, source, status, stage, label: nullable(oneOf('支持', '部分支持', '相矛盾', '证据不足', '无法核验来源')), error_code: errorCode, decision, previous_id: nullable(text), cancel_requested: bool, criteria, accounting, limits, created_at: timestamp, started_at: nullable(timestamp), finished_at: nullable(timestamp) }
 const academicLabels = new Set(['支持', '部分支持', '相矛盾', '证据不足'])
 /** Status, label, decision, and error_code must agree. History rows omit decision and error_code, so those checks run only when the field is present. */
 export function coherentOutcome(value: unknown): boolean {
@@ -42,13 +45,12 @@ export const validateDetail: Validator = value => shape(detailFields)(value) && 
 export const validateCreated = shape({ id: text, status: oneOf('QUEUED') })
 export const validateSource = shape({ doi: text, title: text, authors: strings, year: nullable(number) })
 export const validateConfig = shape({ profile: oneOf('daily', 'evaluation'), config_digest: text, primary_recipient: text, fallback_recipients: strings, model_alias: text, data_scope: strings, limits, timeouts, observability, criteria })
-const summary = shape({ id: text, doi: text, status, stage, label: detailFields.label })
+const summary = shape({ id: text, doi: text, status, stage, label: detailFields.label, claim_excerpt: text, created_at: timestamp })
 export const validateHistory = array(value => summary(value) && coherentOutcome(value))
 export const validateCancel: Validator = value => shape({ id: text, status, cancel_requested: bool, label: detailFields.label, decision, error_code: errorCode })(value) && coherentOutcome(value)
 export const validateSaved = shape({ id: text, saved: oneOf(true) })
 export const validateDeleted = shape({ id: text, deleted: oneOf(true), message: text })
 export const validateRetry = shape({ id: text, status: oneOf('QUEUED'), previous_id: text })
-const source = nullable(shape({ title: nullable(text), doi: nullable(text), pmcid: nullable(text), license: nullable(text), version: nullable(text), access_url: nullable(text), retrieved_at: nullable(text), version_hash: nullable(text) }))
 const execution = shape({ stage, span_id: text, tool: text, status: oneOf('success', 'error', 'blocked', 'cancelled'), error_code: errorCode, duration_ms: nullable(number), round: oneOf(null, 0, 1), request_id: nullable(text) })
 const usage = nullable(shape({ prompt_tokens: nullable(number), completion_tokens: nullable(number), total_tokens: nullable(number) }))
 const attempt = shape({ attempt_id: text, attempt_index: number, span_id: text, gateway_request_id: nullable(text), upstream_response_id: nullable(text), configured_model: nullable(text), deployment_id: nullable(text), recipient: nullable(text), response_model: nullable(text), verified_model_version: nullable(text), recovery_kind: oneOf('none', 'retry', 'fallback'), recovery_reason: errorCode, status: oneOf('success', 'error', 'cancelled'), error_code: errorCode, duration_ms: nullable(number), usage })

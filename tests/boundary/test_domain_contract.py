@@ -2,6 +2,7 @@
 
 import importlib
 import re
+import sys
 import tomllib
 from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
@@ -37,6 +38,81 @@ def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
     assert main() == 0
     assert "队列已空" in capsys.readouterr().err
     assert (tmp_path / "paper-evidence.sqlite3").exists()
+
+
+def test_worker_reports_an_interrupt_and_exits_zero(tmp_path, monkeypatch, capsys):
+    """常驻模式只能靠中断结束，入口把它当作正常停止而不是失败。
+
+    Windows 的控制台控制事件会在 Python 处理之前结束进程，进程外的真实信号
+    不可移植，因此这里在入口层固定退出码与提示文案。
+    """
+
+    from paper_evidence.worker import __main__ as entry
+
+    monkeypatch.setenv("PAPER_EVIDENCE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["paper_evidence.worker", "--loop"])
+    calls = []
+
+    async def interrupted(_worker, interval):
+        calls.append(interval)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(entry, "drain_forever", interrupted)
+    assert entry.main() == 0
+    assert calls == [entry.DEFAULT_INTERVAL]
+    assert "worker 收到中断，已停止。" in capsys.readouterr().err
+
+
+def test_worker_loop_options_come_from_arguments_or_environment():
+    from paper_evidence.worker.__main__ import DEFAULT_INTERVAL, MIN_INTERVAL, parse_options
+
+    assert parse_options([], {}) == (False, DEFAULT_INTERVAL)
+    assert parse_options(["--loop"], {}) == (True, DEFAULT_INTERVAL)
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_LOOP": "YES"})[0] is True
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_LOOP": "0"})[0] is False
+    assert parse_options(["--interval", "2.5"], {})[1] == 2.5
+    assert parse_options([], {"PAPER_EVIDENCE_WORKER_POLL_SECONDS": "3"})[1] == 3.0
+    # 参数覆盖环境变量；非法与非正值回落到安全默认，不会忙等。
+    assert parse_options(["--interval", "9"], {"PAPER_EVIDENCE_WORKER_POLL_SECONDS": "3"})[1] == 9.0
+    assert parse_options(["--interval", "nonsense"], {})[1] == DEFAULT_INTERVAL
+    assert parse_options(["--interval", "0"], {})[1] == MIN_INTERVAL
+    assert parse_options(["--interval"], {})[1] == DEFAULT_INTERVAL
+
+
+def test_drain_forever_keeps_polling_and_stops_on_cancellation():
+    """常驻模式：队列空时按间隔等待，停止时能退出，而不是把任务留在 QUEUED。"""
+
+    import asyncio
+
+    from paper_evidence.worker.runner import drain_forever
+
+    class FakeWorker:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.processed = 0
+
+        async def run_once(self) -> bool:
+            self.calls += 1
+            if self.processed >= 2:
+                return False
+            self.processed += 1
+            return True
+
+    async def scenario() -> tuple[int, int]:
+        worker = FakeWorker()
+        task = asyncio.create_task(drain_forever(worker, 0.01))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return worker.processed, worker.calls
+
+    processed, calls = asyncio.run(scenario())
+    assert processed == 2
+    # 队列空后仍继续轮询（而不是退出），这正是让 QUEUED 任务被执行的前提。
+    assert calls > processed
 
 
 def test_frontend_literals_match_python_contracts():

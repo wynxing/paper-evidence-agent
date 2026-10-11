@@ -258,7 +258,8 @@ flowchart TD
 | 项 | 内容 |
 | --- | --- |
 | 查询参数 | 可选 `status`，取值见 [任务状态](glossary.md#2-任务状态) |
-| `200` | 摘要数组。每项含 `id`、`doi`、`status`、`stage`、`label`。`label` 尚未产生时为 `null` |
+| `200` | 摘要数组。每项含 `id`、`doi`、`status`、`stage`、`label`、`claim_excerpt`、`created_at`。`label` 尚未产生时为 `null`。`claim_excerpt` 是把论断折叠为单行并按字符上限截断后的展示副本，落库原文不变；超限处以省略号结尾 |
+| 排序 | 按 `created_at` 倒序，同一时刻按 `id` 倒序；列表渲染服务端顺序，不在客户端重排 |
 | 约束 | 不返回缓存全文 |
 
 ### `GET /api/checks/{id}`
@@ -269,7 +270,10 @@ flowchart TD
 
 | 项 | 内容 |
 | --- | --- |
-| `200` | `id`、`status`、`stage`、`label`、`error_code`、`decision`、`previous_id`、`cancel_requested`、`criteria`、`accounting`、`limits` |
+| `200` | `id`、`claim`、`source`、`status`、`stage`、`label`、`error_code`、`decision`、`previous_id`、`cancel_requested`、`criteria`、`accounting`、`limits`、`created_at`、`started_at`、`finished_at` |
+| `claim` | 提交时保存的论断原句，逐字返回，不做截断或改写；重开或刷新旧任务后据此恢复「修改原句」「拆分论断」 |
+| `source` | 已核对的书目身份，含 `title`、`authors`、`year`、`doi`、`pmcid`、`license`、`version`、`access_url`、`retrieved_at`、`version_hash`；尚未解析出书目时为 null。作者与年份来自上游元数据，不由模型补写 |
+| `created_at` / `started_at` / `finished_at` | 入队、worker 领取、终态落定三个时刻；`started_at` 在仍为 QUEUED 时为 null，`finished_at` 在未终结时为 null。前端据此展示排队与执行用时，缺失的一端显示为未知，不估算 |
 | `decision` | [最终判断](glossary.md#最终判断) 对象，含多条 evidence、理由、支持部分、范围差异及限制；无有效最终判断时为 null |
 | 约束 | `label` 只使用结果标签的前五种。FAILED/INTERRUPTED/CANCELLED 时 label 与 decision 为 null，分别显示执行失败、运行中断、已取消。`BLOCKED` 时 `label` 为「无法核验来源」。BLOCKED 主文案按具体 error_code 展示；FAILED 按预算耗尽、上游原因、总超时及其他故障分列。criteria/accounting 与诊断包同形，limits 为任务冻结上限；账不完整按术语表展示未知。paper agent 的标签不冒充真值。响应不含第二名 agent 的意见 |
 
@@ -292,7 +296,7 @@ flowchart TD
 | `400` | `ApiError` |
 | `409` | `ConflictResponse` |
 
-请求含 `recipient` 和 `semantic_export_consent=true`。前端先在本地预览拟导出的字段；服务端核对授权及来源使用范围后返回 consented 包并记录接收方，不主动上传。缺少授权返回 400，来源范围不允许则返回 409。完整提示词、原始模型响应、密钥不在导出范围。
+请求含 `recipient` 和 `semantic_export_consent=true`。前端先在本地预览拟导出的字段；服务端核对授权及来源使用范围后返回 consented 包并记录接收方，不主动上传。缺少授权返回 400，来源范围不允许则返回 409。收件方为空或全为空白同样返回 400；配置里的收件方在读取时去除首尾空白，空白值按未配置处理。完整提示词、原始模型响应、密钥不在导出范围。
 
 ### `POST /api/checks/{id}/feedback`
 

@@ -11,7 +11,7 @@ import time
 
 from paper_evidence.domain import ErrorCode, TaskStatus
 
-__all__ = ["SingleTaskWorker", "drain"]
+__all__ = ["SingleTaskWorker", "drain", "drain_forever"]
 
 logger = logging.getLogger(__name__)
 
@@ -64,3 +64,21 @@ async def drain(worker: SingleTaskWorker) -> int:
     while await worker.run_once():
         count += 1
     return count
+
+
+async def drain_forever(worker: SingleTaskWorker, interval: float) -> int:
+    """Keep claiming tasks until the process is stopped; return how many ran.
+
+    The API process never executes a task, so without a worker that stays up a
+    queued task would sit in QUEUED while the client polls it. The loop only
+    waits ``interval`` seconds when the queue is empty, so a busy queue is still
+    drained back to back. Cancellation propagates out of ``asyncio.sleep``; how a
+    console interrupt reaches the process differs by platform, so the entry point
+    reports it instead of assuming a signal number.
+    """
+
+    count = 0
+    while True:
+        while await worker.run_once():
+            count += 1
+        await asyncio.sleep(interval)

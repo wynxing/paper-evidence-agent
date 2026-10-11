@@ -83,9 +83,20 @@ export interface Decision {
   /** Published invariant. This is not a fallible validation result. */
   validation: 'pass'
 }
-export interface CheckSummary { id: string; doi: string; status: TaskStatus; stage: Stage; label: ResultLabel | null }
+export interface CheckSummary {
+  id: string
+  doi: string
+  status: TaskStatus
+  stage: Stage
+  label: ResultLabel | null
+  /** A bounded, single-line display copy of the claim; the stored claim is not rewritten. */
+  claim_excerpt: string
+  created_at: string
+}
 export interface CheckDetail {
   id: string
+  claim: string
+  source: SourceRecord | null
   status: TaskStatus
   stage: Stage
   label: ResultLabel | null
@@ -96,6 +107,11 @@ export interface CheckDetail {
   criteria: CriteriaReference
   accounting: Accounting
   limits: Limits
+  created_at: string
+  /** Set when a worker claims the task; null while it is still queued. */
+  started_at: string | null
+  /** Set when a terminal status commits; null while the task is not finished. */
+  finished_at: string | null
 }
 export interface CancelResponse {
   id: string
@@ -107,6 +123,9 @@ export interface CancelResponse {
 }
 export interface SourceRecord {
   title: string | null
+  /** Bibliographic identity from Crossref; never reconstructed from the model. */
+  authors: string[]
+  year: number | null
   doi: string | null
   pmcid: string | null
   license: string | null

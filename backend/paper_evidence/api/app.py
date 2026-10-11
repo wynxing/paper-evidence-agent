@@ -287,11 +287,15 @@ def export_diagnostic_packet(
                                           message="来源使用范围不允许导出"))
     run_config = services.store.get_run_config(id)
     # 诊断接收方与模型接收方分开（术语表「6. 诊断包」）：模型调用授权不等于
-    # 诊断外传授权，这里只承认运行配置里的观测/诊断接收方。
+    # 诊断外传授权，这里只承认运行配置里的观测/诊断接收方。空白值不是合法标识，
+    # 也不能仅靠精确匹配通过，故先归一化再判空。
     authorized_recipient = run_config.observability.recipient if run_config is not None else None
-    if not authorized_recipient or body.recipient != authorized_recipient:
+    recipient = body.recipient.strip()
+    if not recipient:
+        return _fail(400, None, "诊断接收方不能为空")
+    if not authorized_recipient or recipient != authorized_recipient:
         return _fail(400, None, "诊断接收方未获授权")
-    return services.projector.consented(id, body.recipient)
+    return services.projector.consented(id, recipient)
 
 
 @app.post("/api/checks/{id}/feedback", response_model=FeedbackSaved, responses=_error_responses(404))

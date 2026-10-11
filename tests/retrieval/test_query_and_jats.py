@@ -27,9 +27,9 @@ JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
 
 def snapshot(jats: bytes = JATS) -> SourceSnapshot:
     record = SourceRecord(
-        title="Demo", doi="10.1000/xyz", pmcid="PMC123", license="CC BY", version="1",
-        access_url="https://example.org/article", retrieved_at="2026-10-01T00:00:00+00:00",
-        version_hash=VERSION_HASH,
+        title="Demo", authors=["Ada Lovelace"], year=2026, doi="10.1000/xyz", pmcid="PMC123",
+        license="CC BY", version="1", access_url="https://example.org/article",
+        retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
     )
     return SourceSnapshot(source_id=f"PMC123:{VERSION_HASH}", metadata=record, jats_bytes=jats)
 

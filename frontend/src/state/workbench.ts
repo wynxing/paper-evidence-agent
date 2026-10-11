@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import type { ApiClient, CheckDetail, CheckSummary, DiagnosticPacket } from '../api/contracts.ts'
 import { createHttpClient, ClientError, pollingShouldStop } from '../api/http.ts'
 import { createDemoClient, type DemoScenario } from '../api/demo.ts'
-import { canSubmit, createDraft, diagnosticExportRequest, invalidateDraft, isTerminal, normalizeDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
+import { canSubmit, createDraft, diagnosticExportRequest, invalidateDraft, isTerminal, normalizeDoi, originalClaim, originalDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
 import { createPoller, POLL_INTERVAL_MS } from './poller.ts'
 
 /** Browser pieces the page already provides. Tests pass fakes; omitted values stay the page globals. */
@@ -118,10 +118,14 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   function startNew() { abortPreview(); Object.assign(draft, createDraft()); selectScenario('部分支持'); navigate(); message.value = '' }
   function prepareEdit(split = false, retry = false) {
     const id = route.value.id; if (!id) return
-    const row = history.value.find(x => x.id === id); const cached = contexts.get(id)
-    if (!cached?.doi && !row?.doi) { message.value = '无法读取原任务 DOI，请刷新本地历史后再重新核验。'; return }
-    if (!cached?.claim && !retry) { message.value = '当前接口未提供原始论断，无法修改或拆分。'; return }
-    Object.assign(draft, createDraft(), { doi: cached?.doi ?? row?.doi ?? '', claim: cached?.claim ?? '', previousId: id, retryId: retry ? id : null })
+    const row = history.value.find(x => x.id === id); const cached = contexts.get(id) ?? null
+    const loaded = detail.value?.id === id ? detail.value : null
+    const doi = originalDoi(cached, row?.doi, loaded)
+    if (!doi) { message.value = '无法读取原任务 DOI，请刷新本地历史后再重新核验。'; return }
+    // Retry replays the stored input on the backend, so its draft intentionally carries no claim.
+    const claim = retry ? cached?.claim ?? '' : originalClaim(cached, loaded)
+    if (!claim && !retry) { message.value = '无法读取原任务论断，请刷新任务详情后再修改或拆分。'; return }
+    Object.assign(draft, createDraft(), { doi, claim, previousId: id, retryId: retry ? id : null })
     navigate(); message.value = split ? '请将原句改为一条可独立判断的子论断并提交。可从原任务再次创建其他子论断。' : ''
   }
   async function submit() {

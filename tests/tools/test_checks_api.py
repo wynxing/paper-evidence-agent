@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from paper_evidence.config import Settings
 from paper_evidence.domain.contracts import Observability, SourceRecord
 
 DOI = "10.1000/xyz123"
@@ -29,7 +30,8 @@ def record_source(services, task_id):
     """Give the task a licensed source so the export range check can pass."""
 
     services.store.update_source(task_id, SourceRecord(
-        title="Demo study", doi=DOI, pmcid="PMC123", license="CC BY", version="1",
+        title="Demo study", authors=["Ada Lovelace"], year=2026, doi=DOI, pmcid="PMC123",
+        license="CC BY", version="1",
         access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash="a" * 64,
     ))
@@ -249,3 +251,75 @@ def test_diagnostic_export_accepts_only_the_observation_recipient(client, servic
     assert payload["input"]["recipient"] == "External Reviewer"
     assert payload["input"]["privacy"] == "consented"
     assert payload["run_config"]["observability"]["recipient"] == "External Reviewer"
+
+
+def test_history_and_detail_expose_the_claim_bibliography_and_timing(client, services):
+    task_id = create(client, services).json()["id"]
+
+    row = client.get("/api/checks").json()[0]
+    assert row["id"] == task_id
+    assert row["claim_excerpt"] == "The intervention reduced mortality."
+    assert row["created_at"]
+
+    detail = client.get(f"/api/checks/{task_id}").json()
+    assert detail["claim"] == "The intervention reduced mortality."
+    assert detail["source"] is None
+    # 排队阶段没有开始与结束时刻，界面据此显示真实计时而不是占位文案。
+    assert detail["created_at"]
+    assert detail["started_at"] is None and detail["finished_at"] is None
+
+    record_source(services, task_id)
+    with_source = client.get(f"/api/checks/{task_id}").json()
+    assert with_source["source"]["title"] == "Demo study"
+    assert with_source["source"]["authors"] == ["Ada Lovelace"]
+    assert with_source["source"]["year"] == 2026
+
+
+def test_history_is_filterable_and_keeps_the_claim_excerpt(client, services):
+    task_id = create(client, services).json()["id"]
+    assert [row["id"] for row in client.get("/api/checks", params={"status": "QUEUED"}).json()] == [task_id]
+    assert client.get("/api/checks", params={"status": "COMPLETED"}).json() == []
+
+
+def test_diagnostic_export_rejects_a_blank_recipient_and_normalizes_spacing(client, services):
+    """空白收件人不是合法标识；带首尾空格的已授权收件人按归一化值接受。"""
+
+    services.settings = replace(
+        services.settings,
+        observability=Observability(langfuse_enabled=False, recipient="External Reviewer"),
+    )
+    task_id = create(client, services).json()["id"]
+    record_source(services, task_id)
+
+    for blank in ("", "   "):
+        refused = client.post(f"/api/checks/{task_id}/diagnostic-export",
+                              json={"recipient": blank, "semantic_export_consent": True})
+        assert refused.status_code == 400
+        assert set(refused.json()) == {"error_code", "message"}
+
+    padded = client.post(f"/api/checks/{task_id}/diagnostic-export",
+                         json={"recipient": "  External Reviewer  ", "semantic_export_consent": True})
+    assert padded.status_code == 200
+    assert padded.json()["input"]["recipient"] == "External Reviewer"
+
+
+def test_recipient_configuration_is_trimmed(monkeypatch):
+    """配置写成 "A, B" 时不产生带首尾空格的收件人名，前后端与摘要才一致。"""
+
+    monkeypatch.setenv("PAPER_EVIDENCE_PRIMARY_RECIPIENT", "  Agnes  ")
+    monkeypatch.setenv("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", " Bob ,, Carol ")
+    monkeypatch.setenv("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT", "  External Reviewer ")
+    settings = Settings.from_env()
+    assert settings.primary_recipient == "Agnes"
+    assert settings.fallback_recipients == ("Bob", "Carol")
+    assert settings.observability.recipient == "External Reviewer"
+
+
+def test_blank_recipient_configuration_counts_as_unset(monkeypatch):
+    monkeypatch.setenv("PAPER_EVIDENCE_PRIMARY_RECIPIENT", "   ")
+    monkeypatch.setenv("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", " , ")
+    monkeypatch.setenv("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT", "   ")
+    settings = Settings.from_env()
+    assert settings.primary_recipient == "Agnes"
+    assert settings.fallback_recipients == ()
+    assert settings.observability.recipient is None

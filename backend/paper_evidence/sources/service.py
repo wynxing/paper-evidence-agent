@@ -93,6 +93,8 @@ class SourceService:
         version_hash = sha256(record.jats_bytes).hexdigest()
         source = SourceRecord(
             title=_title(message) or record.title,
+            authors=_authors(message),
+            year=_year(message),
             doi=normalized,
             pmcid=pmcid,
             license=record.license,
