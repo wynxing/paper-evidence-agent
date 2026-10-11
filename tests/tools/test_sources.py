@@ -252,3 +252,85 @@ def test_unsupported_or_unknown_licenses_are_blocked(license_text, code):
     with pytest.raises(ContractError) as raised:
         classify_license(license_text)
     assert raised.value.error_code is code
+
+
+# ------------------------------------------------- PMC OAI request contract
+#
+# The OAI call is the one upstream hop that a mock-only suite cannot validate by
+# shape alone: its host, metadata prefix and redirect handling are all external
+# facts that changed under us. These assertions pin the request the client makes
+# so a silent regression surfaces here instead of as UPSTREAM_INVALID_REQUEST.
+
+
+def test_default_pmc_oai_endpoint_is_the_canonical_api_path():
+    """The legacy oai.cgi host now 301s; the default must target the API path."""
+
+    from paper_evidence.config import Settings
+
+    assert Settings.from_env().pmc_oai_url == "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/"
+
+
+def test_pmc_oai_request_uses_the_full_text_metadata_prefix():
+    """``pmc`` is rejected as cannotDisseminateFormat; the body needs ``pmc_fm``."""
+
+    seen = {}
+
+    def handler(request):
+        if request.url.host == "pmc.test" and request.url.path == "/oai":
+            seen.update(dict(request.url.params))
+            return httpx.Response(200, content=JATS)
+        if request.url.host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
+        return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
+    asyncio.run(pmc.fetch_record("PMC123", None))
+
+    assert seen["verb"] == "GetRecord"
+    assert seen["metadataPrefix"] == "pmc_fm"
+    assert seen["identifier"] == "oai:pubmedcentral.nih.gov:123"
+
+
+def test_pmc_oai_call_follows_redirects():
+    """A 301 that is not followed is mapped to UPSTREAM_INVALID_REQUEST, not fetched."""
+
+    def handler(request):
+        if request.url.host == "pmc.test" and request.url.path == "/oai":
+            return httpx.Response(301, headers={"Location": "https://pmc.test/oai-moved"})
+        if request.url.host == "pmc.test" and request.url.path == "/oai-moved":
+            return httpx.Response(200, content=JATS)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
+    record = asyncio.run(pmc.fetch_record("PMC123", None))
+    assert record.pmcid == "PMC123"
+
+
+def test_a_redirect_without_following_is_rejected_not_parsed():
+    """Documents why the redirect flag is required, not merely present.
+
+    With ``follow_redirects=False`` the same 301 reaches ``fetch_record`` as a
+    non-200, which is exactly the UPSTREAM_INVALID_REQUEST this fix removed.
+    """
+
+    def handler(request):
+        if request.url.path == "/oai":
+            return httpx.Response(301, headers={"Location": "https://pmc.test/oai-moved"})
+        return httpx.Response(200, content=JATS)
+
+    # A fetcher that does not follow redirects stands in for the pre-fix call.
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    fetcher = Fetcher(client, 15, "test-agent")
+    original = fetcher.get
+
+    async def no_follow(url, **kwargs):
+        kwargs["follow_redirects"] = False
+        return await original(url, **kwargs)
+
+    fetcher.get = no_follow  # type: ignore[method-assign]
+    pmc = PmcClient(fetcher, "https://pmc.test/idconv", "https://pmc.test/oai")
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(pmc.fetch_record("PMC123", None))
+    assert raised.value.error_code is ErrorCode.UPSTREAM_INVALID_REQUEST

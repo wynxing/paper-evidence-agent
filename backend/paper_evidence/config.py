@@ -85,7 +85,9 @@ class Settings:
     crossref_base_url: str = "https://api.crossref.org"
     doi_resolver_base_url: str = "https://doi.org"
     pmc_id_converter_url: str = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
-    pmc_oai_url: str = "https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi"
+    # The legacy host www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi now answers with a 301
+    # to this API path; point at the canonical address directly.
+    pmc_oai_url: str = "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/"
     openalex_base_url: str = "https://api.openalex.org"
     contact_email: str = ""
     retrieval_context_limit: int = RETRIEVAL_CONTEXT_LIMIT
