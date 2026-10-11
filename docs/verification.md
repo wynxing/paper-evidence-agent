@@ -295,3 +295,59 @@ PY
 - 论文语义验收、正式研究评测、LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；取消、截止时间与并发未压测，单 worker、一次一任务的假设未做压力验证。
 - 迁移只在构造的一版旧 schema 上验证，未覆盖真实使用过的数据库；`paragraphs`、`check_sources` 等表本轮未新增列，其迁移分支未被触发。
 - 本提交未在 Linux 或其他 Python 版本上重跑，只在 Windows / Python 3.12.14 上验证；真实进程探针的结论也只属于该平台。仓库现有 CI 为 `backend` 与 `frontend`。
+
+## 模型传输切到进程内 LiteLLM SDK（2026-10-11）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `4fde800b6ca529d0660aa269eaf13f74bc54bd0b`；本节在其后的独立提交中写入，避免提交哈希自指 |
+| 关联 | Issue #18：模型请求原先必须经过本机 LiteLLM Proxy，现改为默认在进程内用 LiteLLM 库调用，Proxy 保留为可选传输 |
+| 环境 | Windows、Python 3.12.14、Node.js v22.22.2、npm 10.9.7。后端依赖装在新建的空 venv 中，只按 `backend/requirements.lock` 安装，再以 `--no-deps --no-build-isolation` 装本地 editable 包，与仓库 CI 的安装顺序一致 |
+| 对象 | `backend/paper_evidence/models/` 新增 `sdk.py`、`recording.py`，改写 `gateway.py`、`ports.py`；`config.py`、`api/deps.py`；`backend/pyproject.toml`、`backend/requirements.lock`；`tests/tools/test_sdk_gateway.py`（新增）、`tests/tools/test_checks_api.py`、`tests/boundary/test_domain_contract.py`；README 与七份文档 |
+
+新增依赖 `litellm==1.105.0` 已获用户明确授权（此前 `AGENTS.md` 要求不擅自加依赖）。
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| 空 venv 装 `backend/requirements.lock` | 67 个包全部装上，含 `litellm-1.105.0`、`openai-2.54.0`、`h2-4.4.1`；无版本冲突 |
+| `python -m pip check` | No broken requirements found |
+| `python -m pytest -c backend/pyproject.toml -q` | **197 passed，2 warnings**。两条警告是 Starlette TestClient 对 httpx 的既有弃用提示与 litellm 内部 pydantic TypedDict 提示，均未隐藏。上一条记录的 158 passed 加上本次与上轮新增用例 |
+| `npm --prefix frontend test` | **42 passed，0 failed**（1 suite） |
+| `npm --prefix frontend run build` | `vue-tsc --noEmit` 通过，Vite 生产构建通过（29 modules） |
+| `git diff --check` | 无输出，退出码 0 |
+| 真实进程探针：遍历 `litellm.exceptions` 命名空间 | 31 个异常类，未映射 **0** 个 |
+| 真实进程探针：上游端口未监听 | `UPSTREAM_UNAVAILABLE`，两次尝试（序号 1、2，第二次 `recovery_kind=retry`），耗时 5.11 秒（含恢复等待） |
+| 真实进程探针：不配置密钥与上游地址 | `UPSTREAM_UNAVAILABLE`，两次尝试，0.02 秒内返回（未建立连接） |
+| 真实进程探针：deadline 已过期 | `TASK_TIMEOUT`，不产生尝试记录 |
+| 真实进程探针：`import litellm` 的价目表抓取 | 不设 `LITELLM_LOCAL_MODEL_COST_MAP` 时每次导入报告 1–2 次抓取尝试（litellm 自身上限 3 次）后回落本地备份，设了之后 0 次 |
+
+探针查出一处真实缺陷，随本提交修掉：litellm 的 `BadGatewayError`、`InvalidRequestError`、`APIResponseValidationError` 直接继承 `openai` 的基类而非 litellm 的同名类，原来的映射表只列 litellm 同名类、兜底项也取自 `litellm.APIError`，这些类因此漏出未映射。修前「上游端口未监听」会以 `error_code=null`（worker 的未分类失败分支）结束，修后为上表的 `UPSTREAM_UNAVAILABLE`。
+
+### 覆盖
+
+- 错误映射：十类 litellm 异常到错误码的映射，并单独固定 `Timeout` 不因继承 `APIConnectionError` 而被读成连接失败。穷尽性用例遍历 `litellm.exceptions` 命名空间，要求每个异常类要么被映射、要么在 `NOT_UPSTREAM_FAILURES` 里显式列出，因此 litellm 升版新增异常类会直接失败，而不是静默漏成 `error_code=null`。
+- 恢复：可恢复错误消耗一次恢复额度并记 `recovery_kind=retry`；不可恢复错误不重试；`attempts_per_request=1` 时不重试；Retry-After 被等待；Retry-After 超过任务剩余时间时不消耗预算直接失败；任务余量不足时按 `TASK_TIMEOUT` 结束。
+- 记账：成功与失败共用同一个 `params_digest`（不是 request id）；每次尝试序号从 1 起；`usage` 与调用标识缺失时为 `null` 而不是 0。
+- 线上载荷：发给 SDK 的是配置的 `openai/agnes-2.5-flash` 而不是别名 `paper-default`；`num_retries` 为 0；未配置 `api_base`/`api_key` 时不发送这两个参数。
+- 传输选择：默认 `sdk`；未知取值回落默认；端点类别（`provider_default`/`configured_endpoint`/`local_gateway`）与传输方式进入冻结快照并影响 `config_digest`；`api/deps.py` 按配置构造对应实现。
+- SDK 入口本身：两条用例经真实 `litellm.acompletion` 加 `mock_response` 走通，证明真实 `ModelResponse` 里确实取得到调用标识与 usage，真实失败也落到同一张映射表。`mock_response` 在派发前返回，不访问网络。
+- 依赖闭包：闭包校验覆盖了新增依赖；`_distribution_name` 现能处理 setuptools 旧式 `name (<1,>=x)` 元数据（botocore 仍是这种写法，此前会让 boto 一整支不被遍历），extra 归属修正为依赖自身，litellm 的 `httpx[http2]` 因此被正确遍历。
+
+### 未覆盖
+
+- 没有真实模型调用。Agnes 或任何供应商的端点、鉴权与真实响应形状未实测；本机无网络出口，真实入口验证止于 `mock_response` 与「连不上」两类路径。因此「SDK 形态能拿到真实模型版本」未验证，`verified_model_version` 仍只能是 null。
+- Proxy 形态未做真实连通性验证，仍只用 `httpx.MockTransport` 的状态映射用例；`PAPER_EVIDENCE_MODEL_TRANSPORT=gateway` 与真实 LiteLLM Proxy 的联调未做。
+- 跨部署回退未实现。规范里「日常模式恢复到已授权备用部署」没有对应代码，配置里也没有备用部署，两种形态都只重试原部署。这是本轮明确不做的范围，已写入 D6 与 decisions.md，不是遗漏。
+- Proxy 形态下调用账的缺口未解决：Proxy 内部的重试在本进程不可见，`attempts` 只记派发出去的那一次；SDK 形态下两次都可见。两种形态的诊断保真度因此不同，已写入 D6 后果。
+- 未做端到端联调：前端轮询 + 常驻 worker + 真实模型调用的整条链路未跑通。
+- 未在 Linux 上重跑。仓库 CI 会在 Linux 上跑 `backend` 与 `frontend`，本节不把尚未看到的 CI 结果写成通过；以上数字都来自 Windows / Python 3.12.14。
+- 未测并发与性能，单 worker、一次一任务的假设未做压力验证；论文语义验收、LangGraph 编排、Langfuse 导出与 Playwright 端到端仍未接入。
+- `httpx` 从 dev extra 提到运行时是顺带修的打包缺口，未在「只装 `dependencies`、不装 `requirements.lock`」的路径上单独验证。
+
+### 已知限制
+
+Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.sleep(0.08)` 会在约 0.078 秒返回。因此 Retry-After 用例断言的是适配层向 `asyncio.sleep` 请求的时长（精确相等），墙上时钟只做宽松校验。把该用例写回「墙上时钟 ≥ 请求时长」会在本平台失败，与实现正确与否无关。
+
+关闭远程价目表下载的收益只有「不再发这次请求」这一条：同一台机器上设与不设的导入耗时都在 4.0–4.2 秒，差异落在噪声里，耗时由 LiteLLM 自身的导入图决定。D6 与开发指南按这个结论表述，没有写成功率提升。
