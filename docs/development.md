@@ -49,12 +49,17 @@ OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应
 从仓库根目录执行：
 
 ```bash
-backend/.venv/bin/python -m paper_evidence.worker
+backend/.venv/bin/python -m paper_evidence.worker            # 处理完当前队列后退出
+backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续领取新任务
 ```
 
-入口先结算遗留 `RUNNING`（有取消标记的转为 `CANCELLED`，其余转为 `INTERRUPTED`），再逐个领取并执行已排队任务，队列为空时退出，退出码 `0`。单条任务的执行时限从领取并转为 `RUNNING` 起算。
+默认一次性模式先结算遗留 `RUNNING`（有取消标记的转为 `CANCELLED`，其余转为 `INTERRUPTED`），再逐个领取并执行已排队任务，队列为空时退出，退出码 `0`。单条任务的执行时限从领取并转为 `RUNNING` 起算。
+
+`--loop`（等价环境变量 `PAPER_EVIDENCE_WORKER_LOOP=1`）改为常驻：先把队列排空，再按间隔轮询新任务，直到进程收到中断信号。轮询间隔用 `--interval <秒>` 或 `PAPER_EVIDENCE_WORKER_POLL_SECONDS` 设置，默认 `1.0` 秒，下限 `0.05` 秒（更小的值按 `0.05` 处理）。前端始终以 1.5 秒轮询任务详情，因此需要 API 与常驻 worker 同时运行，排队任务才会进入 `RUNNING`；只跑一次性 worker 时，任务入队后会一直停在 `QUEUED`。API 进程本身不执行任务。
 
 已受理的取消优先于完成或失败结果：工作流在写入终态前复查取消标记，`SqliteStore.finish` 也在同一事务内拒绝非 `CANCELLED` 的终态写入到 `cancel_requested = 1` 的任务，随后由取消路径落 `CANCELLED`。取消检查点与终态写入之间的窗口因此不跨进程内竞争：取消已受理时任务最终显示为「已取消」，而不是「已完成」。
+
+任务详情返回 `created_at`、`started_at`、`finished_at` 三个时刻：入队时写 `created_at`，worker 领取并转 `RUNNING` 时写 `started_at`，终态（含取消、超时与遗留任务结算）落定写入 `finished_at`。仍在 `QUEUED` 的任务没有 `started_at`，未终结的任务没有 `finished_at`；前端把缺失的一端显示为未知，不估算用时。历史列表按 `created_at` 倒序返回，前端按服务端顺序渲染。
 
 数据目录由 `PAPER_EVIDENCE_DATA_DIR` 指定，默认是当前工作目录下的 `.paper-evidence/`；网关访问凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，只用于本机 Proxy，不写入配置摘要；已授权的观测/诊断接收方由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 配置，默认没有，未配置时无法导出 `consented` 诊断包。
 
