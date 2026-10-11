@@ -1,4 +1,4 @@
-import type { Accounting, DiagnosticExportRequest, DiagnosticPacket, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
+import type { Accounting, CheckDetail, DiagnosticExportRequest, DiagnosticPacket, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
 
 export interface Draft {
   claim: string; doi: string; source: SourcePreview | null; config: RunConfigPreview | null
@@ -22,6 +22,29 @@ export function diagnosticExportRequest(packet: DiagnosticPacket | null, id: str
   return { recipient: configured, semantic_export_consent: true }
 }
 export const isTerminal = (status: TaskStatus) => !['QUEUED', 'RUNNING'].includes(status)
+/**
+ * The claim to show and to edit. The submit-time cache wins because it is the exact text the user typed;
+ * the task record is the fallback, so a reopened or refreshed task is no longer unreadable.
+ */
+export function originalClaim(cached: SubmissionContext | null, loaded: CheckDetail | null): string { return cached?.claim ?? loaded?.claim ?? '' }
+/** Same precedence as originalClaim, for the DOI that retry, revise, and split must re-authorize. */
+export function originalDoi(cached: SubmissionContext | null, rowDoi: string | undefined, loaded: CheckDetail | null): string { return cached?.doi ?? rowDoi ?? loaded?.source?.doi ?? '' }
+/** A span is only reported when both ends exist; a missing or reversed end stays an explicit placeholder. */
+export function elapsedText(from: string | null, to: string | null): string {
+  if (!from || !to) return '暂无数据'
+  const start = Date.parse(from); const end = Date.parse(to)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '暂无数据'
+  const seconds = (end - start) / 1000
+  return seconds < 60 ? `${seconds.toFixed(1)} 秒` : `${Math.floor(seconds / 60)} 分 ${Math.round(seconds % 60)} 秒`
+}
+/** Local-time display copy. An unparsable timestamp renders as nothing rather than as a wrong instant. */
+export function stampText(value: string | null): string {
+  if (!value) return ''
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return ''
+  const at = new Date(parsed); const pad = (n: number) => String(n).padStart(2, '0')
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
 export const statuses: Record<TaskStatus, string> = { QUEUED: '排队中', RUNNING: '执行中', COMPLETED: '已完成', BLOCKED: '核验受阻', FAILED: '执行失败', CANCELLED: '已取消', INTERRUPTED: '运行中断' }
 export const stages: Record<string, string> = { wait: '等待', source_identity: '核对来源', license: '检查许可', fetch: '获取全文', query_generation: '生成检索词', retrieval: '检索证据', decision: '判断或申请补读', evidence_validation: '证据校验', output_repair: '修复输出' }
 export const errors: Record<string, string> = {

@@ -321,7 +321,7 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
   test('retry calls retryCheck and the new history row keeps the source DOI', async () => {
     const s = session('#/checks/done')
     const { api } = s
-    api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED') })
+    api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
     const { work } = s.mount()
     try {
       await until(() => work.detail.value?.id === 'done' && work.history.value.some(row => row.id === 'done'), 'loaded')
@@ -329,6 +329,7 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
       assert.equal(work.route.value.view, 'new')
       assert.equal(work.draft.retryId, 'done')
       assert.equal(work.draft.doi, '10.1000/done')
+      // Retry replays the stored input on the backend, so the draft deliberately carries no claim.
       assert.equal(work.draft.claim, '')
       await work.resolve()
       work.draft.sourceConfirmed = true
@@ -345,6 +346,43 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
       assert.equal(work.history.value.find(row => row.id === 'task-1').doi, '10.1000/done')
       assert.equal(work.context.value.doi, '10.1000/done')
       assert.equal(work.context.value.claim, null)
+    } finally { s.unmount() }
+  })
+
+  test('a reopened task exposes its stored claim so revise and split stay available', async () => {
+    const s = session('#/checks/done')
+    const { api } = s
+    api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done', 'loaded')
+      // After a reload there is no submit-time cache, so the task record has to carry the claim itself.
+      assert.equal(work.context.value, null)
+      work.prepareEdit()
+      assert.equal(work.route.value.view, 'new')
+      assert.equal(work.draft.claim, '原论断')
+      assert.equal(work.draft.doi, '10.1000/done')
+      assert.equal(work.draft.retryId, null)
+      assert.equal(work.message.value, '')
+      work.navigate('done')
+      await until(() => work.route.value.id === 'done' && work.detail.value?.id === 'done', 'back to the task')
+      work.prepareEdit(true)
+      assert.equal(work.draft.claim, '原论断')
+      assert.match(work.message.value, /子论断/)
+    } finally { s.unmount() }
+  })
+
+  test('a task that records no claim still refuses revise and split', async () => {
+    const s = session('#/checks/done')
+    const { api } = s
+    api.tasks.set('done', { doi: '10.1000/done', claim: '', detail: taskDetail('done', 'COMPLETED') })
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done', 'loaded')
+      work.prepareEdit()
+      assert.equal(work.route.value.view, 'check')
+      assert.equal(work.draft.claim, '')
+      assert.match(work.message.value, /无法读取原任务论断/)
     } finally { s.unmount() }
   })
 
@@ -466,7 +504,11 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     try {
       await until(() => demo.work.history.value.length === 10, 'demo history')
       assert.equal(demo.work.demo, true)
-      assert.equal(demo.work.history.value[0].doi, '10.0000/demo-1')
+      // The list renders the server order as given; the newest task is first.
+      assert.equal(demo.work.history.value[0].doi, '10.0000/demo-10')
+      assert.equal(demo.work.history.value.at(-1).doi, '10.0000/demo-1')
+      assert.ok(demo.work.history.value[0].claim_excerpt)
+      assert.match(demo.work.history.value[0].created_at, /^\d{4}-\d{2}-\d{2}T/)
       demo.work.selectScenario('执行中')
       assert.equal(demo.work.scenario.value, '执行中')
     } finally { demo.unmount() }

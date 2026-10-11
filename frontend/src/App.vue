@@ -5,7 +5,7 @@ import NewCheck from './views/NewCheck.vue'
 import CheckDetail from './views/CheckDetail.vue'
 import Diagnostics from './views/Diagnostics.vue'
 import StatusBadge from './components/StatusBadge.vue'
-import { statuses } from './state/model.ts'
+import { stampText, statuses } from './state/model.ts'
 const work = useWorkbench(); const sidebar = ref(window.innerWidth >= 768)
 const narrow = ref(window.innerWidth < 768)
 const navElement = ref<HTMLElement | null>(null); const navToggle = ref<HTMLButtonElement | null>(null)
@@ -37,7 +37,7 @@ watch(work.route, () => { if (window.innerWidth < 768) sidebar.value = false })
       <button class="nav-new" :class="{ active: work.route.value.view === 'new' }" :disabled="work.busy.value" @click="work.startNew"><span aria-hidden="true">＋</span> 新的核验</button>
       <div class="history-label"><span>本地历史</span><button class="icon-button" aria-label="刷新本地历史" @click="work.refreshHistory">↻</button></div>
       <p v-if="work.historyError.value" class="sidebar-notice">{{ work.historyError.value }}</p><p v-else-if="!work.history.value.length" class="sidebar-notice">暂无核验记录</p>
-      <nav class="history-list"><button v-for="row in work.history.value" :key="row.id" :class="{ active: row.id === work.route.value.id }" :aria-current="row.id === work.route.value.id ? 'page' : undefined" :disabled="work.busy.value" @click="work.navigate(row.id)"><span class="history-doi">{{ row.doi }}</span><span class="history-state"><StatusBadge :status="row.status" :label="row.label" /><span v-if="row.label" class="small muted">{{ statuses[row.status] }}</span></span></button></nav>
+      <nav class="history-list"><button v-for="row in work.history.value" :key="row.id" :class="{ active: row.id === work.route.value.id }" :aria-current="row.id === work.route.value.id ? 'page' : undefined" :disabled="work.busy.value" @click="work.navigate(row.id)"><span class="history-doi">{{ row.doi }}</span><span class="history-claim">{{ row.claim_excerpt || '未记录论断' }}</span><span class="history-state"><StatusBadge :status="row.status" :label="row.label" /><span v-if="row.label" class="small muted">{{ statuses[row.status] }}</span><span v-if="stampText(row.created_at)" class="history-time small muted">{{ stampText(row.created_at) }}</span></span></button></nav>
       <div class="sidebar-footer"><span class="local-dot" aria-hidden="true"></span> {{ work.demo ? '模拟数据 · 仅本页内存' : '本机工作空间' }}<p>单条论断，逐条核对。</p></div>
     </aside>
     <div class="main-shell" :inert="narrow && sidebar"><header class="toolbar">

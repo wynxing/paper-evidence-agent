@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHttpClient, ClientError, pollingShouldStop } from '../src/api/http.ts'
 import { createDemoClient } from '../src/api/demo.ts'
-import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute } from '../src/state/model.ts'
+import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute, originalClaim, originalDoi, elapsedText, stampText } from '../src/state/model.ts'
 import { createPoller, POLL_INTERVAL_MS } from '../src/state/poller.ts'
 import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel } from '../src/api/validation.ts'
 import { projectPacket } from '../src/api/export.ts'
@@ -184,4 +184,53 @@ test('empty history can be reached without deleting active tasks', async () => {
     await c.deleteCheck(row.id)
   }
   assert.deepEqual(await c.listChecks(), [])
+})
+test('history rows carry a claim excerpt and a creation time, newest first', async () => {
+  const rows = await createDemoClient().listChecks()
+  assert.equal(validateHistory(rows), true)
+  assert.ok(rows.length > 1)
+  assert.ok(rows.every(row => row.claim_excerpt.length > 0))
+  assert.ok(rows.every(row => !Number.isNaN(Date.parse(row.created_at))))
+  const times = rows.map(row => row.created_at)
+  assert.deepEqual(times, [...times].sort().reverse())
+})
+test('a task record carries its original claim, bibliography, and timeline', async () => {
+  const d = await createDemoClient().getCheck('demo-1')
+  assert.equal(validateDetail(d), true)
+  assert.ok(d.claim.length > 0)
+  assert.deepEqual(d.source.authors, ['模拟作者 A', '模拟作者 B'])
+  assert.equal(typeof d.source.year, 'number')
+  assert.ok(d.started_at && d.finished_at)
+  const queued = await createDemoClient().getCheck('demo-5')
+  assert.equal(queued.status, 'QUEUED')
+  assert.equal(queued.started_at, null); assert.equal(queued.finished_at, null)
+})
+test('the task record backs revise and split when no submit context survives', async () => {
+  const d = await createDemoClient().getCheck('demo-1')
+  // No cached context at all: only the task record can answer.
+  assert.equal(originalClaim(null, d), d.claim)
+  assert.equal(originalDoi(null, undefined, d), d.source.doi)
+  // The exact text the user typed wins over the stored copy.
+  const cached = { claim: '本次输入的原句', doi: '10.0000/typed', source: null }
+  assert.equal(originalClaim(cached, d), '本次输入的原句')
+  assert.equal(originalDoi(cached, '10.0000/history', d), '10.0000/typed')
+  assert.equal(originalClaim(null, null), ''); assert.equal(originalDoi(null, '', null), '')
+})
+test('elapsed and stamp text never invent a duration or an instant', () => {
+  assert.equal(elapsedText('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:12+00:00'), '12.0 秒')
+  assert.equal(elapsedText('2026-01-01T00:00:00+00:00', '2026-01-01T00:01:30+00:00'), '1 分 30 秒')
+  assert.equal(elapsedText('2026-01-01T00:00:00+00:00', null), '暂无数据')
+  assert.equal(elapsedText(null, '2026-01-01T00:00:00+00:00'), '暂无数据')
+  assert.equal(elapsedText('2026-01-01T00:00:12+00:00', '2026-01-01T00:00:00+00:00'), '暂无数据')
+  assert.equal(elapsedText('not-a-time', '2026-01-01T00:00:00+00:00'), '暂无数据')
+  assert.match(stampText('2026-01-01T00:00:00+00:00'), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+  assert.equal(stampText(null), ''); assert.equal(stampText('not-a-time'), '')
+})
+test('the bibliography reaches the exported packet', async () => {
+  const c = createDemoClient()
+  const packet = await c.getDiagnosticPacket('demo-1')
+  const exported = projectPacket(packet)
+  assert.deepEqual(exported.source.authors, ['模拟作者 A', '模拟作者 B'])
+  assert.equal(exported.source.year, packet.source.year)
+  assert.equal(validatePacket(packet), true)
 })
