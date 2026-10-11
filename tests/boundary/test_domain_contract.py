@@ -2,6 +2,7 @@
 
 import importlib
 import re
+import sys
 import tomllib
 from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
@@ -37,6 +38,29 @@ def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
     assert main() == 0
     assert "队列已空" in capsys.readouterr().err
     assert (tmp_path / "paper-evidence.sqlite3").exists()
+
+
+def test_worker_reports_an_interrupt_and_exits_zero(tmp_path, monkeypatch, capsys):
+    """常驻模式只能靠中断结束，入口把它当作正常停止而不是失败。
+
+    Windows 的控制台控制事件会在 Python 处理之前结束进程，进程外的真实信号
+    不可移植，因此这里在入口层固定退出码与提示文案。
+    """
+
+    from paper_evidence.worker import __main__ as entry
+
+    monkeypatch.setenv("PAPER_EVIDENCE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["paper_evidence.worker", "--loop"])
+    calls = []
+
+    async def interrupted(_worker, interval):
+        calls.append(interval)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(entry, "drain_forever", interrupted)
+    assert entry.main() == 0
+    assert calls == [entry.DEFAULT_INTERVAL]
+    assert "worker 收到中断，已停止。" in capsys.readouterr().err
 
 
 def test_worker_loop_options_come_from_arguments_or_environment():

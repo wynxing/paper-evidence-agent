@@ -72,8 +72,9 @@ async def drain_forever(worker: SingleTaskWorker, interval: float) -> int:
     The API process never executes a task, so without a worker that stays up a
     queued task would sit in QUEUED while the client polls it. The loop only
     waits ``interval`` seconds when the queue is empty, so a busy queue is still
-    drained back to back. Cancellation (Ctrl-C / SIGTERM) propagates out of
-    ``asyncio.sleep`` and ends the run.
+    drained back to back. Cancellation propagates out of ``asyncio.sleep``; how a
+    console interrupt reaches the process differs by platform, so the entry point
+    reports it instead of assuming a signal number.
     """
 
     count = 0
