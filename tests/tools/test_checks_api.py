@@ -323,3 +323,59 @@ def test_blank_recipient_configuration_counts_as_unset(monkeypatch):
     assert settings.primary_recipient == "Agnes"
     assert settings.fallback_recipients == ()
     assert settings.observability.recipient is None
+
+
+def test_the_in_process_sdk_is_the_default_transport(monkeypatch):
+    """A gateway process must not be a prerequisite for calling a model."""
+
+    from paper_evidence.config import MODEL_TRANSPORT_SDK
+
+    monkeypatch.delenv("PAPER_EVIDENCE_MODEL_TRANSPORT", raising=False)
+    assert Settings.from_env().model_transport == MODEL_TRANSPORT_SDK
+
+
+def test_an_unknown_transport_falls_back_to_the_default(monkeypatch):
+    from paper_evidence.config import MODEL_TRANSPORT_GATEWAY, MODEL_TRANSPORT_SDK
+
+    monkeypatch.setenv("PAPER_EVIDENCE_MODEL_TRANSPORT", "  Gateway ")
+    assert Settings.from_env().model_transport == MODEL_TRANSPORT_GATEWAY
+    monkeypatch.setenv("PAPER_EVIDENCE_MODEL_TRANSPORT", "nonsense")
+    assert Settings.from_env().model_transport == MODEL_TRANSPORT_SDK
+
+
+def test_the_snapshot_records_which_kind_of_endpoint_is_reached(monkeypatch):
+    """The preview must not describe a route other than the one in use."""
+
+    from paper_evidence.config import MODEL_TRANSPORT_GATEWAY, config_snapshot
+
+    monkeypatch.delenv("PAPER_EVIDENCE_MODEL_API_BASE", raising=False)
+    settings = Settings.from_env()
+    assert config_snapshot(settings)["model"]["transport"] == "sdk"
+    assert config_snapshot(settings)["model"]["base_url_class"] == "provider_default"
+    assert config_snapshot(replace(settings, model_api_base="https://models.test/v1"))[
+        "model"]["base_url_class"] == "configured_endpoint"
+    assert config_snapshot(replace(settings, model_transport=MODEL_TRANSPORT_GATEWAY))[
+        "model"]["base_url_class"] == "local_gateway"
+
+
+def test_the_transport_is_part_of_the_frozen_digest(services):
+    from paper_evidence.config import MODEL_TRANSPORT_GATEWAY
+
+    assert replace(services.settings, model_transport=MODEL_TRANSPORT_GATEWAY).config_digest() != (
+        services.settings.config_digest()
+    )
+
+
+def test_the_configured_transport_decides_which_gateway_is_built(services):
+    from paper_evidence.api.deps import Services
+    from paper_evidence.config import MODEL_TRANSPORT_GATEWAY
+    from paper_evidence.models.gateway import OpenAIChatGateway
+
+    assert not isinstance(services.gateway(), OpenAIChatGateway)
+    proxied = Services(replace(services.settings, model_transport=MODEL_TRANSPORT_GATEWAY))
+    try:
+        built = proxied.gateway()
+        assert isinstance(built, OpenAIChatGateway)
+        assert built.model_alias == "paper-default"
+    finally:
+        proxied.close()
