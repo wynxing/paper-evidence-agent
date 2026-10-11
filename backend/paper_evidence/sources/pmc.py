@@ -97,9 +97,15 @@ class PmcClient:
         params = {
             "verb": "GetRecord",
             "identifier": f"oai:pubmedcentral.nih.gov:{pmcid.removeprefix('PMC')}",
-            "metadataPrefix": "pmc",
+            # pmc_fm returns the full JATS body; the plain "pmc" prefix is rejected
+            # as cannotDisseminateFormat for many records.
+            "metadataPrefix": "pmc_fm",
         }
-        response = await self._fetcher.get(self._oai, params=params, deadline=deadline)
+        # The configured OAI host answers with a 301 to its API path; without
+        # following it the redirect surfaces as an upstream parameter error.
+        response = await self._fetcher.get(
+            self._oai, params=params, deadline=deadline, follow_redirects=True
+        )
         if response.status_code != 200:
             raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "PMC OAI 响应无效")
         try:
