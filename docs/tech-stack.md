@@ -57,11 +57,13 @@
 
 ## D6 模型适配
 
-- 状态：已采纳，替代原 SDK 直连方案。
-- 背景：统一模型接入、密钥与故障恢复，同时把产品可用性策略和固定配置评测分开。
-- 决定：`LangGraph → OpenAI 兼容客户端 → 本机 LiteLLM Proxy → 上游模型`。业务代码只使用模型别名 `paper-default`，默认映射 Agnes 的 `agnes-2.5-flash` Chat Completions。上游地址、密钥和映射由 Proxy 配置管理，不在应用中重复实现供应商适配。[Proxy 接入](https://docs.litellm.ai/docs/proxy/quick_start)、[Agnes 接口](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash)
-- 部署：独立本地进程及配置文件，绑定回环地址并配置访问凭据；也可显式连接已有兼容网关。版本在实现时锁定。不引入 Redis、PostgreSQL、管理后台或团队计费系统。共享网关若不能保证授权路由、预算和逐次尝试记录，不宣称符合本规范。
+- 状态：已采纳。本次修订以进程内 LiteLLM SDK 为主形态，替代 [PR #2](https://github.com/wynxing/paper-evidence-agent/pull/2)「模型请求统一经过本机 Proxy」的决定；不回到 [PR #1](https://github.com/wynxing/paper-evidence-agent/pull/1) 的供应商 SDK 直连。改变的只是 LiteLLM 运行在哪个进程，供应商适配仍由 LiteLLM 提供。
+- 背景：统一模型接入、密钥与故障恢复，同时把产品可用性策略和固定配置评测分开。首版在本机单进程运行；为每次调用额外常驻一个 Proxy 进程，要多一份配置文件、一个监听端口和一次启动步骤，而本项目没有消费它的多租户、管理后台或计费能力。
+- 决定：默认形态为 `LangGraph → LiteLLM SDK（进程内）→ 上游模型`。业务代码只使用模型别名 `paper-default`，默认映射 Agnes 的 `agnes-2.5-flash` Chat Completions。别名到模型、上游地址和密钥仍是配置，不在应用中重复实现供应商适配。[LiteLLM 库用法](https://docs.litellm.ai/docs/)、[Agnes 接口](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash)
+- 部署：`litellm` 是运行时必需依赖，版本在实现时锁定；默认不需要额外进程。需要把上游密钥留在应用环境之外时，改用 OpenAI 兼容客户端连接既有 LiteLLM Proxy（`PAPER_EVIDENCE_MODEL_TRANSPORT=gateway`），该形态受本决定全部规则约束，不因换传输而放宽。不引入 Redis、PostgreSQL、管理后台或团队计费系统。共享网关若不能保证授权路由、预算和逐次尝试记录，不宣称符合本规范。
+- 不选的方案：不再要求必须部署 Proxy；也不采用供应商专用 SDK 或自行实现多供应商适配。
 - 不假定上游支持特定 JSON Schema 响应参数。使用受校验的结构化动作；仅在验证兼容性后启用供应商结构化输出能力。
+- 本项目把费用记为未知，因此关闭 LiteLLM 的远程价目表下载（导入前设 `LITELLM_LOCAL_MODEL_COST_MAP=True`）：它在导入时发一次远程请求，失败会重试（本机实测 1–2 次，上限 3 次）后回落本地备份。导入耗时主要由 LiteLLM 自身的导入图决定，本机约 4 秒，开关在这里没测出可见差异；关闭它的理由是这笔启动开销不该依赖一次远程请求。
 
 | 配置 | 日常核验 `daily` | 评测 `evaluation` |
 | --- | --- | --- |
@@ -70,13 +72,13 @@
 | 缓存 | 首版关闭模型响应缓存 | 禁用模型响应缓存，固定来源快照 |
 | 固定记录 | 授权与运行配置快照 | 另冻结提示词、检索配置、模型部署、来源及数据集、预算 |
 
-Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅凭别名声称模型固定。[回退说明](https://docs.litellm.ai/docs/proxy/reliability)
+LiteLLM 支持按请求禁用回退；评测同时限制别名映射，不能仅凭别名声称模型固定。[回退说明](https://docs.litellm.ai/docs/proxy/reliability)
 
-**规则**：客户端自动重试关闭。网络恢复只归 Proxy；结构或摘录输出修复归工作流。每个逻辑请求最多两个上游尝试（首次加一次恢复）；日常模式若配置了已授权备用部署则恢复到该部署，否则重试原部署；评测仅重试原部署。不能先重试再叠加回退，备用尝试也不能再重试。连接失败、超时、429 和暂时性 5xx 才可恢复；遵守 Retry-After。认证、参数错误不盲目重试；不因「证据不足」、判断方向或内容拒绝而换模型。禁止其他隐式回退和重复 SDK 重试。流程预算见 [执行流程](architecture.md#2-执行流程与状态)。
+**规则**：工作流不做网络重试；结构或摘录输出修复归工作流。网络恢复由当前传输承担：SDK 形态由 `models/` 适配层执行，Proxy 形态由 Proxy 执行。两处都不叠加第二层：SDK 调用显式传 `num_retries=0`，关掉 LiteLLM 自身的重试。每个逻辑请求最多两个上游尝试（首次加一次恢复）。连接失败、超时、429 和暂时性 5xx 才可恢复；遵守 Retry-After，等待时长同样占用任务剩余时间。认证、参数错误不盲目重试；不因「证据不足」、判断方向或内容拒绝而换模型。日常模式若配置了已授权备用部署则恢复到该部署，否则重试原部署；评测仅重试原部署，不能先重试再叠加回退，备用尝试也不能再重试。跨部署回退本轮未实现：配置里没有备用部署，两种形态都只重试原部署。禁止其他隐式回退。流程预算见 [执行流程](architecture.md#2-执行流程与状态)。
 
-**规则**：Proxy 和应用日志、轨迹不记录论断正文、提示词、响应文本或密钥。关闭消息回调日志及详细调试，只投影允许的元数据；错误响应同样脱敏。`turn_off_message_logging` 不等于全链路已无泄漏，仍需检查实际 stdout、文件与回调载荷。[日志配置](https://docs.litellm.ai/docs/proxy/config_settings)
+**规则**：模型传输和应用日志、轨迹不记录论断正文、提示词、响应文本或密钥。关闭消息日志及详细调试（SDK 形态显式设置 `litellm.turn_off_message_logging` 与 `litellm.suppress_debug_info`），只投影允许的元数据；错误响应同样脱敏。`turn_off_message_logging` 不等于全链路已无泄漏，仍需检查实际 stdout、文件与回调载荷。[日志配置](https://docs.litellm.ai/docs/proxy/config_settings)
 
-- 后果：逐次关联逻辑请求和上游尝试；最终响应不足以证明中间尝试，需本地元数据回调/轨迹。模型版本不能验证时记为未知，usage 缺失记为 `null`。输出结构见 [诊断包](glossary.md#6-诊断包)。paper agent 的标签不是真值，不新增内部评审 Agent。
+- 后果：逐次关联逻辑请求和上游尝试；最终响应不足以证明中间尝试，需本地元数据回调/轨迹。模型版本不能验证时记为未知，usage 缺失记为 `null`。SDK 形态下两次尝试都在本进程内，各自记账；Proxy 形态下 Proxy 内部的重试在本进程不可见，调用账只记派发出去的那一次。输出结构见 [诊断包](glossary.md#6-诊断包)。paper agent 的标签不是真值，不新增内部评审 Agent。
 
 ## D7 可观测性
 
@@ -113,7 +115,7 @@ Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅�
 - 不选的方案：不抓取受限 PDF。不把论文全文提交到 Git。不用 OpenAlex 的开放获取字段单独充当许可凭据。
 - 后果：许可缺失或冲突用 `LICENSE_UNKNOWN`，已知但不在首版支持范围的许可用 `LICENSE_UNSUPPORTED`，无可用 PMC 来源用 `SOURCE_UNAVAILABLE`，已获取内容缺失或无法可靠解析用 `CONTENT_INCOMPLETE`。这些情况均为 `BLOCKED`、兼容标签「无法核验来源」，实际主文案按术语表区分具体来源或处理/内容原因；外部请求失败不冒充来源不存在。保存 PMCID、DOI、获取入口、许可、版本、获取时间和内容哈希。只索引获准处理的段落。
 
-上游密钥仅配置在 Proxy 的本机环境变量中，应用只持有网关访问凭据。启动任务前，界面展示整次核验的数据范围、接收方、逻辑请求及上游尝试预算；备用接收方未被授权时不得调用。确认绑定运行配置快照，配置改变不得扩大已有授权。未经确认只做 DOI 的只读元数据查询。若把诊断包交给仓库外的评审 agent，另行展示将发送的字段并取得同意。默认包遮盖未发表论断。Claude、Cursor 是这类评审的例子，不是字段契约，也不进入应用依赖。
+上游密钥的存放位置随 [D6](#d6-模型适配) 的传输形态而定：默认的 SDK 形态由应用自己的本机环境变量提供（`PAPER_EVIDENCE_MODEL_API_KEY`），Proxy 形态只配置在 Proxy 的本机环境变量中、应用只持有网关访问凭据（`PAPER_EVIDENCE_GATEWAY_TOKEN`）。两种形态都不把密钥写进配置摘要、任务记录或日志。启动任务前，界面展示整次核验的数据范围、接收方、逻辑请求及上游尝试预算；备用接收方未被授权时不得调用。确认绑定运行配置快照，配置改变不得扩大已有授权。未经确认只做 DOI 的只读元数据查询。若把诊断包交给仓库外的评审 agent，另行展示将发送的字段并取得同意。默认包遮盖未发表论断。Claude、Cursor 是这类评审的例子，不是字段契约，也不进入应用依赖。
 
 ## D10 暂不采用
 
@@ -131,7 +133,7 @@ Proxy 支持按请求禁用回退；评测同时限制别名映射，不能仅�
 
 - 状态：已采纳
 - 背景：[赛题](https://www.boxuegu.com/matchTrack/detail/?id=10041)建议 Dify、Coze、LangChain、LlamaIndex、DeepSeek、Qwen、GLM、DeepEval、RAGAS、JMeter 和 Locust。这些是建议，不是必选依赖。
-- 决定：首版保持已经采纳的 Vue、FastAPI、LangGraph、OpenAI 兼容客户端、LiteLLM Proxy、默认 Agnes、SQLite FTS5、pytest、Playwright 和本地 OpenTelemetry（可选 Langfuse 导出）。Dify、Coze、DeepEval、RAGAS 和 JMeter 不进入依赖。Claude 与 Cursor 的 SDK 也不进入依赖；它们只在仓库外担任评审。性能测量遵守测试方案，不引入 Locust 或分布式压测。
+- 决定：首版保持已经采纳的 Vue、FastAPI、LangGraph、LiteLLM（默认进程内 SDK，可配置为本机 Proxy）、默认 Agnes、SQLite FTS5、pytest、Playwright 和本地 OpenTelemetry（可选 Langfuse 导出）。Dify、Coze、DeepEval、RAGAS 和 JMeter 不进入依赖。Claude 与 Cursor 的 SDK 也不进入依赖；它们只在仓库外担任评审。性能测量遵守测试方案，不引入 Locust 或分布式压测。
 - 不选的方案：不为了贴近推荐名单而更换编排框架或检索方案。
 - 后果：参赛说明要写明这是有意选择。目录和模块边界以 [架构设计](architecture.md#代码布局) 为准。
 

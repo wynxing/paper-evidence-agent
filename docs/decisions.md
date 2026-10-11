@@ -4,7 +4,7 @@
 
 | 决策 | 本 PR 的选择与原因 |
 | --- | --- |
-| D6 模型入口 | [PR #2](https://github.com/wynxing/paper-evidence-agent/pull/2) 承接并拟替代 [PR #1](https://github.com/wynxing/paper-evidence-agent/pull/1) 的 SDK 直连方案，改为本机 Proxy 集中管理路由及恢复；应用用兼容客户端。 |
+| D6 模型入口 | [PR #2](https://github.com/wynxing/paper-evidence-agent/pull/2) 承接并拟替代 [PR #1](https://github.com/wynxing/paper-evidence-agent/pull/1) 的 SDK 直连方案，改为本机 Proxy 集中管理路由及恢复；应用用兼容客户端。[Issue #18](https://github.com/wynxing/paper-evidence-agent/issues/18) 复审后改为以进程内 LiteLLM SDK 为主形态，Proxy 降为可选传输：改变的是 LiteLLM 运行在哪个进程，别名、逐次尝试记账与每请求至多两次上游尝试保持不变；恢复随之从 Proxy 迁到模型适配层，否则换形态后无人承担。跨部署回退仍未实现。 |
 | D5 单 Agent 流程 | 单 Agent 不等于单次调用。采用最多三个主请求加一次全局修复；补读只一轮。非法动作可按原修复额度纠正，不能扩大工具或来源权限。 |
 | D4 检索 | 首次为空仍需一次有界补充检索；空结果与执行异常分开。FTS5 是首版基线，嵌入检索等待遗漏及消融证据，不作原则性禁用。 |
 | D10 首版范围 | 排除项从硬性限制调用能力改为限制核验对象和基础设施：不做全网搜索、自由协商多 Agent 或网关管理后台；不把这些范围限制当作禁止 Proxy、多步或后续嵌入检索的理由。 |

@@ -18,7 +18,7 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 - Python 必须使用 3.12（当前后端要求 `>=3.12,<3.13`）
 - Node.js 22.12 或更高版本、npm
 
-依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。启动后端、查看配置和运行后端测试不需要模型密钥；执行核验任务需要按 [D6](docs/tech-stack.md#d6-模型适配) 配置本机 LiteLLM Proxy，并通过 `PAPER_EVIDENCE_GATEWAY_TOKEN` 提供网关访问凭据。
+依赖分别锁定在 [`backend/requirements.lock`](backend/requirements.lock) 和 [`frontend/package-lock.json`](frontend/package-lock.json)。启动后端、查看配置和运行后端测试不需要模型密钥；执行核验任务需要按 [D6](docs/tech-stack.md#d6-模型适配) 提供上游访问凭据。默认形态由 LiteLLM 在进程内调用模型，凭据从 `PAPER_EVIDENCE_MODEL_API_KEY` 读取，不需要另起 Proxy；需要把密钥留在应用环境之外时，把 `PAPER_EVIDENCE_MODEL_TRANSPORT` 设为 `gateway`，改为连接本机 Proxy 并用 `PAPER_EVIDENCE_GATEWAY_TOKEN` 提供凭据。环境变量清单见[开发指南](docs/development.md#本地环境)。
 
 ## 快速开始
 

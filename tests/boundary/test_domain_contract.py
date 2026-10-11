@@ -132,7 +132,28 @@ def test_frontend_literals_match_python_contracts():
 
 
 def _distribution_name(requirement: str) -> str:
-    return re.split(r"[<>=;\[]", requirement, maxsplit=1)[0].strip().lower().replace("_", "-")
+    """The distribution a requirement names.
+
+    Metadata renders a requirement either as ``name<1`` or, from older
+    setuptools — which botocore still uses — as ``name (<1,>=x)``. Splitting on
+    the first space, bracket or version operator covers both.
+    """
+
+    return re.split(r"[<>=;\[\s(]", requirement, maxsplit=1)[0].strip().lower().replace("_", "-")
+
+
+def _requested_extras(requirement: str) -> set[str]:
+    """The extras a ``dep[extra]`` requirement asks for, if it asks for any."""
+
+    match = re.search(r"\[([^\]]*)\]", requirement)
+    return {part.strip() for part in match.group(1).split(",") if part.strip()} if match else set()
+
+
+def _extra_marker(requirement: str) -> str | None:
+    """The extra named in an ``extra == "..."`` marker, if there is one."""
+
+    match = re.search(r"""extra\s*==\s*["']([^"']+)["']""", requirement)
+    return match.group(1) if match else None
 
 
 def test_lockfile_matches_declared_dependency_closure():
@@ -152,6 +173,12 @@ def test_lockfile_matches_declared_dependency_closure():
         ]
     }
     assert declared <= pinned
+    # A requirement can carry an extra either as a marker (``x; extra == "e"``) or
+    # in its own name (``x[e]``). Both pull real packages in, so both belong to the
+    # closure; litellm declares httpx[http2] the second way. An extra nobody asks
+    # for stays out, which is what keeps unrequested optional deps unpinned. The
+    # marker names an extra of the distribution being read, not of the dependency.
+    requested: dict[str, set[str]] = {}
     closure = set(declared)
     pending = set(declared)
     while pending:
@@ -161,9 +188,14 @@ def test_lockfile_matches_declared_dependency_closure():
         except PackageNotFoundError:
             continue
         for requirement in dependencies:
-            if "extra ==" in requirement:
+            marker = _extra_marker(requirement)
+            if marker is not None and marker not in requested.get(name, set()):
                 continue
             dependency = _distribution_name(requirement)
+            extras = _requested_extras(requirement)
+            if extras - requested.setdefault(dependency, set()):
+                requested[dependency] |= extras
+                pending.add(dependency)  # read it again now the extra is asked for
             if dependency not in closure:
                 closure.add(dependency)
                 pending.add(dependency)

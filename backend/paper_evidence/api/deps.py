@@ -1,7 +1,9 @@
 """Service container and FastAPI dependencies.
 
-The store and the HTTP client are created lazily so that importing the API or
-answering a request that fails validation never opens a database or a socket.
+The store, the HTTP client and the model transport are created lazily so that
+importing the API or answering a request that fails validation never opens a
+database or a socket — and never pulls the LiteLLM import graph into a process
+that will not call a model.
 """
 
 import os
@@ -9,9 +11,10 @@ import os
 import httpx
 
 from paper_evidence.agents.prompts import PaperPromptBuilder
-from paper_evidence.config import Settings
+from paper_evidence.config import MODEL_TRANSPORT_GATEWAY, Settings
 from paper_evidence.diagnosis.projector import SqliteDiagnosticProjector
 from paper_evidence.models.gateway import OpenAIChatGateway
+from paper_evidence.models.ports import ModelGateway
 from paper_evidence.sources.crossref import CrossrefClient, DoiResolver
 from paper_evidence.sources.http import USER_AGENT, Fetcher
 from paper_evidence.sources.openalex import OpenAlexClient
@@ -64,16 +67,41 @@ class Services:
             OpenAlexClient(fetcher, self.settings.openalex_base_url, email),
         )
 
-    def gateway(self) -> OpenAIChatGateway:
-        return OpenAIChatGateway(
-            self.client,
-            base_url=self.settings.model_base_url,
-            token=os.environ.get(self.settings.gateway_token_env),
+    def gateway(self) -> ModelGateway:
+        """Build the configured model transport.
+
+        Both transports take the same record-keeping base, so this choice is not
+        visible to the workflow and only shows up in the frozen config snapshot.
+        """
+
+        if self.settings.model_transport == MODEL_TRANSPORT_GATEWAY:
+            return OpenAIChatGateway(
+                self.client,
+                base_url=self.settings.model_base_url,
+                token=os.environ.get(self.settings.gateway_token_env),
+                model_alias=self.settings.model_alias,
+                configured_model=self.settings.configured_model,
+                deployment_id=self.settings.deployment_id,
+                recipient=self.settings.primary_recipient,
+                attempt_seconds=self.settings.timeouts.model_attempt_seconds,
+            )
+        # Imported here rather than at module scope: LiteLLM is a large import
+        # graph, and the API process — plus every test that never builds a
+        # gateway — should not pay for it.
+        from paper_evidence.models.sdk import LiteLLMSdkGateway
+
+        return LiteLLMSdkGateway(
+            provider_model=self.settings.provider_model,
+            api_base=self.settings.model_api_base,
+            api_key=os.environ.get(self.settings.model_api_key_env),
             model_alias=self.settings.model_alias,
             configured_model=self.settings.configured_model,
             deployment_id=self.settings.deployment_id,
             recipient=self.settings.primary_recipient,
             attempt_seconds=self.settings.timeouts.model_attempt_seconds,
+            # The frozen recovery budget, not a second copy of it: this transport
+            # owns the recovery a gateway used to perform.
+            attempts_per_request=self.settings.limits.attempts_per_request,
         )
 
     async def aclose(self) -> None:

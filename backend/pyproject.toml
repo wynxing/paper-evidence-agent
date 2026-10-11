@@ -9,12 +9,17 @@ description = "Local Paper Evidence Agent project skeleton"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi==0.142.1",
+  # Runtime, not test-only: the source connectors, the API container and the
+  # OpenAI-compatible transport all import it, so a plain install without the
+  # dev extra could not start.
+  "httpx==0.28.1",
+  "litellm==1.105.0",
   "pydantic==2.13.5",
   "uvicorn==0.54.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1", "httpx==0.28.1"]
+dev = ["pytest==9.1.1"]
 
 [project.scripts]
 paper-evidence-worker = "paper_evidence.worker.__main__:main"

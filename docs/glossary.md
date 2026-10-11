@@ -225,8 +225,8 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 | 尝试字段 | 内容 |
 | --- | --- |
 | `attempt_id`, `attempt_index`, `span_id` | 本地唯一标识、从 1 开始的序号、关联 span |
-| `gateway_request_id`, `upstream_response_id` | 网关和上游返回标识，拿不到为 null |
-| `configured_model`, `deployment_id`, `recipient` | 此次实际路由配置与接收方，来自网关元数据 |
+| `gateway_request_id`, `upstream_response_id` | 传输与上游返回标识：进程内 SDK 形态取 LiteLLM 调用标识，Proxy 形态取网关响应头；拿不到为 null |
+| `configured_model`, `deployment_id`, `recipient` | 此次实际路由配置与接收方，来自传输元数据 |
 | `response_model`, `verified_model_version` | 上游声称的模型及可验证版本；不能验证版本则为 null，不能用别名代替 |
 | `recovery_kind`, `recovery_reason` | none/retry/fallback，以及触发本次恢复的错误码；首次 reason 为 null |
 | `status`, `error_code`, `duration_ms` | success/error/cancelled、错误码和耗时；cancelled 表示本地等待停止，不代表上游计算已停止 |
@@ -234,9 +234,9 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 
 ### 调用账与版本归属
 
-调用账来自工作流在派发前持久化的逻辑请求/补读计数及网关逐次尝试记录，不能只数成功响应；派发未确认也保守占用额度。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
+调用账来自工作流在派发前持久化的逻辑请求/补读计数及传输的逐次尝试记录（SDK 形态由模型适配层直接写；Proxy 形态取元数据回调），不能只数成功响应；派发未确认也保守占用额度。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
 
-必须在接入验收中证明网关能强制执行授权路由和额度；不能因最终响应成功而接纳不具备这些控制的网关。若控制仍可靠、只是运行后尝试元数据丢失，已通过证据门槛的学术结果可保持 COMPLETED 并带调用账未核实提示，不伪造失败或证据不足；缺口不改变学术指标分母，另列审计完整率，不能混入“预算已核实”或精确成本统计。发现控制本身无法保证时停止后续请求并按实际执行故障记录，不按本例发布成功。未知故障按错误码节既有 null error_code 规则处理。最终响应不能代表所有尝试；原始元数据先脱敏再落日志。
+必须在接入验收中证明所选模型传输能强制执行授权路由和额度；Proxy 形态即是对网关本身的这项要求，不能因最终响应成功而接纳不具备这些控制的网关。若控制仍可靠、只是运行后尝试元数据丢失，已通过证据门槛的学术结果可保持 COMPLETED 并带调用账未核实提示，不伪造失败或证据不足；缺口不改变学术指标分母，另列审计完整率，不能混入“预算已核实”或精确成本统计。发现控制本身无法保证时停止后续请求并按实际执行故障记录，不按本例发布成功。未知故障按错误码节既有 null error_code 规则处理。最终响应不能代表所有尝试；原始元数据先脱敏再落日志。
 
 criteria 保存可取回的不可变 JSON 判据快照，含证据门槛、四类学术标签及来源/执行展示条件、全部错误码到终态映射、动作合法性与预算判定顺序、文本与摘录比对规则。version 为不可原地重定义的人工版本；digest 为快照摘要；snapshot_ref 为内容寻址的本地引用，不是任意路径或远程 URL。实现提交同时记录在 implementation_revision。规则语义改变必须发布新版本，旧结果继续指向旧快照；快照找不到即明确不可复现，单有哈希不声称能回放。
 
