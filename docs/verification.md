@@ -322,6 +322,7 @@ PY
 | 真实进程探针：不配置密钥与上游地址 | `UPSTREAM_UNAVAILABLE`，两次尝试，0.02 秒内返回（未建立连接） |
 | 真实进程探针：deadline 已过期 | `TASK_TIMEOUT`，不产生尝试记录 |
 | 真实进程探针：`import litellm` 的价目表抓取 | 不设 `LITELLM_LOCAL_MODEL_COST_MAP` 时每次导入报告 1–2 次抓取尝试（litellm 自身上限 3 次）后回落本地备份，设了之后 0 次 |
+| CI（对象提交 `bee9e98`，run 38134749566） | `backend` 与 `frontend` 两个检查均 success。`backend` 在 Linux / Python 3.12 上运行 `pytest -c backend/pyproject.toml -q`，结果为 **197 passed，2 warnings**，与本机一致；这也说明 Retry-After 用例的宽松阈值在 Linux 上同样成立 |
 
 探针查出一处真实缺陷，随本提交修掉：litellm 的 `BadGatewayError`、`InvalidRequestError`、`APIResponseValidationError` 直接继承 `openai` 的基类而非 litellm 的同名类，原来的映射表只列 litellm 同名类、兜底项也取自 `litellm.APIError`，这些类因此漏出未映射。修前「上游端口未监听」会以 `error_code=null`（worker 的未分类失败分支）结束，修后为上表的 `UPSTREAM_UNAVAILABLE`。
 
@@ -341,8 +342,8 @@ PY
 - Proxy 形态未做真实连通性验证，仍只用 `httpx.MockTransport` 的状态映射用例；`PAPER_EVIDENCE_MODEL_TRANSPORT=gateway` 与真实 LiteLLM Proxy 的联调未做。
 - 跨部署回退未实现。规范里「日常模式恢复到已授权备用部署」没有对应代码，配置里也没有备用部署，两种形态都只重试原部署。这是本轮明确不做的范围，已写入 D6 与 decisions.md，不是遗漏。
 - Proxy 形态下调用账的缺口未解决：Proxy 内部的重试在本进程不可见，`attempts` 只记派发出去的那一次；SDK 形态下两次都可见。两种形态的诊断保真度因此不同，已写入 D6 后果。
-- 未做端到端联调：前端轮询 + 常驻 worker + 真实模型调用的整条链路未跑通。
-- 未在 Linux 上重跑。仓库 CI 会在 Linux 上跑 `backend` 与 `frontend`，本节不把尚未看到的 CI 结果写成通过；以上数字都来自 Windows / Python 3.12.14。
+- 端到端联调未做：前端轮询 + 常驻 worker + 真实模型调用的整条链路未跑通。
+- Linux 只由 CI 覆盖测试与构建（见上表），没有在 Linux 上单独跑真实进程探针；探针结论仍只属于 Windows / Python 3.12.14。CI 同样没有网络出口，因此它也不覆盖真实模型连通性。
 - 未测并发与性能，单 worker、一次一任务的假设未做压力验证；论文语义验收、LangGraph 编排、Langfuse 导出与 Playwright 端到端仍未接入。
 - `httpx` 从 dev extra 提到运行时是顺带修的打包缺口，未在「只装 `dependencies`、不装 `requirements.lock`」的路径上单独验证。
 
