@@ -62,9 +62,9 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 
 ## 持续集成
 
-拉取请求和推送到 `main` 会运行两个检查：`backend` 执行 pytest，`frontend` 执行前端构建。
+拉取请求和推送到 `main` 会运行两个检查：`backend` 执行 pytest，`frontend` 执行前端测试与构建。
 
-本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend run build`。
+本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend test`，`npm --prefix frontend run build`。
 
 ## 文档
 
