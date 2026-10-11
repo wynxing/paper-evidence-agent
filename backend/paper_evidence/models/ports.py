@@ -1,4 +1,4 @@
-"""Configured local gateway boundary. No SDK or upstream call is implemented."""
+"""Model boundary. Two transports implement it; neither leaks into the workflow."""
 
 from typing import Protocol
 
@@ -13,5 +13,11 @@ class ModelGateway(Protocol):
         ContractError with UPSTREAM_TIMEOUT, UPSTREAM_RATE_LIMITED,
         UPSTREAM_AUTH_FAILED, UPSTREAM_INVALID_REQUEST, or UPSTREAM_UNAVAILABLE.
         TASK_TIMEOUT is the worker and workflow total deadline, not this call.
+
+        Implemented by ``models/sdk.py`` (LiteLLM in this process, the default)
+        and ``models/gateway.py`` (OpenAI-compatible client for a configured
+        gateway). Both record attempts identically, so the workflow cannot tell
+        which transport it was given. Bounded upstream recovery belongs to the
+        transport: the workflow only repairs output and never retries the network.
         """
         ...

@@ -24,9 +24,13 @@ from .domain.contracts import (
 from .domain.digest import digest_of
 from .domain.rules import criteria_reference
 
-__all__ = ["Settings", "config_snapshot", "narrowed_snapshot"]
+__all__ = ["Settings", "config_snapshot", "endpoint_class", "narrowed_snapshot"]
 
 MODEL_ALIAS = "paper-default"
+MODEL_TRANSPORT_SDK = "sdk"
+MODEL_TRANSPORT_GATEWAY = "gateway"
+DEFAULT_MODEL_TRANSPORT = MODEL_TRANSPORT_SDK
+MODEL_TRANSPORTS = (MODEL_TRANSPORT_SDK, MODEL_TRANSPORT_GATEWAY)
 DEFAULT_MODEL_BASE_URL = "http://127.0.0.1:4000"
 PROMPT_VERSION = "paper-prompt-0.1.0"
 PARSER_VERSION = "jats-0.1.0"
@@ -35,6 +39,9 @@ DATA_SCOPE = ["claim_text", "candidate_open_paragraphs"]
 
 DEFAULT_CONFIGURED_MODEL = "agnes-2.5-flash"
 DEFAULT_DEPLOYMENT_ID = "agnes-primary"
+# The provider-qualified name the SDK dispatches to. LiteLLM keeps the provider
+# adaptation; the application still only names the alias and this one mapping.
+DEFAULT_PROVIDER_MODEL = "openai/agnes-2.5-flash"
 
 
 def _implementation_revision() -> str:
@@ -62,7 +69,11 @@ class Settings:
     data_dir: Path = field(default_factory=lambda: Path.cwd() / ".paper-evidence")
     primary_recipient: str = "Agnes"
     fallback_recipients: tuple[str, ...] = ()
+    model_transport: str = DEFAULT_MODEL_TRANSPORT
     model_alias: str = MODEL_ALIAS
+    provider_model: str = DEFAULT_PROVIDER_MODEL
+    model_api_base: str = ""
+    model_api_key_env: str = "PAPER_EVIDENCE_MODEL_API_KEY"
     model_base_url: str = DEFAULT_MODEL_BASE_URL
     gateway_token_env: str = "PAPER_EVIDENCE_GATEWAY_TOKEN"
     configured_model: str = DEFAULT_CONFIGURED_MODEL
@@ -96,12 +107,18 @@ class Settings:
             os.environ.get("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT")
             or os.environ.get("PAPER_EVIDENCE_LANGFUSE_RECIPIENT")
         )
+        # 未知取值按既有的 profile 处理方式回落到默认值；生效的传输方式会写进
+        # 冻结快照，因此预览显示的是实际使用的那一种，不会与实际调用不符。
+        transport = (os.environ.get("PAPER_EVIDENCE_MODEL_TRANSPORT") or "").strip().lower()
         return cls(
             profile="evaluation" if profile == "evaluation" else "daily",
             data_dir=Path(data_dir) if data_dir else Path.cwd() / ".paper-evidence",
             primary_recipient=_clean(os.environ.get("PAPER_EVIDENCE_PRIMARY_RECIPIENT")) or "Agnes",
             fallback_recipients=fallback,
-            model_base_url=os.environ.get("PAPER_EVIDENCE_MODEL_BASE_URL", DEFAULT_MODEL_BASE_URL),
+            model_transport=transport if transport in MODEL_TRANSPORTS else DEFAULT_MODEL_TRANSPORT,
+            provider_model=_clean(os.environ.get("PAPER_EVIDENCE_PROVIDER_MODEL")) or DEFAULT_PROVIDER_MODEL,
+            model_api_base=_clean(os.environ.get("PAPER_EVIDENCE_MODEL_API_BASE")) or "",
+            model_base_url=_clean(os.environ.get("PAPER_EVIDENCE_MODEL_BASE_URL")) or DEFAULT_MODEL_BASE_URL,
             contact_email=os.environ.get("PAPER_EVIDENCE_CONTACT_EMAIL", ""),
             observability=Observability(langfuse_enabled=langfuse, recipient=recipient),
         )
@@ -132,6 +149,22 @@ class Settings:
         return digest_of(config_snapshot(self, authorized_recipients))
 
 
+def endpoint_class(settings: Settings) -> str:
+    """Which kind of endpoint the effective transport will actually reach.
+
+    The concrete address stays out of the snapshot: a host and port are local
+    deployment detail, while the class of endpoint is what the frozen config has
+    to pin so the preview cannot silently describe a different route than the one
+    used. ``local_gateway`` is a separate process, ``configured_endpoint`` is an
+    address given in configuration, and ``provider_default`` is the endpoint the
+    provider adapter resolves on its own.
+    """
+
+    if settings.model_transport == MODEL_TRANSPORT_GATEWAY:
+        return "local_gateway"
+    return "configured_endpoint" if settings.model_api_base else "provider_default"
+
+
 def config_snapshot(settings: Settings, authorized_recipients: tuple[str, ...] | None = None) -> dict[str, object]:
     """The expanded config snapshot written into ``config_digest``.
 
@@ -146,7 +179,8 @@ def config_snapshot(settings: Settings, authorized_recipients: tuple[str, ...] |
         "profile": settings.profile,
         "model": {
             "alias": settings.model_alias,
-            "base_url_class": "local_gateway",
+            "transport": settings.model_transport,
+            "base_url_class": endpoint_class(settings),
             "configured_model": settings.configured_model,
             "deployment_id": settings.deployment_id,
             "params": {"temperature": 0, "cache": False},
