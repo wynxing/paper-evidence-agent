@@ -12,7 +12,7 @@
 | `frontend/src/` | Vue 静态页面和 API 客户端类型声明。 |
 | `tests/tools/`、`tests/boundary/`、`tests/retrieval/`、`tests/session/` | HTTP 接口与契约、领域规则与存储生命周期、检索与切分、有界工作流的检查。 |
 
-模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型网关和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`），Langfuse 导出尚未接入。
+模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型传输和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`），Langfuse 导出尚未接入。
 
 存储、检索、提示词和轨迹端口是同步接口。异步 worker 通过 `asyncio.to_thread` 调用它们，不在事件循环上直接执行 SQLite 或 FTS5。来源、模型和工作流的进程内 `deadline` 是 `time.monotonic()` 的绝对时刻；写入任务的 `claimed_at`/`deadline_at` 用墙钟 UTC 秒，因为这两个值会由 API 进程读取，进程内单调时钟跨重启没有意义。
 
@@ -61,12 +61,16 @@ backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续�
 
 任务详情返回 `created_at`、`started_at`、`finished_at` 三个时刻：入队时写 `created_at`，worker 领取并转 `RUNNING` 时写 `started_at`，终态（含取消、超时与遗留任务结算）落定写入 `finished_at`。仍在 `QUEUED` 的任务没有 `started_at`，未终结的任务没有 `finished_at`；前端把缺失的一端显示为未知，不估算用时。历史列表按 `created_at` 倒序返回，前端按服务端顺序渲染。
 
-数据目录由 `PAPER_EVIDENCE_DATA_DIR` 指定，默认是当前工作目录下的 `.paper-evidence/`；网关访问凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，只用于本机 Proxy，不写入配置摘要；已授权的观测/诊断接收方由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 配置，默认没有，未配置时无法导出 `consented` 诊断包。
+数据目录由 `PAPER_EVIDENCE_DATA_DIR` 指定，默认是当前工作目录下的 `.paper-evidence/`；已授权的观测/诊断接收方由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 配置，默认没有，未配置时无法导出 `consented` 诊断包。
+
+模型传输由 `PAPER_EVIDENCE_MODEL_TRANSPORT` 选择，默认 `sdk`：LiteLLM 以库的形式在 API/worker 进程内运行，上游凭据从 `PAPER_EVIDENCE_MODEL_API_KEY` 读取，上游地址可用 `PAPER_EVIDENCE_MODEL_API_BASE` 覆盖，要调用的模型由 `PAPER_EVIDENCE_PROVIDER_MODEL` 指定（默认 `openai/agnes-2.5-flash`），业务代码仍只用别名 `paper-default`。取值为 `gateway` 时改走 OpenAI 兼容客户端连接 `PAPER_EVIDENCE_MODEL_BASE_URL` 指定的本机 Proxy，凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，上游地址与密钥留在 Proxy 一侧。未知取值回落到默认；生效的传输方式与端点类别写入冻结配置快照并计入 `config_digest`，因此预览显示的形态与实际调用一致。两种形态都不把密钥写入配置摘要或日志。
+
+`litellm` 是运行时必需依赖，导入时默认会下载远程价目表；本项目把费用记为未知，因此在导入 LiteLLM 之前设 `LITELLM_LOCAL_MODEL_COST_MAP=True`，跳过这次网络请求。
 
 ## 检查范围
 
 检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败。
 
-README 中的检查验证接口表面、领域枚举及默认配置与文档的一致性、摘要与文本契约、检索与切分、有界工作流的预算与出口、来源与网关的错误映射、模块导入和前端构建。响应状态表从架构文档解析并与 OpenAPI 双向比较（不再放宽 `501`）；前端命名接口与所有 OpenAPI 对象模型比对字段、必填性和可空性（含继承及 Omit）。客户端方法接口不属于 JSON 对象契约。HTTP 与任务测试使用临时数据目录和合成请求；上游连接器与模型网关用 `httpx.MockTransport` 覆盖状态映射，不访问真实网络。
+README 中的检查验证接口表面、领域枚举及默认配置与文档的一致性、摘要与文本契约、检索与切分、有界工作流的预算与出口、来源与模型传输的错误映射、模块导入和前端构建。响应状态表从架构文档解析并与 OpenAPI 双向比较（不再放宽 `501`）；前端命名接口与所有 OpenAPI 对象模型比对字段、必填性和可空性（含继承及 Omit）。客户端方法接口不属于 JSON 对象契约。HTTP 与任务测试使用临时数据目录和合成请求；上游连接器与 Proxy 形态的模型传输用 `httpx.MockTransport` 覆盖状态映射，不访问真实网络；SDK 形态的传输用注入的完成函数覆盖错误映射与恢复，另有两条用例经真实 `litellm.acompletion` 加 `mock_response` 走通 SDK 入口。
 
 这些检查不替代真实来源、模型接入、任务执行或论文语义验收；已实现模块的单元与桩测试通过，不代表真实 Crossref/PMC/OpenAlex/Proxy 连通性或论文语义结论已验证。每次 PR 应在说明中记录实际运行的命令、结果和未覆盖范围；团队协作及独立评审要求见 [AGENTS.md](../AGENTS.md)。

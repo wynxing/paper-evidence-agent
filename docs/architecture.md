@@ -11,7 +11,7 @@
 
 ## 1. 系统边界与组件
 
-**规则**：首版在本机运行，一次处理一条论断和一篇被引文献。论断、任务记录和获准处理的段落在本机保存。作者同意后，才把论断与候选开放片段发送给配置的模型，供 paper agent 使用。一个 paper agent 在预算内完成多步核验。模型请求统一经过本机 LiteLLM Proxy，整次任务的接收方和预算先获授权。诊断包和轨迹交给仓库外的评审 agent；它们不在本进程内。文献连接器只读。模型不能指定任意网址、访问本地文件或修改来源记录。
+**规则**：首版在本机运行，一次处理一条论断和一篇被引文献。论断、任务记录和获准处理的段落在本机保存。作者同意后，才把论断与候选开放片段发送给配置的模型，供 paper agent 使用。一个 paper agent 在预算内完成多步核验。模型请求统一经过 LiteLLM：默认在 API/worker 进程内以 SDK 形态运行，也可配置为连接独立的本机 LiteLLM Proxy（见 [D6](tech-stack.md#d6-模型适配)）。整次任务的接收方和预算先获授权。诊断包和轨迹交给仓库外的评审 agent；它们不在本进程内。文献连接器只读。模型不能指定任意网址、访问本地文件或修改来源记录。
 
 ```mermaid
 flowchart LR
@@ -26,9 +26,8 @@ flowchart LR
     Graph --> Search["FTS5：指定来源内检索"]
     Search <--> DB
     Graph --> Paper["paper agent 提示词与动作校验"]
-    Graph --> Client["OpenAI 兼容模型客户端"]
-    Client --> Proxy["本机 LiteLLM Proxy"]
-    Proxy --> Model["已授权上游模型，默认 Agnes"]
+    Graph --> Client["模型传输：LiteLLM SDK 或本机 Proxy"]
+    Client --> Model["已授权上游模型，默认 Agnes"]
     Graph --> Trace["OpenTelemetry 本地轨迹"]
     DB --> Packet["版本化诊断包"]
     Trace --> Packet
@@ -48,7 +47,7 @@ flowchart LR
 - `backend/paper_evidence/sources/`：Crossref、PMC、OpenAlex。只读官方端点，包括受限的 DOI 解析检查，不调用模型。
 - `backend/paper_evidence/retrieval/`：当前文献的切分与检索。
 - `backend/paper_evidence/agents/`：只放 paper agent 的提示词和输出结构校验。不能自己发 HTTP，也不能读本地文件。图谱不编排第二个 agent。
-- `backend/paper_evidence/models/`：OpenAI 兼容客户端及网关元数据适配。只连接已配置 Proxy，关闭客户端重试，不直连供应商。
+- `backend/paper_evidence/models/`：模型传输与网关元数据适配。默认在进程内用 LiteLLM SDK 调用，也可配置为连接本机 Proxy；两条路径关闭客户端重试与 LiteLLM 自身重试，供应商适配都由 LiteLLM 完成，不在本包重写。选择写进冻结配置快照。
 - `backend/paper_evidence/graph/`：LangGraph 节点。编排来源、检索、模型客户端，验证动作和预算；网络由连接器及客户端执行。
 - `backend/paper_evidence/diagnosis/`：从任务记录投影诊断包，并做脱敏。不自动改任务，也不充当路径二的测试产品。
 - `backend/paper_evidence/tracing/`：本地 OpenTelemetry 与可选 Langfuse 脱敏异步导出，不参与业务状态判定。
@@ -82,7 +81,7 @@ flowchart TD
   graphPkg --> retrieval
   graphPkg --> agents
   graphPkg --> models[models]
-  models --> proxy[LiteLLM Proxy]
+  models --> transport[LiteLLM：进程内 SDK 或本机 Proxy]
   graphPkg --> diagnosis
   graphPkg --> storage
   graphPkg --> tracing
@@ -153,7 +152,7 @@ flowchart TD
 - 每任务最多三个主逻辑请求，加一个全局输出修复请求。修复任一阶段后继续原流程，不增加主请求配额，也不重置补读次数。
 - 结构、动作字段或摘录错误可以修复一次；修复只得到原请求的已核对材料及该响应全部可检测的校验错误（结构可解析后同时检查来源和摘录），不增加来源或工具权限。修复仍错则失败，保留两次输出的本地记录与验证结果。全任务共享一次修复是避免延长调用链的工程取舍；后续另一响应出错不重置次数，结构无法解析时也不能声称已检查其摘录。
 - 先检查取消和截止时间，再检查响应结构及本步动作合法性，最后在执行合法动作前检查剩余额度。请求 3 输出 retrieve 是 MODEL_INVALID_OUTPUT 的可修复情形：若全局修复尚可用且未到截止时间，只允许利用已有材料修成 final；不执行补读。修复已用尽或修复后仍非法则 MODEL_INVALID_OUTPUT。合法动作即将超出授权调用/补读额度才是 BUDGET_EXCEEDED，不通过修复扩大额度；两类原因互斥。请求 3 的修复仍占原有一次修复槽位，不是第四个主请求。
-- 每个逻辑请求最多两个实际上游尝试，恢复与回退共用一次机会，故整任务最多八个上游尝试。模型客户端不重试；Proxy 执行 [D6](tech-stack.md#d6-模型适配) 的恢复策略，工作流不能再叠加网络重试。
+- 每个逻辑请求最多两个实际上游尝试，恢复与回退共用一次机会，故整任务最多八个上游尝试。模型适配层不额外重试；网络恢复由当前传输执行（SDK 形态是适配层本身，Proxy 形态是 Proxy），执行 [D6](tech-stack.md#d6-模型适配) 的恢复策略，工作流不能再叠加网络重试。
 - 上述次数是初始工程上限，不是最优参数或性能结果。超时采用下节默认值；检索上下文上限在实现配置中显式设置并纳入 config_digest。改变配置不能扩大正在执行任务的授权，评测运行冻结该配置。
 
 前置完整性检查发现内容不足时不调用模型；若补读时才发现判断依赖缺失图表，也进入 `CONTENT_INCOMPLETE`，不把缺失内容补成结论。完成检索仍不足属于学术结果；上游故障、无效输出和预算阻断属于执行失败。所有终态都可导出诊断包；外部评审不同意见不回写任务。
@@ -164,11 +163,11 @@ flowchart TD
 
 **规则**：默认每次模型上游尝试 45 秒、每次来源 HTTP 请求 15 秒、每任务执行 180 秒。总时限从 worker 原子领取任务并转为 RUNNING 起算，包含来源处理、模型调用、重试退避和校验，不含 QUEUED 时间；界面展示排队时长，不能把等待隐藏在执行耗时中。三个值保存到 run_config.timeouts 并纳入 config_digest。
 
-- 每次请求的有效超时取单次上限与任务剩余时间的较小值；使用单调时钟计时，deadline 传到模型客户端、Proxy 和来源连接器。Proxy 的恢复等待也服从同一个 deadline。若 Retry-After 超过剩余时间，取消可中断的等待在任务 deadline 结束为 TASK_TIMEOUT，不提前重试。
+- 每次请求的有效超时取单次上限与任务剩余时间的较小值；使用单调时钟计时，deadline 传到模型传输和来源连接器。模型传输的恢复等待也服从同一个 deadline。若 Retry-After 超过剩余时间，取消可中断的等待在任务 deadline 结束为 TASK_TIMEOUT，不提前重试。
 - 总时限到达时取消本地等待，停止后续调用/补读/重试，FAILED + TASK_TIMEOUT；单次请求先超时且还有总预算时才允许原有恢复。次数上限不保证在 180 秒内把所有配额用完。
 - API 原子受理取消，QUEUED 直接变 CANCELLED；RUNNING 先持久化 cancel_requested=true，worker 取消本地等待并收尾为 CANCELLED。取消期间不能再领取该任务、产生新调用或提交最终判断；保存已经发生的尝试及诊断。
 - 取消与完成/失败使用同一事务条件更新：其他终态先提交则取消返回 409，已为 CANCELLED 的重复请求返回 200；取消先受理则后续结果不得改写终态，只可追加脱敏的迟到尝试元数据。取消入口也检查 deadline，已到期且尚无取消标记则先结算 TASK_TIMEOUT。已受理取消优先于随后到达的 deadline。
-- 客户端断连并不等于 Proxy 停止。模型适配层须将取消信号关联至网关请求，Proxy 每次恢复前重新检查取消/deadline；不得在后台继续回退。接入网关若无法满足此取消契约，不能宣称该配置通过验收。已经发出的供应商请求可能继续执行或计费，界面不得声称已撤回。
+- 客户端断连并不等于上游停止。SDK 形态下取消直接进入模型适配层的等待；Proxy 形态下模型适配层须把取消信号关联至网关请求，并按 [D6](tech-stack.md#d6-模型适配) 依赖 Proxy 在每次恢复前重新检查取消/deadline，不得在后台继续回退。接入网关若无法满足此取消契约，不能宣称该配置通过验收。已经发出的供应商请求可能继续执行或计费，界面不得声称已撤回。
 - 本机无负载的受控验收中，取消接口 1 秒内响应、运行任务在受理后 2 秒内结束本地等待并释放 worker；任务总时限到达后也在 2 秒内收尾。这是工程验收上限，不是已经实测的性能。持久化或终止失败必须报告实际状态，不能提前声称取消完成。
 
 ### 任务内澄清
@@ -364,17 +363,17 @@ flowchart TD
 | --- | --- |
 | 身份/来源/许可/完整性阻断 | sources 提供原因，graph 停止；不替换文献、不调用模型补结论 |
 | 检索数据库/索引异常 | retrieval 立即返回 RETRIEVAL_FAILED；不交模型修复、不写成空结果 |
-| 取消或总时限到达 | API/worker/Proxy 按取消与截止时间契约停止后续工作，分别为 CANCELLED 或 FAILED + TASK_TIMEOUT |
+| 取消或总时限到达 | API/worker/模型传输按取消与截止时间契约停止后续工作，分别为 CANCELLED 或 FAILED + TASK_TIMEOUT |
 | 初次检索为空 | graph 允许 paper agent 发起一次补充检索；仍为空才 RETRIEVAL_EMPTY |
 | 输出结构或摘录无效 | graph 组织一次全局修复，重新确定性校验；再失败按实际原因停止 |
-| 模型连接故障、超时、限流、暂时性服务错误 | Proxy 最多一次恢复，原部署或已授权备用部署二选一；仍失败返回独立错误码 |
-| 模型认证/参数错误 | 客户端与 Proxy 均不重试，不自动改写参数静默降级 |
+| 模型连接故障、超时、限流、暂时性服务错误 | 当前模型传输最多一次恢复（SDK 形态是适配层，Proxy 形态是 Proxy），原部署或已授权备用部署二选一；仍失败返回独立错误码。跨部署回退未实现，两种形态当前都只重试原部署 |
+| 模型认证/参数错误 | 模型适配层与 Proxy 均不重试，不自动改写参数静默降级 |
 | 来源请求的短暂故障 | sources 最多重试一次，遵守 Retry-After；恢复仍失败时 FAILED，不能伪装成 SOURCE_UNAVAILABLE |
 | 合法动作超出模型或补读预算 | graph 在发起前拒绝，BUDGET_EXCEEDED；不以修复名义扩大额度。非法动作先走上述输出校验 |
 
 **规则**：论文、网页和接口返回都是不可信数据，其中的指令不予执行。文献连接器只访问官方只读端点，并限制超时、重试次数和请求频率。
 
-**规则**：SQLite 和获许可的缓存只放在本地，并排除出 Git。OpenTelemetry span 记录任务 ID、DOI 哈希或规范标识、来源版本哈希、候选段落 ID 与数量、阶段、工具名、耗时、错误码和 token 数。应用与 Proxy 的日志/span 不记录论断原句、全文、查询、提示词、原始响应或密钥；异常载荷也须脱敏。Proxy 的逐次元数据回调与本地轨迹用 request_id 关联，响应 model 字段不能冒充真实版本，缺失 usage 用 null。完整语义诊断包只在本地生成。若交给仓库外的评审 agent，之前要预览字段、遵守来源许可，并取得作者对未发表论断的单独同意。用户核验本身不发起这次外传。实验用的输入和来源快照放在访问受控的本地数据集中，并另存版本标识。
+**规则**：SQLite 和获许可的缓存只放在本地，并排除出 Git。OpenTelemetry span 记录任务 ID、DOI 哈希或规范标识、来源版本哈希、候选段落 ID 与数量、阶段、工具名、耗时、错误码和 token 数。应用与模型传输的日志/span 不记录论断原句、全文、查询、提示词、原始响应或密钥；异常载荷也须脱敏。传输层返回的逐次元数据（SDK 形态取 LiteLLM 调用标识，Proxy 形态取元数据回调）与本地轨迹用 request_id 关联，响应 model 字段不能冒充真实版本，缺失 usage 用 null。完整语义诊断包只在本地生成。若交给仓库外的评审 agent，之前要预览字段、遵守来源许可，并取得作者对未发表论断的单独同意。用户核验本身不发起这次外传。实验用的输入和来源快照放在访问受控的本地数据集中，并另存版本标识。
 
 轨迹说明哪一步观察到什么输入、输出或错误。它不能证明模型内部如何推理。受控故障的真因由隐藏的注入记录确定。自然样本中的争议需要独立标注，不能只凭 span 名称或 Agent 自述下结论。[OpenTelemetry 手动埋点](https://opentelemetry.io/docs/languages/python/instrumentation/)
 
