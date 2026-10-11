@@ -253,3 +253,45 @@ PY
 编排测试在 Node 内置测试运行器里挂载 `useWorkbench`，注入替身客户端、短间隔的真实轮询器或可控轮询器，以及 hash / 可见性替身。覆盖：提交（含 DOI 规范化、进行中的第二次提交不重发）、轮询推进到终态后停止、网络错误与 503 后续轮询、契约不一致 / 404 / 409 停止轮询、导航后的迟到读取不覆盖当前任务、重试走 `retryCheck` 且新历史行保留 DOI、取消成功后停止轮询、取消失败后续轮询、409 后刷新配置、501 保留草稿且不进入模拟模式、隐藏页面不启动轮询、畸形 hash 提示、注入客户端优先于 demo 模式、未注入时 demo 模式仍用内存客户端、语义导出缺少同意标记时不发请求。
 
 未覆盖：未运行 pytest；未在浏览器中操作工作台；未连接真实后端、文献来源或模型。替身挂载不是 Playwright 端到端。本节不把尚未看到的 CI 结果写成通过。
+
+## 前后端接口缺口（2026-10-11）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `aca988c9423a934e0691e28ed75ed48b9174934f`；本节在其后的独立提交中写入，避免提交哈希自指 |
+| 关联 | 前后端接口差异清单（对应 Issue #7）中的 #1、#2、#3、#4、#5、#6、#8、#11；一次契约变更，前后端同批改完 |
+| 环境 | Windows、Python 3.12.14、Node.js v22.22.2、npm 10.9.7。后端依赖装在新临时 venv 中，命令从工作树仓库根目录执行。未新增依赖，未改 `pyproject.toml` 依赖列表与锁定文件 |
+| 对象 | `backend/paper_evidence/` 下的 `domain/contracts.py`、`domain/text.py`、`storage/sqlite.py`、`sources/service.py`、`config.py`、`api/app.py`、`worker/__main__.py`、`worker/runner.py`；`frontend/src/`；两处契约文档；相关测试 |
+
+### 实际检查
+
+测试与构建在对象提交落地、工作区干净时执行。
+
+| 检查 | 结果 |
+| --- | --- |
+| `python -m pytest -c pyproject.toml -q --basetemp=<临时目录>` | **158 passed，1 warning**。警告仍为 Starlette TestClient 对 httpx 的既有弃用提示，未隐藏 |
+| `npm test`（`frontend/`） | **42 passed，0 failed**（1 suite），此前为 21 条 |
+| `npm run build`（`frontend/`） | `vue-tsc --noEmit` 通过，Vite 生产构建通过（29 modules） |
+| `python -m pip check` | No broken requirements found |
+| `git diff --check` | 无输出，退出码 0 |
+| 真实进程探针：`PAPER_EVIDENCE_DATA_DIR=<临时目录> python -m paper_evidence.worker` | 退出码 `0`，stderr 为「worker 本次处理了 0 个任务，队列已空。」，临时目录内生成 `paper-evidence.sqlite3` |
+| 真实进程探针：同上加 `--loop --interval 0.05`，等待 4 秒后查进程状态 | 进程仍在运行（队列为空也不退出），确认常驻语义；随后以 `CTRL_BREAK_EVENT` 结束 |
+
+关于中断的实测细节：用 `CTRL_BREAK_EVENT` 结束时进程退出码为 `3221225786`（`0xC000013A`，`STATUS_CONTROL_C_EXIT`），stderr 为空，即 Python 层的中断分支没有机会执行。控制台控制事件如何到达进程因平台与终端而异，因此该路径改由 `tests/boundary/test_domain_contract.py` 的入口层用例固定：`--loop` 走到 `drain_forever`、中断按正常停止处理、退出码 `0`、打印「worker 收到中断，已停止。」。真实信号下的可观测行为在本机 Windows 终端上仍未确认。
+
+### 覆盖
+
+- 契约双向比对：`tests/boundary/test_frontend_shapes.py` 把 `contracts.ts` 与 OpenAPI 逐字段比对（字段名、必填性、可空性、继承与 `Omit`），`tests/tools/test_api_contract.py` 把架构文档的响应状态表与 OpenAPI 双向比对。二者在本轮随契约扩展一起通过，因此新字段的前后端一致是被断言过的，不是只看代码。这 6 条用例在本次之前的工作树里因未安装 Node 与前端依赖而未实际执行。
+- 存储：历史行带摘要与创建时间、倒序、筛选；详情返回原句、书目与三个时刻；排队期取消会写 `finished_at`；书目索引保留作者与年份；旧行缺 `authors`/`year` 时按空值读出；用构造的旧版 schema 数据库打开后补齐列且保留原有行。
+- 接口：历史与详情返回新字段、按 `status` 筛选；诊断导出对空字符串与全空白收件人返回 `400`，对带首尾空格的已授权收件人按归一化值返回 `200`；配置读取归一化 `"A, B"` 与全空白值。
+- 前端：演示数据满足新契约；历史倒序与摘要；详情计时助手在缺失或时间倒挂时返回未知而非估算；未缓存上下文时由任务记录恢复原句，从而「修改原句」「拆分论断」可用，且任务未记录原句时仍拒绝；重试草稿仍不填原句。
+
+### 未覆盖
+
+- 没有真实上游调用。Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`。
+- 没有端到端联调。前端轮询 + 常驻 worker + 真实取回全文的完整链路未跑通；“任务从 `QUEUED` 进入 `RUNNING` 并被前端看到”只有单元与编排测试支持，没有跨进程实测。
+- worker 重启后遗留 `RUNNING` 的重试路径（清单 #7）未做跨进程联调，只有存储层用例。
+- 清单 #10（是否在授权页展示实际模型与部署）仍待产品确认，本轮未改；#12（证据邻段只读接口）与 #13（前端 501 死代码清理）本轮未做。
+- 论文语义验收、正式研究评测、LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；取消、截止时间与并发未压测，单 worker、一次一任务的假设未做压力验证。
+- 迁移只在构造的一版旧 schema 上验证，未覆盖真实使用过的数据库；`paragraphs`、`check_sources` 等表本轮未新增列，其迁移分支未被触发。
+- 本提交未在 Linux 或其他 Python 版本上重跑，只在 Windows / Python 3.12.14 上验证；真实进程探针的结论也只属于该平台。仓库现有 CI 为 `backend` 与 `frontend`。
