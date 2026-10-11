@@ -14,8 +14,8 @@
 | 检查 | 结果 |
 | --- | --- |
 | `git diff --check` | 本次修订完成后执行；结果见当前 PR 提交记录 |
-| 文档链接、示例及契约 | 本轮没有保留可复用的自动检查器。前一临时版本曾运行一次性静态检查及检查器回归，但对应脚本和工作流按用户要求移除；其通过结果不等于最终提交具备 CI 守护。 |
-| GitHub Actions | 当前 PR 版本不包含文档工作流；9792413 上曾触发的成功记录不代表本次提交有 CI 检查。 |
+| 文档链接、示例及契约 | 本轮没有保留可复用的自动检查器。前一临时版本曾运行一次性静态检查及检查器回归，但对应脚本和工作流按用户要求移除；其通过结果不等于该修订具备文档检查。 |
+| GitHub Actions | 该修订不包含文档工作流；9792413 上曾触发的成功记录不代表该提交跑过文档检查。仓库现有 CI 为 `backend` 与 `frontend`，不含文档检查。 |
 
 ## 未覆盖项
 
@@ -28,7 +28,7 @@
 | 项目 | 记录 |
 | --- | --- |
 | 状态 | 在 `codex/project-scaffold` 上处理 PR #4 评审；父提交 `c588193`。本记录随修正提交 `47d15191226d0c394598dec7548433fbc0400bc2` 落地 |
-| 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0。仓库未配置 CI，结果来自本地检查 |
+| 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0。结果来自本地检查。仓库现有 CI：`backend` 执行 pytest，`frontend` 执行前端测试与构建 |
 | 对象 | 接口占位、领域契约、端口说明、锁定文件、README、开发指南和前端类型。没有来源解析、持久化、模型调用或任务执行实现 |
 
 ## 实际检查
@@ -50,7 +50,7 @@
 | --- | --- |
 | 对象提交 | `51b2a25929daadf9219fe2bd215dc6bee9e0ba0b`；先提交代码及契约文档，再在独立记录提交中写入本节，避免提交哈希自指 |
 | 关联 | PR #4 最新复审 N1–N6；在独立工作树、临时分支 `codex/pr4-review-followup` 修复，普通推送回原分支 `codex/project-scaffold` |
-| 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0；新建 venv 并安装既有锁定依赖。没有新增依赖或 CI |
+| 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0；新建 venv 并安装既有锁定依赖。没有新增依赖 |
 | 改动 | 保留 HTTP 错误响应头、来源预览 ContractError 映射、创建任务 409 模型、422 脱敏字段信息、TS 对象形状及响应状态双向检查、默认预算/超时工厂和平台说明 |
 
 ### 实际检查
@@ -95,7 +95,7 @@ PY
 
 新增检查使用合成请求及测试应用：九种来源预览业务错误保留真实错误码和 HTTP 映射；未定义的错误或其他端点不会被预览映射重分类；405 保留 Allow、自定义头透传、结构化 HTTPException 日志不含原始键值；422 覆盖缺字段、类型错误、非法 JSON、查询字段、数组位置及额外字段脱敏。前后端对象检查覆盖继承、Omit、字段集合、必填性和可空性，包含刻意改变接口的失败用例；响应状态检查覆盖两侧状态增删、错误模型及公共规则移除。七个默认配置值从术语表核对，并验证每次生成独立实例。
 
-业务路由仍为 501，健康检查仍为 200。未实现或验证真实来源请求、任务持久化、模型接入、业务取消/超时执行、性能、论文语义或诊断脱敏能力。对象形状检查不等于完整 TypeScript/OpenAPI 类型等价证明。此新提交未在 Windows 上重跑；上一轮评审方的 21 passed 不能代替本轮 Windows 验证。仓库没有 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+业务路由仍为 501，健康检查仍为 200。未实现或验证真实来源请求、任务持久化、模型接入、业务取消/超时执行、性能、论文语义或诊断脱敏能力。对象形状检查不等于完整 TypeScript/OpenAPI 类型等价证明。此新提交未在 Windows 上重跑；上一轮评审方的 21 passed 不能代替本轮 Windows 验证。仓库现有 CI 为 `backend` 与 `frontend`。仍需未参与实现的团队成员独立复审后再考虑合并。
 
 ## 后端实现验证记录（2026-10-08）
 
@@ -103,7 +103,7 @@ PY
 | --- | --- |
 | 对象提交 | `7d1c04d24cdfd33ef17347c94f061ac59df8bc1f`；本记录在独立提交中写入，避免提交哈希自指 |
 | 关联 | 分支 `feat/backend-implementation`；按 [AGENTS.md](../AGENTS.md) 从更新的 `origin/main` 新建工作树 `.worktrees/backend-impl`，未在主工作区修改 |
-| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；新建 venv 安装 `backend/requirements.lock` 与 editable 包；未新增依赖或 CI |
+| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；新建 venv 安装 `backend/requirements.lock` 与 editable 包；未新增依赖 |
 | 对象 | 后端实现：领域摘要与文本契约、SQLite+FTS5 存储、FTS5 检索与 JATS 冻结、来源连接器、模型网关、有界核验状态机、诊断投影、本地轨迹、HTTP 路由与单进程 worker；README 与开发指南同步更新 |
 
 ### 实际检查
@@ -127,7 +127,7 @@ PY
 
 覆盖：OpenAPI 响应表与架构文档双向一致（不再放宽 `501`）、前端对象形状、领域枚举与默认预算、规范 JSON 摘要与文本/定位契约、FTS5 查询编译与 JATS 确定性、来源内检索与索引故障返回 `RETRIEVAL_FAILED`、任务路由的创建/授权/取消/重试/删除/反馈/诊断脱敏、来源与网关的状态映射（含 `httpx.MockTransport` 桩）、有界工作流的正常/补读/全局修复/预算耗尽/来源阻断/总超时/已受理取消出口。
 
-未覆盖：真实 Crossref、DOI 官方解析服务、PMC ID 转换与 OAI-PMH、OpenAlex 和本机 LiteLLM Proxy 的连通性与契约；Agnes 或任何真实模型调用；LangGraph 编排（当前为等价的显式状态机 `graph/workflow.py`）；Langfuse 导出；Playwright 端到端；论文语义验收与研究评测。单 worker、一次一任务的并发假设未做压力验证。该提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+未覆盖：真实 Crossref、DOI 官方解析服务、PMC ID 转换与 OAI-PMH、OpenAlex 和本机 LiteLLM Proxy 的连通性与契约；Agnes 或任何真实模型调用；LangGraph 编排（当前为等价的显式状态机 `graph/workflow.py`）；Langfuse 导出；Playwright 端到端；论文语义验收与研究评测。单 worker、一次一任务的并发假设未做压力验证。该提交未在 Linux 上重跑。仓库现有 CI 为 `backend` 与 `frontend`。仍需未参与实现的团队成员独立复审后再考虑合并。
 
 ## PR #8 复审修正（2026-10-08）
 
@@ -135,7 +135,7 @@ PY
 | --- | --- |
 | 对象提交 | `b0ace2963625b7d584edba766bb91d939a21f1d7`；本记录在独立提交中写入，避免提交哈希自指 |
 | 关联 | [PR #8 复审](https://github.com/wynxing/paper-evidence-agent/pull/8#pullrequestreview-5455493360)（`2cf33e6` 上 4 项阻塞、3 项建议同 PR 修、8 项非阻塞建议）；分支 `feat/backend-implementation`，仍在工作树 `.worktrees/backend-impl` |
-| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖或 CI |
+| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖 |
 | 对象 | `graph/workflow.py`、`agents/output.py`、`agents/prompts.py`、`api/app.py`、`config.py`、`domain/rules.py`、`domain/records.py`、`models/gateway.py`、`retrieval/`、`sources/`、`storage/sqlite.py`、`worker/runner.py` 及对应测试与开发指南 |
 
 ### 复审意见的处置
@@ -180,7 +180,7 @@ PY
 
 新增覆盖：确定判断零摘录（修复后发布 / 修复后仍失败为 `QUOTE_MISMATCH`）、「证据不足」可无摘录、修复输出不可解析与请求 3 修复不可解析均为 `MODEL_INVALID_OUTPUT`、仅邻居 retrieve 成功且不消耗修复额度、无 queries 无邻居的 retrieve 被修复、首次空检索拒绝仅邻居 retrieve、引用上下文外段落被修复、摘录错误在修复额度用尽时报 `QUOTE_MISMATCH`、失败与成功路径 `params_digest` 一致、接收方越权 400 与收窄 202、诊断导出只认观测接收方、PMC 转换与 Crossref 的 401/403/400/503 映射、`access_url` 归属、邻居读取与精确读取、墙钟截止时间与到期结算、RUNNING 取消结算、删除的引用计数与单事务。
 
-未覆盖（与上一节相同并新增）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测。已知限制：任务在 RUNNING 期间被受理取消后，若结果写入恰好落在工作流最后一次取消检查与终态写入之间，该终态仍会按结果提交（存储层的条件写入只保护已提交的终态）；已受理取消与完成结果之间的优先级需在实现取消先行语义时一并处理，本轮未改动该写入条件。该已知限制已由下一节「取消竞态修正（2026-10-09）」关闭。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+未覆盖（与上一节相同并新增）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测。已知限制：任务在 RUNNING 期间被受理取消后，若结果写入恰好落在工作流最后一次取消检查与终态写入之间，该终态仍会按结果提交（存储层的条件写入只保护已提交的终态）；已受理取消与完成结果之间的优先级需在实现取消先行语义时一并处理，本轮未改动该写入条件。该已知限制已由下一节「取消竞态修正（2026-10-09）」关闭。本提交未在 Linux 上重跑。仓库现有 CI 为 `backend` 与 `frontend`。仍需未参与实现的团队成员独立复审后再考虑合并。
 
 ## 取消竞态修正（2026-10-09）
 
@@ -188,7 +188,7 @@ PY
 | --- | --- |
 | 对象提交 | `0f786da840ee243d63a4a4bcc0e29351d08d8d95`；本记录在独立提交中写入，避免提交哈希自指 |
 | 关联 | [独立复审复现](https://github.com/wynxing/paper-evidence-agent/pull/8#issuecomment-6062135693)（`283819e0`）与 [复审更新](https://github.com/wynxing/paper-evidence-agent/pull/8#pullrequestreview-5458224438)：上轮被定为「已知限制」的取消竞态改判阻塞，`283819e0` 上的 APPROVE 撤回 |
-| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖或 CI |
+| 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖 |
 | 对象 | `storage/sqlite.py`、`graph/workflow.py`、`worker/runner.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/session/test_workflow.py`、`docs/development.md` |
 
 ### 缺陷与根因
@@ -226,7 +226,7 @@ PY
 
 新增覆盖：RUNNING + 已受理取消时 `COMPLETED` 与 `FAILED` 写入均被拒且状态保持 `RUNNING`、随后 `CANCELLED` 落库；无取消时普通完成仍写入（守卫不误伤）；取消在最终 decision 响应返回时受理 → 终态 `CANCELLED` 且 `label`/`decision` 为 `null`；取消先于上游失败受理 → 终态 `CANCELLED` 而非 `FAILED`。
 
-未覆盖（沿用上节）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测，单 worker、一次一任务的假设未做压力验证。本提交未在 Linux 上重跑。仓库未配置 CI，仍需未参与实现的团队成员独立复审后再考虑合并。
+未覆盖（沿用上节）：真实 Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`；论文语义验收与研究评测未执行；LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；并发与性能未压测，单 worker、一次一任务的假设未做压力验证。本提交未在 Linux 上重跑。仓库现有 CI 为 `backend` 与 `frontend`。仍需未参与实现的团队成员独立复审后再考虑合并。
 
 ## 前端工作台编排层（2026-10-10）
 

@@ -479,12 +479,14 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     const { work } = s.mount()
     try {
       await until(() => work.detail.value?.id === 'done', 'loaded')
-      const refused = await work.semanticExport('本地评审', false)
+      // Same reference previewSemantic() captures: the current packet, with case_id matching the route and the configured recipient matching the argument.
+      work.packet.value = { case_id: 'done', run_config: { observability: { langfuse_enabled: false, recipient: '本地评审' } } }
+      const refused = await work.semanticExport('本地评审', false, work.packet.value)
       assert.equal(refused, null)
       assert.match(work.message.value, /授权/)
       assert.equal(named(api, 'exportDiagnosticPacket').length, 0)
       api.overrides.exportDiagnosticPacket = () => { throw new ClientError('business', '接收方未授权。', 400) }
-      const failed = await work.semanticExport('本地评审', true)
+      const failed = await work.semanticExport('本地评审', true, work.packet.value)
       assert.equal(failed, null)
       assert.equal(work.message.value, '接收方未授权。')
       assert.equal(named(api, 'exportDiagnosticPacket').length, 1)
