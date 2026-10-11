@@ -41,6 +41,19 @@ def _implementation_revision() -> str:
     return os.environ.get("PAPER_EVIDENCE_REVISION", "unknown")
 
 
+def _clean(value: str | None) -> str | None:
+    """Trim a configured identifier; an all-whitespace value counts as unset.
+
+    A recipient written as ``"A, B"`` must not become ``" B"``: the trailing space
+    would not match the value the client echoes back, and the frozen digest would
+    disagree with the preview. Configuration is the single place this is fixed.
+    """
+
+    if value is None:
+        return None
+    return value.strip() or None
+
+
 @dataclass(frozen=True)
 class Settings:
     """Everything the process reads from its environment."""
@@ -71,19 +84,22 @@ class Settings:
     def from_env(cls) -> "Settings":
         data_dir = os.environ.get("PAPER_EVIDENCE_DATA_DIR")
         profile = os.environ.get("PAPER_EVIDENCE_PROFILE", "daily")
-        fallback = tuple(item for item in os.environ.get("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", "").split(",") if item)
+        fallback = tuple(
+            item for item in (
+                _clean(part) for part in os.environ.get("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", "").split(",")
+            ) if item
+        )
         langfuse = os.environ.get("PAPER_EVIDENCE_LANGFUSE_ENABLED", "").lower() in {"1", "true", "yes"}
         # 已授权观测/诊断接收方，与模型接收方分开。它与 langfuse_enabled 解耦：
         # 否则不开启观测导出就无法授权任何诊断接收方。
-        recipient = (
+        recipient = _clean(
             os.environ.get("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT")
             or os.environ.get("PAPER_EVIDENCE_LANGFUSE_RECIPIENT")
-            or None
         )
         return cls(
             profile="evaluation" if profile == "evaluation" else "daily",
             data_dir=Path(data_dir) if data_dir else Path.cwd() / ".paper-evidence",
-            primary_recipient=os.environ.get("PAPER_EVIDENCE_PRIMARY_RECIPIENT", "Agnes"),
+            primary_recipient=_clean(os.environ.get("PAPER_EVIDENCE_PRIMARY_RECIPIENT")) or "Agnes",
             fallback_recipients=fallback,
             model_base_url=os.environ.get("PAPER_EVIDENCE_MODEL_BASE_URL", DEFAULT_MODEL_BASE_URL),
             contact_email=os.environ.get("PAPER_EVIDENCE_CONTACT_EMAIL", ""),

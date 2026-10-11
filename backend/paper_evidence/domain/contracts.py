@@ -160,16 +160,37 @@ class Decision(Contract):
     validation: Literal["pass"]
 
 
+class SourceRecord(Contract):
+    """The frozen bibliographic identity of one licensed source version."""
+
+    title: str | None
+    authors: list[str]
+    year: int | None
+    doi: str | None
+    pmcid: str | None
+    license: str | None
+    version: str | None
+    access_url: str | None
+    retrieved_at: str | None
+    version_hash: str | None
+
+
 class CheckSummary(Contract):
+    """A history row. ``claim_excerpt`` is a bounded, single-line display copy."""
+
     id: str
     doi: str
     status: TaskStatus
     stage: Stage
     label: ResultLabel | None
+    claim_excerpt: str
+    created_at: str
 
 
 class CheckDetail(Contract):
     id: str
+    claim: str
+    source: SourceRecord | None
     status: TaskStatus
     stage: Stage
     label: ResultLabel | None
@@ -180,6 +201,9 @@ class CheckDetail(Contract):
     criteria: CriteriaReference
     accounting: Accounting
     limits: Limits
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
 
 
 class CancelResponse(Contract):
@@ -200,17 +224,6 @@ class CheckDeleted(Contract):
     id: str
     deleted: Literal[True]
     message: str
-
-
-class SourceRecord(Contract):
-    title: str | None
-    doi: str | None
-    pmcid: str | None
-    license: str | None
-    version: str | None
-    access_url: str | None
-    retrieved_at: str | None
-    version_hash: str | None
 
 
 class DiagnosticInput(Contract):

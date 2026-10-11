@@ -15,10 +15,14 @@ __all__ = [
     "paragraph_id",
     "quote_spans",
     "is_blank_claim",
+    "claim_excerpt",
 ]
 
 # A run of Unicode whitespace collapses to a single U+0020.
 _WHITESPACE_RUN = re.compile(r"\s+")
+
+# History rows show a bounded, single-line excerpt; the stored claim is untouched.
+CLAIM_EXCERPT_LIMIT = 80
 
 
 def is_blank_claim(claim: str) -> bool:
@@ -28,6 +32,19 @@ def is_blank_claim(claim: str) -> bool:
     """
 
     return not claim.strip()
+
+
+def claim_excerpt(claim: str, limit: int = CLAIM_EXCERPT_LIMIT) -> str:
+    """A single-line, length-bounded excerpt of a claim, for history listings.
+
+    Whitespace runs collapse and ends are trimmed, matching the frozen-text rule.
+    Only the display copy is shortened; the stored claim is never rewritten.
+    """
+
+    collapsed = normalize_paragraph_text(claim)
+    if limit <= 0 or len(collapsed) <= limit:
+        return collapsed
+    return collapsed[:limit].rstrip() + "…"
 
 
 def normalize_paragraph_text(raw: str) -> str:

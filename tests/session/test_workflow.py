@@ -76,9 +76,9 @@ class FakeFulltext:
     async def fetch(self, doi, deadline):
         if self.error:
             raise self.error
-        record = SourceRecord(title="Demo", doi=doi, pmcid="PMC123", license="CC BY", version="1",
-                              access_url="https://example.org/a", retrieved_at="2026-10-01T00:00:00+00:00",
-                              version_hash=VERSION_HASH)
+        record = SourceRecord(title="Demo", authors=["Ada Lovelace"], year=2026, doi=doi, pmcid="PMC123",
+                              license="CC BY", version="1", access_url="https://example.org/a",
+                              retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH)
         return SourceSnapshot(source_id=f"PMC123:{VERSION_HASH}", metadata=record, jats_bytes=JATS)
 
 

@@ -34,6 +34,7 @@ from paper_evidence.domain.contracts import (
 )
 from paper_evidence.domain.records import Paragraph, TaskInput
 from paper_evidence.domain.rules import terminal_status
+from paper_evidence.domain.text import claim_excerpt
 
 TERMINAL_STATUSES = frozenset({
     TaskStatus.COMPLETED,
@@ -62,7 +63,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     claimed_at REAL,
-    deadline_at REAL
+    deadline_at REAL,
+    finished_at TEXT
 );
 CREATE TABLE IF NOT EXISTS check_sources (
     task_id TEXT NOT NULL,
@@ -74,6 +76,8 @@ CREATE TABLE IF NOT EXISTS sources (
     doi TEXT,
     pmcid TEXT,
     title TEXT,
+    authors TEXT,
+    year INTEGER,
     license TEXT,
     version TEXT,
     access_url TEXT,
@@ -156,6 +160,23 @@ class SqliteStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive-only column upgrades for a local database from an earlier revision.
+
+        ``CREATE TABLE IF NOT EXISTS`` leaves an existing table untouched, so new
+        columns are added explicitly. Nothing is dropped and no row is rewritten.
+        """
+
+        for table, column, declaration in (
+            ("tasks", "finished_at", "TEXT"),
+            ("sources", "authors", "TEXT"),
+            ("sources", "year", "INTEGER"),
+        ):
+            existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
     def close(self) -> None:
         with self._lock:
@@ -227,6 +248,8 @@ class SqliteStore:
         run_config = RunConfigSnapshot.model_validate(json.loads(row["run_config"]))
         return CheckDetail(
             id=row["id"],
+            claim=row["claim"],
+            source=_source_record(row["source"]),
             status=TaskStatus(row["status"]),
             stage=row["stage"],
             label=row["label"],
@@ -237,6 +260,9 @@ class SqliteStore:
             criteria=CriteriaReference.model_validate(json.loads(row["criteria"])),
             accounting=self._accounting(task_id, self._counters(row)),
             limits=run_config.limits,
+            created_at=row["created_at"],
+            started_at=_iso_from_epoch(row["claimed_at"]),
+            finished_at=row["finished_at"],
         )
 
     def get_run_config(self, task_id: str) -> RunConfigSnapshot | None:
@@ -256,18 +282,23 @@ class SqliteStore:
 
     def source_record(self, task_id: str) -> SourceRecord | None:
         row = self._row(task_id)
-        if row is None or not row["source"]:
+        if row is None:
             return None
-        return SourceRecord.model_validate(json.loads(row["source"]))
+        return _source_record(row["source"])
 
     def list(self, status: TaskStatus | None = None) -> list[CheckSummary]:
+        """Newest first, so the history list reads top-down without client sorting."""
+
         if status is None:
-            rows = self._query("SELECT * FROM tasks ORDER BY created_at, id")
+            rows = self._query("SELECT * FROM tasks ORDER BY created_at DESC, id DESC")
         else:
-            rows = self._query("SELECT * FROM tasks WHERE status = ? ORDER BY created_at, id", (status.value,))
+            rows = self._query(
+                "SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC, id DESC", (status.value,)
+            )
         return [
             CheckSummary(id=row["id"], doi=row["doi"], status=TaskStatus(row["status"]),
-                         stage=row["stage"], label=row["label"])
+                         stage=row["stage"], label=row["label"],
+                         claim_excerpt=claim_excerpt(row["claim"]), created_at=row["created_at"])
             for row in rows
         ]
 
@@ -342,8 +373,8 @@ class SqliteStore:
                 if deadline is not None and not row["cancel_requested"] and _epoch() > deadline:
                     # An expired task settles as TASK_TIMEOUT before this conflict.
                     self._conn.execute(
-                        "UPDATE tasks SET status = ?, error_code = ?, updated_at = ? WHERE id = ?",
-                        (TaskStatus.FAILED.value, ErrorCode.TASK_TIMEOUT.value, _now(), task_id),
+                        "UPDATE tasks SET status = ?, error_code = ?, updated_at = ?, finished_at = ? WHERE id = ?",
+                        (TaskStatus.FAILED.value, ErrorCode.TASK_TIMEOUT.value, _now(), _now(), task_id),
                     )
                     self._conn.execute("COMMIT")
                     return self._conflict(
@@ -351,8 +382,8 @@ class SqliteStore:
                     )
                 if status is TaskStatus.QUEUED:
                     self._conn.execute(
-                        "UPDATE tasks SET status = ?, cancel_requested = 1, updated_at = ? WHERE id = ?",
-                        (TaskStatus.CANCELLED.value, _now(), task_id),
+                        "UPDATE tasks SET status = ?, cancel_requested = 1, updated_at = ?, finished_at = ? WHERE id = ?",
+                        (TaskStatus.CANCELLED.value, _now(), _now(), task_id),
                     )
                 else:  # RUNNING: accept and let the worker finish the local wait.
                     self._conn.execute(
@@ -390,8 +421,10 @@ class SqliteStore:
         changed = 0
         for row in rows:
             target = TaskStatus.CANCELLED if row["cancel_requested"] else TaskStatus.INTERRUPTED
-            self._write("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?",
-                        (target.value, _now(), row["id"], TaskStatus.RUNNING.value))
+            self._write(
+                "UPDATE tasks SET status = ?, updated_at = ?, finished_at = ? WHERE id = ? AND status = ?",
+                (target.value, _now(), _now(), row["id"], TaskStatus.RUNNING.value),
+            )
             changed += 1
         return changed
 
@@ -418,11 +451,12 @@ class SqliteStore:
         """
 
         cursor = self._write(
-            """UPDATE tasks SET status = ?, stage = ?, error_code = ?, label = ?, decision = ?, updated_at = ?
+            """UPDATE tasks SET status = ?, stage = ?, error_code = ?, label = ?, decision = ?,
+                   updated_at = ?, finished_at = ?
                WHERE id = ? AND status IN (?, ?) AND (? = ? OR cancel_requested = 0)""",
             (status.value, stage, error_code.value if error_code else None, label,
              json.dumps(decision, ensure_ascii=False) if decision is not None else None,
-             _now(), task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
+             _now(), _now(), task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
              status.value, TaskStatus.CANCELLED.value),
         )
         return cursor.rowcount > 0
@@ -529,11 +563,12 @@ class SqliteStore:
     def index_source(self, source_id: str, source: SourceRecord, jats_bytes: bytes,
                      open_locations: tuple[str, ...] = ()) -> None:
         self._write(
-            """INSERT OR REPLACE INTO sources (source_id, doi, pmcid, title, license, version,
-                   access_url, retrieved_at, version_hash, open_locations, jats_bytes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (source_id, source.doi, source.pmcid, source.title, source.license, source.version,
-             source.access_url, source.retrieved_at, source.version_hash,
+            """INSERT OR REPLACE INTO sources (source_id, doi, pmcid, title, authors, year, license,
+                   version, access_url, retrieved_at, version_hash, open_locations, jats_bytes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (source_id, source.doi, source.pmcid, source.title,
+             json.dumps(list(source.authors), ensure_ascii=False), source.year, source.license,
+             source.version, source.access_url, source.retrieved_at, source.version_hash,
              json.dumps(list(open_locations), ensure_ascii=False), jats_bytes),
         )
 
@@ -569,6 +604,7 @@ class SqliteStore:
             return None
         row = rows[0]
         stored = {key: row[key] for key in row.keys() if key != "jats_bytes"}
+        stored["authors"] = json.loads(row["authors"]) if row["authors"] else []
         # Local OpenAlex hint; not part of the public SourceRecord contract.
         stored["open_locations"] = json.loads(row["open_locations"]) if row["open_locations"] else []
         return stored
@@ -640,6 +676,26 @@ def _paragraph(row: sqlite3.Row) -> Paragraph:
         text=row["text"], paragraph_hash=row["paragraph_hash"], source_url=row["source_url"],
         native_jats_id=row["native_jats_id"],
     )
+
+
+def _source_record(stored: str | None) -> SourceRecord | None:
+    """Parse a stored source record.
+
+    ``authors`` and ``year`` were added after the first release, so a row written
+    by an earlier revision simply has no value for them; that is not an error.
+    """
+
+    if not stored:
+        return None
+    return SourceRecord.model_validate({"authors": [], "year": None, **json.loads(stored)})
+
+
+def _iso_from_epoch(value: float | None) -> str | None:
+    """Render a stored wall-clock epoch second as an ISO-8601 UTC timestamp."""
+
+    if value is None:
+        return None
+    return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
 
 
 def _ordinal(paragraph_id: str) -> int:
