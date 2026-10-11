@@ -295,3 +295,52 @@ PY
 - 论文语义验收、正式研究评测、LangGraph 编排、Langfuse 导出、Playwright 端到端仍未接入；取消、截止时间与并发未压测，单 worker、一次一任务的假设未做压力验证。
 - 迁移只在构造的一版旧 schema 上验证，未覆盖真实使用过的数据库；`paragraphs`、`check_sources` 等表本轮未新增列，其迁移分支未被触发。
 - 本提交未在 Linux 或其他 Python 版本上重跑，只在 Windows / Python 3.12.14 上验证；真实进程探针的结论也只属于该平台。仓库现有 CI 为 `backend` 与 `frontend`。
+
+## PMC OAI 取回链路修复（2026-10-11）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | 独立端到端复核发现：真实网络中 `fetch` 阶段恒定失败于 `UPSTREAM_INVALID_REQUEST`。属新增发现，非既有清单项 |
+| 环境 | Windows / Git Bash、Python 3.12.13、Node.js v22.22.2、npm 10.9.7。命令从仓库根目录执行。未新增依赖 |
+
+### 缺陷与根因
+
+三项叠加，全部在 PMC 全文取回链路上，mock 测试无法暴露：
+
+1. `config.py` 的默认 `pmc_oai_url` 仍指向 `https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi`，该地址现返回 **301**，重定向到 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
+2. `pmc.py` 的 `fetch_record` 请求 `metadataPrefix=pmc`，但该前缀对多数记录返回 **400 `cannotDisseminateFormat`**；`ListMetadataFormats` 返回可用值为 `oai_dc`、`pmc`、`pmc_fm`，其中**只有 `pmc_fm` 返回含 `<article>` 的完整 JATS 正文**。
+3. `pmc.py` 调用 `Fetcher.get` 时未传 `follow_redirects=True`；`http.py` 默认 `False`，且 301 小于 400 会被 `Fetcher` 原样返回，随后在 `fetch_record` 的 `status_code != 200` 分支被记为 `UPSTREAM_INVALID_REQUEST`。
+
+### 修复
+
+- `config.py`：默认端点改为 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
+- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`；`fetch_record` 的请求显式传 `follow_redirects=True`。
+
+### 实际检查
+
+测试在改动落地、工作区干净时执行。
+
+| 检查 | 结果 |
+| --- | --- |
+| `python -m pytest -c pyproject.toml -q --basetemp=<临时目录>` | **162 passed，1 warning**（新增 4 条契约用例；警告仍为既有 Starlette/httpx 弃用提示） |
+| `npm test`（`frontend/`） | 42 passed，0 failed |
+| 真实端到端：新建任务后运行 worker | 修复前 `FAILED / stage=fetch / UPSTREAM_INVALID_REQUEST`；修复后 **`fetch` 阶段 `success`**，`query_generation` 才失败于 `UPSTREAM_UNAVAILABLE`（本机 LiteLLM Proxy 未运行），`main_requests_used=1` |
+| 反向验证：将三处改动还原为修复前状态后重跑新增用例 | **3 failed**（端点、前缀、重定向各一条），确认新用例非恒真断言 |
+| 许可门控交叉验证：对无 license 标签的 10.1038/nature12373 | `fetch` 阶段返回 `LICENSE_UNKNOWN`，属预期门控而非链路故障 |
+| `git diff --check` | 无输出，退出码 0 |
+
+修复后实测执行轨迹（DOI `10.1371/journal.pmed.0020124`，CC BY 4.0）：
+
+```
+source_identity      success
+fetch                success    ← 此前恒为 error
+query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
+```
+
+### 未覆盖
+
+- 未验证真实模型调用：本机 LiteLLM Proxy（`127.0.0.1:4000`）未运行，`query_generation` 及之后的判断、证据校验阶段仍未在真实上游下跑通。
+- 端到端只到 `fetch` 为止，仍是单进程内直接调用 `drain`，未使用 PR #15 的 `--loop` 常驻模式做跨进程联调。
+- 新契约用例固定的是本客户端发出的请求形状，不校验 PMC 服务端当前真实返回；上游再次变更端点或格式时仍需人工复核。
+- 论文语义验收、正式研究评测、Playwright 端到端、并发与性能仍未覆盖。
+- 本次仅在 Windows / Python 3.12.13 上验证。仓库现有 CI 为 `backend` 与 `frontend`。
