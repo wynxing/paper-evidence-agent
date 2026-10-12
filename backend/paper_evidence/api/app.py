@@ -261,11 +261,15 @@ def get_check(id: str, services: Annotated[Services, Depends(get_services)]) -> 
 
 @app.get("/api/checks/{id}/input", response_model=CheckInput, responses=_error_responses(404))
 def get_check_input(id: str, services: Annotated[Services, Depends(get_services)]) -> CheckInput | JSONResponse:
-    """The submission itself, which ``CheckDetail`` cannot always give back.
+    """The submission itself, read per task rather than from the history list.
 
-    ``CheckDetail.source`` is null until source identity resolves, so a QUEUED,
-    RUNNING or BLOCKED task has no readable DOI anywhere else; without this the
-    claim could not be edited or split from what was actually submitted.
+    ``CheckDetail.source`` is null until source identity resolves, so the detail
+    view alone has no readable DOI in that window. That is the narrow gap — not
+    the only path to the submitted DOI: ``CheckSummary`` carries it too, and the
+    workbench already prefills 「修改原句」「拆分论断」 from that row. What this
+    route adds is a direct per-task read plus the values frozen at creation
+    (``config_digest``, ``authorized_recipients``), which are not the current
+    effective digest that ``POST /api/checks`` validates. No frontend caller yet.
     """
 
     payload = services.store.check_input(id)

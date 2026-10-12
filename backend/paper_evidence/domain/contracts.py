@@ -209,12 +209,19 @@ class CheckDetail(Contract):
 class CheckInput(Contract):
     """The input a task was created with, returned as submitted.
 
-    ``CheckDetail`` carries the claim but not the submitted DOI outside
-    ``source``, and ``source`` is null until source identity resolves — so a
-    BLOCKED or non-terminal task cannot be reopened with its own DOI. This view
-    keeps the original submission readable whatever the processing state, so
-    「修改原句」「拆分论断」 can prefill from what was actually sent rather than
-    from what the run managed to resolve. It is read-only and always local.
+    A per-task read that does not depend on the history list being loaded.
+    ``CheckSummary`` also carries ``doi``, and the workbench already prefills
+    「修改原句」「拆分论断」 from that row (``originalDoi`` falls back to it), so this
+    route is **not** the only path to the submitted DOI. What is true is narrower:
+    inside ``CheckDetail`` the DOI exists only under ``source``, which is null
+    until source identity resolves, so the detail view alone has no DOI in that
+    window.
+
+    ``config_digest`` and ``authorized_recipients`` are the values frozen at
+    creation and are **not** what a resubmission should send: ``POST /api/checks``
+    validates the *current* effective digest, so a frozen digest is refused with
+    409 once the effective configuration changes. Read-only and always local, and
+    currently without a frontend caller.
     """
 
     id: str

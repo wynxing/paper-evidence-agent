@@ -424,6 +424,31 @@ def test_evidence_context_never_reads_across_sources(client, services):
     assert payload["paragraphs"] == []
 
 
+def test_a_frozen_digest_stops_being_accepted_once_the_effective_config_changes(client, services):
+    """`/input` 给的是冻结摘要，而 POST 校验当前摘要——两者不等时必须 409。
+
+    这是接前端时最容易踩的一处：把 `/input` 的 `config_digest` 直接回填进
+    「修改原句」的重提请求，只要有效配置没变就能通过，配置一旦变过就会 409。
+    """
+
+    task_id = create(client, services).json()["id"]
+    frozen = client.get(f"/api/checks/{task_id}/input").json()["config_digest"]
+    # 刚创建的任务，冻结摘要就是当前有效摘要。
+    assert frozen == services.settings.config_digest()
+
+    # 有效配置未变：冻结摘要仍在允许集合内，重提被接受。
+    assert create(client, services, config_digest=frozen, previous_id=task_id).status_code == 202
+
+    # 有效配置改变后，同一个冻结摘要不再属于允许集合，重提被拒。
+    services.settings = replace(
+        services.settings, retrieval_context_limit=services.settings.retrieval_context_limit + 1
+    )
+    assert services.settings.config_digest() != frozen
+    rejected = create(client, services, config_digest=frozen, previous_id=task_id)
+    assert rejected.status_code == 409
+    assert rejected.json() == {"error_code": None, "message": "配置已更改，请重新预览并确认"}
+
+
 def test_diagnostic_export_rejects_a_blank_recipient_and_normalizes_spacing(client, services):
     """空白收件人不是合法标识；带首尾空格的已授权收件人按归一化值接受。"""
 

@@ -32,7 +32,7 @@
 
 来源预览的 `ContractError` 映射由全局处理器完成，其余路由在各自边界把领域失败映射为 `ApiError` 或 `ConflictResponse`，因此业务 `422` 与请求校验 `422` 可区分。`GET /api/run-config` 返回的 `config_digest` 来自冻结的有效配置快照；`POST /api/checks` 只接受与该摘要（或其收窄后的授权范围）一致的请求，否则返回 `409`。
 
-两个只读投影只读本地记录与该任务的冻结来源，不调用来源连接器或模型，也不改变任务。`GET /api/checks/{id}/input` 返回提交时的原始输入：任务详情只在 `source` 中给 DOI，而来源身份解析成功前 `source` 为 null，因此排队中、执行中或 BLOCKED 的任务靠它才能拿回自己提交的 DOI。`GET /api/checks/{id}/evidence-context` 返回进入模型上下文的候选段落与最终判断引用的段落，各自按 `ordinal±1` 展开为邻段并按段落序号升序返回；`text` 是冻结段落原文而不是已发布的 quote，邻段只作上下文、不作为证据，所以不带 `validation`。段落取自获许可的本地冻结版本：脱敏诊断包把 quote 换成占位符，本接口保留原文供作者在本机核对引用。来源未冻结时 `source_id` 为 null、`paragraphs` 为空。
+两个只读投影只读本地记录与该任务的冻结来源，不调用来源连接器或模型，也不改变任务。`GET /api/checks/{id}/input` 返回提交时的原始输入，是一条**按任务**的直接读取、不依赖历史列表是否已加载；它另外给出该任务**冻结**的 `config_digest` 与 `authorized_recipients`——这两个是冻结值，**不是**重提时应发送的摘要：`POST /api/checks` 校验的是**当前**有效摘要，只有有效配置未变时冻结值才被接受，否则返回 409。任务详情只在 `source` 中给 DOI，而来源身份解析成功前 `source` 为 null，所以详情视图本身在该阶段没有 DOI；但 `CheckSummary` 也带 `doi`，工作台目前就是从历史行回退取值，本接口不是取得该 DOI 的唯一路径。`GET /api/checks/{id}/evidence-context` 返回进入模型上下文的候选段落与最终判断引用的段落，各自按 `ordinal±1` 展开为邻段并按段落序号升序返回；`text` 是冻结段落原文而不是已发布的 quote，邻段只作上下文、不作为证据，所以不带 `validation`。段落取自获许可的本地冻结版本：脱敏诊断包把 quote 换成占位符，本接口保留原文供作者在本机核对引用。来源未冻结时 `source_id` 为 null、`paragraphs` 为空；来源已冻结但尚无候选或引用（如任务在 `query_generation` 阶段失败）时 `source_id` 有值而 `paragraphs` 为空。真实 PMC 来源经 `pmc_fm` 取回的内容目前不含正文（`<body>` 计数为 0，见 #28），此时 `ordinal±1` 的邻段展开为空，本接口只能返回锚点自身。
 
 请求缺字段或不符合请求模型时返回 `422`，响应体为 `ApiError`：error_code=null，message 形如「请求不合法：body.claim: missing」。只公开已声明字段的路径、数组/JSON 位置和错误类型，不回显输入值、未知字段名或原始校验上下文。未知路径和不允许的方法也使用同一形状及中文固定文案；405 保留框架提供的 Allow 等响应头。
 
@@ -82,7 +82,7 @@ PAPER_EVIDENCE_MODEL_API_KEY=sk-... backend/.venv/bin/python -m paper_evidence.w
 
 ## 检查范围
 
-检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败。
+检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败——具体表现为 `tests/boundary/test_frontend_shapes.py` 的用例整组失败（检查器 `inspect-contracts.mjs` 找不到 `typescript` 模块），与业务改动无关，先补前端依赖即可。
 
 README 中的检查验证接口表面、领域枚举及默认配置与文档的一致性、摘要与文本契约、检索与切分、有界工作流的预算与出口、来源与模型传输的错误映射、模块导入和前端构建。响应状态表从架构文档解析并与 OpenAPI 双向比较（不再放宽 `501`）；前端命名接口与所有 OpenAPI 对象模型比对字段、必填性和可空性（含继承及 Omit）。客户端方法接口不属于 JSON 对象契约。HTTP 与任务测试使用临时数据目录和合成请求；上游连接器与 Proxy 形态的模型传输用 `httpx.MockTransport` 覆盖状态映射，不访问真实网络；SDK 形态的传输用注入的完成函数覆盖错误映射与恢复，另有两条用例经真实 `litellm.acompletion` 加 `mock_response` 走通 SDK 入口。
 

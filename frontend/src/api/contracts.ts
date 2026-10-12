@@ -113,6 +113,7 @@ export interface CheckDetail {
   /** Set when a terminal status commits; null while the task is not finished. */
   finished_at: string | null
 }
+/** Declared from the backend contract; no API client method calls it yet. */
 export interface CheckInput {
   id: string
   /** The submitted claim, verbatim; readable whatever the processing state. */
@@ -120,6 +121,7 @@ export interface CheckInput {
   /** The submitted DOI, kept outside `source`, which stays null until identity resolves. */
   doi: string
   previous_id: string | null
+  /** Frozen at creation, not the current effective digest a resubmission validates. */
   config_digest: string
   authorized_recipients: string[]
 }
@@ -157,6 +159,7 @@ export interface ContextParagraph {
   /** Is quoted by the final decision. */
   cited: boolean
 }
+/** Declared from the backend contract; no API client method calls it yet. */
 export interface EvidenceContext {
   id: string
   /** Frozen source these paragraphs belong to; null before source identity resolves. */
