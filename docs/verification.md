@@ -496,7 +496,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 | 项目 | 记录 |
 | --- | --- |
-| 关联 | Issue #20 端到端联调测试清单（真实后端）；测试方案「执行记录与当前边界」 |
+| 关联 | Issue #20 端到端联调测试清单（真实后端）；测试方案「执行记录与当前边界」。**#20 上已有「端到端联调结果（第 1 轮）」**，用本地 OpenAI 兼容替身把主流程跑到 `COMPLETED`；本节不改写其结论，只补基线数字、环境前置与探测方法学提醒 |
 | 环境 | Windows、Python 3.12.13（`backend/.venv`）、Node 22.22.2 / npm 10.9.7 |
 | 对象 | 主工作树 `6a2ea8f`（分支 `test/semantic-report`）。该提交相对 `origin/main`（`373c0ca`）只改 `docs/` 与 `tests/`，**运行时文件改动为 0**，故下列运行时结论对 main 同样成立 |
 | 隔离 | 后端以 `PAPER_EVIDENCE_DATA_DIR` 指向系统临时目录启动，未触碰默认 `backend/.paper-evidence`；本次未修改仓库任何文件 |
@@ -534,12 +534,17 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 反馈 | 200 `saved=true` |
 | 重试（终态任务） | 202 新建任务，`previous_id` 指向原任务；沿用原句；**新任务重新计账（1 次主请求 / 2 次尝试），预算未继承** |
 | 取消已终态任务 | 409「任务已结束，不能取消」，响应同时带 `status`/`stage` |
+| 取消 `QUEUED` 任务 | 200 `CANCELLED`，`cancel_requested=true`，`label` 与 `decision` 均为 null |
+| 重复取消 | 对已 `CANCELLED` 的任务再次 `POST /cancel` 仍返回 200，幂等，不报错 |
+| 带 `previous_id` 重提（修改/拆分机制） | 202 新任务并记录关联；原任务输入未被改写；模型上下文不继承 |
+| `previous_id` 指向不存在的任务 | 404「关联的原任务不存在」 |
+| 无 worker 时任务不推进 | 不启动 worker 时任务停在 `QUEUED`，API 进程不自行执行 |
 | 删除终态任务 | 200，历史列表随即不再包含该任务 |
 
 ### 未覆盖与阻塞
 
-- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒。**Issue #20 中所有需要成功语义结果的项目（主流程「查看结果」、确定判断与原文定位、consented 导出对照）本次无法执行**，需 Issue #7 后端待办「最简模型密钥配置说明」落地后才能补。
-- **Issue #20 清单未写明 worker 需单独以 `--loop` 启动**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`。建议在清单「前提」中补一行，避免执行人误判为功能缺陷。
+- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒，本次探测在 `query_generation` 止步。链路正确性已由 #20 第 1 轮的本地替身上游证明（主流程跑到 `COMPLETED`）；**仍未完成的是真实模型下的语义判断**，需 Issue #7 的「最简模型密钥配置说明」落地后才能补。替身或构造数据的结果不得用于声称语义验收通过。
+- **Issue #20 清单未链接 worker 常驻要求**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`（本次实测确认）。该要求已写在 `docs/development.md` 第 58 行，但清单「前提」没有链接它，建议补一行，避免执行人误判为功能缺陷。
 - 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
 - 未测在途任务的取消：本次只覆盖终态任务的取消拒绝分支，`QUEUED`/`RUNNING` 取消、重复取消与取消/完成竞态仍未实测。
 - 未在干净 `origin/main` 工作树上重跑全量测试。本次全量数字取自 `6a2ea8f`，其中含 PR #24 的 9 个报告口径用例，故 main 对应数应为 239；因该提交未改运行时，不影响上面各条运行时结论。
