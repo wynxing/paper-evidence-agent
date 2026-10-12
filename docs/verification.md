@@ -454,3 +454,40 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 标签由单人整理，尚无第二人复核（测试方案「标注」要求一人整理、另一人复核）。分歧解决前不计为确定真值。
 - 上游模型仍由 `ScriptedGateway` 回放，未调用真实模型；本维度检验的是判定链路的确定性与证据门槛，不是模型本身的语义能力。
 - 首版 7 例为构造样本，不声称标签稳定，也不给出总体准确率；摘录定位有效率等报告口径尚未产出。
+
+## 对抗与安全维度（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | 测试方案「对抗与安全」维度：`tests/adversarial/`。被测模块 `graph/` 对不可信输入的处理与 `sources/` 的端点限制 |
+| 环境 | Windows、Python 3.12.13，`backend/.venv` 由 uv 创建，依赖按 `backend/requirements.lock` 安装 |
+| 对象 | `tests/adversarial/conftest.py`、`test_untrusted_input.py`、`test_leakage.py`、`test_export_boundary.py`、`test_observability.py`（均为新增） |
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests/adversarial -q` | **19 passed** |
+| `pytest -q`（全量） | **239 passed，2 warnings**（220 既有 + 19 新增），无回归 |
+| 注入指令进入判定 prompt 时被标为不可信数据 | prompt 含该文本，且含 `UNTRUSTED_NOTICE`；任务进入 `COMPLETED` 并按模型输出发布标签 |
+| 注入指令不影响任务目标与来源绑定 | 提交原句与 `source.doi` 均未被改写；查询生成 prompt 不含正文中的注入文本（该阶段尚未取回正文） |
+| 模型不能为未进入上下文的段落作证 | 引用不存在的段落 → `FAILED` / `QUOTE_MISMATCH` / `label=None` |
+| 书目不可由模型生成 | 模型输出带 `title` 字段 → `FAILED` / `MODEL_INVALID_OUTPUT`；`source.title` 仍来自冻结原文，伪造值不出现在结果中 |
+| 输入中的 URL 不能移动请求 | 恶意 DOI（`http://evil.example/...`、协议相对、路径穿越）下，Crossref 与 DOI resolver 的每个请求 URL 仍在配置的官方前缀内 |
+| redacted 包不含敏感标记 | 原句、段落文本、查询三个唯一标记均不出现在包内 |
+| 理由与限制字段不能绕过脱敏 | `decision.rationale` 与 `decision.limitations` 均为 `<redacted>` |
+| 失败路径同样脱敏 | 拒判（无已发布判断）的 redacted 包同样不含任何标记 |
+| 对照：consented 保留原句 | 已授权导出含原句标记，确认遮罩不是无差别丢弃 |
+| redacted 保留公开书目 | DOI、PMCID、题名、版本哈希与候选章节均保留，同时论断仍为 `<redacted>` |
+| 两种视图结构一致 | schema、case_id、source、status 相同，仅受授权约束的文本不同 |
+| 观测默认关闭 | 未设置时 `langfuse_enabled=False`；`""`/`0`/`false`/`no`/`off` 均不启用，仅 `1`/`true`/`yes` 启用 |
+| 观测接收方配置缺失或全空白 | 均为 `None`，不产生接收方 |
+| 启用观测不改变核验 | 任务仍 `COMPLETED`；模型请求数仍为 2（查询生成 + 判断），不增加业务重试 |
+
+### 未覆盖
+
+- **Langfuse 导出尚未实现**：`tracing/` 只有本地 SQLite 记录器（`LocalTraceRecorder`），没有出站导出路径。因此测试方案中「启用后的故障不改变核验状态、脱敏回调不得带出原句或响应」没有可测对象，本节只覆盖「启用不改变核验结果」与「默认关闭」。**「默认关闭时零网络导出」在本实现下是通过"没有导出代码"而非"导出被关闭"满足的**，实现时必须重新验证。
+- **`Fetcher` 没有端点白名单**：`sources/http.py` 的 `get()` 接受任意 URL，端点固定靠调用方约定（各 connector 用构造时传入的配置前缀）。本节从调用方一侧验证了前缀不被输入改变，但没有覆盖"未来新增 connector 是否遵守约定"。
+- 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
+- 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
+- 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
