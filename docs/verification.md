@@ -503,18 +503,20 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 本节用于在开始 Issue #20 清单前，先钉住「基线是否绿」和「真实链路走到哪一步」，并确认无模型密钥时的可达范围。
 
+按复核意见，本节同时把 README「当前状态」里已被实测推翻的「外部来源连通性尚未验证」收窄为「模型连通性与论文语义验收尚未验证」（见下表），使仓库内表述与实测一致；两处改动同属本 PR。
+
 ### 实际检查
 
 | 检查 | 结果 |
 | --- | --- |
-| 后端基线 `pytest -c backend/pyproject.toml -q` | **248 passed，2 warnings（34.51s）**，与既有记录一致，无回归 |
-| 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail** |
+| 后端基线 `pytest -c backend/pyproject.toml -q` | **239 passed，2 warnings（66.02s）**，在本 PR head（`ee79e53` = `origin/main` + 本节文档改动）实测。**此前记的 248 取自 `6a2ea8f`，它含尚未合并的 PR #24 的 9 条报告口径用例（239 + 9 = 248），不是本分支或 main 的现值**，本行已按复核意见更正 |
+| 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail**。较 2026-10-11 记录的 42 少 1 条，来源已定位：#21（`373c0ca`）删除了 `frontend/tests/workbench.test.mjs` 中 `501 is explicit and never falls back to demo`（对应实现已随该 PR 移除），属用例随实现下线，非静默削弱断言 |
 | `npm --prefix frontend run build` | 通过（`vue-tsc --noEmit` + vite build，29 模块；`dist/` 已在 `.gitignore` 中） |
 | `python -m pip check` | No broken requirements found |
 | `GET /health` | 200 `{"status":"ok"}`（连续三次复测） |
 | `GET /api/run-config` | 200，`config_digest` 稳定；limits `3/1/2/1`、timeouts `45/15/180`、观测默认关闭 |
 | `GET /api/checks`（空库） | 200 `[]` |
-| 真实来源解析 `10.1371/journal.pmed.0020124` | 200，返回真实题名、作者、年份（**Crossref 与 PMC 实时链路可用**，README 中「来源连通性尚未验证」至此已有实测） |
+| 真实来源解析 `10.1371/journal.pmed.0020124` | 200，返回真实题名、作者、年份（**Crossref 与 PMC 实时链路可用**）。README「当前状态」原称「真实外部来源与模型连通性…尚未验证」，本 PR 按此实测把该句收窄为「模型连通性与论文语义验收尚未验证」 |
 | DOI 格式非法 `not-a-doi` | 400 `DOI_INVALID` |
 | 不存在的 DOI | 404 `DOI_UNRESOLVABLE` |
 | 配置摘要过期（`config_digest` 不匹配） | 409「配置已更改，请重新预览并确认」，`error_code=null` |
@@ -547,8 +549,44 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - **Issue #20 清单未链接 worker 常驻要求**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`（本次实测确认）。该要求已写在 `docs/development.md` 第 58 行，但清单「前提」没有链接它，建议补一行，避免执行人误判为功能缺陷。
 - 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
 - 未测在途任务的取消：本次只覆盖终态任务的取消拒绝分支，`QUEUED`/`RUNNING` 取消、重复取消与取消/完成竞态仍未实测。
-- 未在干净 `origin/main` 工作树上重跑全量测试。本次全量数字取自 `6a2ea8f`，其中含 PR #24 的 9 个报告口径用例，故 main 对应数应为 239；因该提交未改运行时，不影响上面各条运行时结论。
+- 探测本身在 `6a2ea8f` 的主工作树上进行（该提交相对 `origin/main` 只改 `docs/` 与 `tests/`，运行时文件改动为 0）；定稿时已在本分支 head 重跑全量（239 passed，见上表）。但**各条运行时结论没有在本分支代码上重放**，其运行环境基线仍是 `6a2ea8f`。
 - 语义报告 N=7 构造样本与单人标注的两条限制不变，本节不改变其口径。
+
+### 复现方式（供 #20 执行人照抄）
+
+```bash
+# 1) 后端：用隔离数据目录启动，避免污染默认 backend/.paper-evidence
+cd backend
+export PAPER_EVIDENCE_DATA_DIR="$TEMP/pe_e2e_probe"   # Windows 写具体路径，如 C:/Users/<you>/AppData/Local/Temp/pe_e2e_probe
+.venv/bin/python -m uvicorn paper_evidence.api.app:app --host 127.0.0.1 --port 8000
+# Windows 用 .\.venv\Scripts\python 代替 .venv/bin/python
+
+# 2) 必须等端口 bind 完成再探测，否则 /health 可能得到伪造的 502
+until [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health)" = "200" ]; do sleep 1; done
+
+# 3) 取当前配置摘要；创建任务时的 config_digest 必须用它
+curl -s http://127.0.0.1:8000/api/run-config     # → config_digest
+
+# 4) 另开一个进程常驻 worker：API 进程自己不执行任务，
+#    不启动 worker 时任务会永远停在 QUEUED（不是功能缺陷）
+cd backend && .venv/bin/python -m paper_evidence.worker --loop --interval 1
+```
+
+关键请求与期望（`$DIGEST` 取自第 3 步）：
+
+| 请求 | 期望 |
+| --- | --- |
+| `GET /api/sources/resolve?doi=not-a-doi` | 400 `DOI_INVALID` |
+| `GET /api/sources/resolve?doi=10.9999/does-not-exist` | 404 `DOI_UNRESOLVABLE` |
+| `POST /api/checks`，`config_digest` 用过期值 | 409「配置已更改，请重新预览并确认」，`error_code=null` |
+| `POST /api/checks`，`source_confirmed=false` 或 `cloud_consent=false` | 400「需要同时确认来源与云调用授权」 |
+| `POST /api/checks`，`claim=""` | 400「论断不能为空」 |
+| `POST /api/checks`（合法、无模型密钥） | 202 + `QUEUED`；落后 worker 取走 → `FAILED`，`stage=query_generation`、`error_code=UPSTREAM_UNAVAILABLE`、`label=null` |
+| `GET /api/checks/{id}/diagnostic-packet` | 200，`schema_version=2.2`；`usage=null`（不是 0）；原句出现 0 次 |
+| `POST /api/checks/{id}/retry` | 202，新任务 `previous_id` 指向原任务；调用账重开，预算不继承 |
+| `POST /api/checks/{id}/cancel`（终态任务） | 409「任务已结束，不能取消」 |
+| `POST /api/checks/{id}/cancel`（`QUEUED` 任务） | 200 `CANCELLED`；重复调用仍 200（幂等） |
+| `DELETE /api/checks/{id}` | 200，历史列表随即不再包含该任务 |
 
 ### 一条方法学提醒
 
