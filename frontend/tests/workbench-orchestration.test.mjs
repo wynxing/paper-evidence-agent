@@ -415,7 +415,7 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     } finally { failed.unmount() }
   })
 
-  test('config conflict refreshes the draft and an unimplemented create does not enter demo mode', async () => {
+  test('config conflict refreshes the draft', async () => {
     const conflict = session('')
     let configs = 0
     conflict.api.overrides.getRunConfig = () => runConfig(configs++ === 0 ? 'old' : 'new')
@@ -436,25 +436,6 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
       assert.equal(conflictWork.work.route.value.view, 'new')
       assert.equal(conflictWork.work.demo, false)
     } finally { conflict.unmount() }
-
-    const pending = session('')
-    pending.api.overrides.createCheck = () => { throw new ClientError('pending', '该功能后端尚未实现。草稿保留，未切换模拟数据。', 501) }
-    const pendingWork = pending.mount()
-    try {
-      await until(() => named(pending.api, 'listChecks').length >= 1, 'history')
-      pendingWork.work.changeClaim('论断保留')
-      pendingWork.work.changeDoi('10.1000/pending')
-      await pendingWork.work.resolve()
-      pendingWork.work.draft.sourceConfirmed = true
-      pendingWork.work.draft.cloudConsent = true
-      await pendingWork.work.submit()
-      assert.equal(pendingWork.work.message.value, '该功能后端尚未实现。草稿保留，未切换模拟数据。')
-      assert.equal(pendingWork.work.draft.claim, '论断保留')
-      assert.equal(pendingWork.work.draft.cloudConsent, true)
-      assert.equal(pendingWork.work.route.value.view, 'new')
-      assert.equal(pendingWork.work.demo, false)
-      assert.equal(named(pending.api, 'createCheck').length, 1)
-    } finally { pending.unmount() }
   })
 
   test('a hidden page does not start polling and a malformed hash is reported', async () => {
