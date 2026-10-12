@@ -491,3 +491,43 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
+
+## 语义验收报告口径（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | 测试方案「功能准确性」的「报告」条目，分母与对账规则取自 [评测口径](evaluation.md#4-质量指标) |
+| 环境 | Windows、Python 3.12.13，`backend/.venv` 由 uv 创建，依赖按 `backend/requirements.lock` 安装 |
+| 对象 | `tests/functional/report.py`、`tests/functional/test_report_metrics.py`（新增）；`tests/functional/conftest.py` 提取 `run_case`；产出 `docs/semantic-report.md` |
+
+此前 PR #22 只产出「逐例通过」，没有任何指标数字，而测试方案要求报告摘录定位、语义正确情况、各类 precision/recall 与可判定覆盖率。本节补齐该口径。
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests/functional -q` | **28 passed**（19 既有 + 9 报告口径） |
+| `pytest -q`（全量） | **248 passed，2 warnings**（239 既有 + 9 新增），无回归 |
+| `python report.py` | 生成 `docs/semantic-report.md`，N=7，基线写入 `git rev-parse --short HEAD` 并在工作区脏时标注 |
+| 互斥恒等式 | `D+I+B+F+C+X+U = 7 = N`，报告内自带校验行 |
+| 零分母记 N/A | 真值可判定子集为空时 `coverage_truth_decidable` 为 `None`，渲染为 `N/A`；`ratio(0,0)` 与 `ratio(3,0)` 均为 `None` |
+| 真实零不被写成 N/A | 真值可判定子集有 1 槽位而系统未判断时，`0/1 = 0.0` 如实报出 |
+| 拒判与失败留在召回分母 | 真值为相矛盾但拒判或失败 → 计入该类 FN，`recall = 1/3` |
+| 无确定判断时摘录定位 | 写「不适用」，不写 100%；同时 `locatability` 为 `None` |
+| macro-F1 排除零分母类 | 只有「支持」有样本时，另两类为 `None`，macro-F1 只由「支持」参与并报告参与类别 |
+| 应拒判集合 R 的比率 | R 中无 COMPLETED 时 `r_error_rate` 为 `None`，不补成 0 |
+| U>0 时报告为暂定 | 存在未结算槽位时报告含「暂定」字样，不发布最终结论 |
+| 误判与过度拒判分列 | 两者各自单独计数，不只报条件准确率 |
+
+### 首次生成的数字（n=7，构造样本）
+
+可判定覆盖率（全批次）85.7%（6/7）、真值可判定子集 100%（6/6）、摘录定位有效率 100%（6/6）、四类 precision/recall 均为 1.00、macro-F1 1.00、应拒判样本错误确定判断率 0%（0/1）。
+
+**这些数字不得当作总体准确率**：样本是人工构造的，n=7 单次抽样，且真值单人标注无第二人复核。
+
+### 未覆盖
+
+- **来源匹配准确率、证据 Recall@k** 需要独立基准与采样协议，本验收集不产出，报告内列为未覆盖而非填 0。
+- **不确定区间**需要采样协议，n=7 不估计。
+- 报告只覆盖参赛首版有限验收集，与 [评测口径](evaluation.md) 的正式研究评测（120 对）不是同一层，不互相替代。
+- 报告由脚本生成，但**尚未接入 CI**：当前需手工运行 `python report.py`。若样本变动而报告未重生成，`docs/semantic-report.md` 会与仓库状态不一致。
