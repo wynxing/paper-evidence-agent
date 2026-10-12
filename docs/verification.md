@@ -491,6 +491,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
+
 ## 端到端联调后端缺口（2026-10-12）
 
 | 项目 | 记录 |
@@ -498,14 +499,14 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 关联 | Issue #20「依赖后端 @Ziyiqian123」四项，与 Issue #7「待办 → 后端」同批，内含 #16 第 1、2 条 |
 | 环境 | Windows、Python 3.12.14（pytest 9.1.1）；Node v22.22.2、`node --test`、`vue-tsc` 3.3.11 + `vite` 8.3.1 |
 | 对象 | 后端 `domain/contracts.py`、`storage/sqlite.py`、`api/app.py`、`worker/runner.py`；前端 `src/api/contracts.ts`；文档 `architecture.md`、`development.md`、`README.md`；测试 `tests/tools/test_checks_api.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/boundary/test_domain_contract.py` |
-| 对象提交 | `ca593ca468e8526c2303b2a1c9215f00f43a900b`（本记录随后单独提交，避免哈希自指） |
+| 对象提交 | 首版 `ca593ca468e8526c2303b2a1c9215f00f43a900b`；评审修正 `3a53dc37b3c2dc6446a46ce793d9816466c108bb`（本记录随后单独提交，避免哈希自指） |
 
 ### 四项待办与实现
 
 | 待办 | 实现 |
 | --- | --- |
 | 证据邻段上下文读取接口 | 新增 `GET /api/checks/{id}/evidence-context` → `EvidenceContext`。锚点为「进入模型上下文的候选段落」与「最终判断引用的段落」，各自经 source-scoped 的 `read_neighbors` 按 `ordinal±1` 展开，按段落序号升序返回；每段带 `entered_context` / `cited` 两个来源标志 |
-| 原始输入读取接口 | 新增 `GET /api/checks/{id}/input` → `CheckInput`，返回提交时原文以及该任务冻结的 `config_digest` 与 `authorized_recipients` |
+| 原始输入读取接口 | 新增 `GET /api/checks/{id}/input` → `CheckInput`，返回提交时原文以及该任务冻结的 `config_digest` 与 `authorized_recipients`。这是一条**按任务**的直接读取、不依赖历史列表是否已加载；`CheckSummary` 也带 `doi`，故它**不是**取得提交 DOI 的唯一路径（评审修正，见下） |
 | #16 第 1 条（worker 遇异常退出） | `run_once` 把工厂构造移入 `try`；`drain_forever` 捕获循环级异常后继续 |
 | #16 第 2 条（时间戳一致） | `updated_at` / `finished_at` 由同一处 `_now()` 复用 |
 | 最简模型密钥配置说明 | `development.md` / `README.md` 写明最小集与失败行为 |
@@ -514,28 +515,46 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 | 检查 | 结果 |
 | --- | --- |
-| `pytest ../tests -q`（全量） | **247 passed，3 warnings**，无回归 |
-| `pytest ../tests/tools/test_checks_api.py -q` | **29 passed** |
+| `pytest ../tests -q`（全量） | **248 passed，3 warnings**，无回归 |
+| `pytest ../tests/tools/test_checks_api.py -q` | **30 passed** |
 | `pytest ../tests/boundary/test_storage_lifecycle.py ../tests/boundary/test_domain_contract.py -q` | **31 passed** |
 | `pytest ../tests/tools/test_api_contract.py ../tests/boundary/test_frontend_shapes.py -q` | **16 passed**（OpenAPI / 架构文档 / 前端契约三方一致） |
 | 前端 `node --experimental-strip-types --test tests/*.test.mjs` | **41 passed** |
 | 前端 `npm run build`（`vue-tsc --noEmit` + `vite build`） | 通过，29 modules transformed |
 | 原始输入逐字返回 | 提交 `"  The intervention reduced mortality.  "`（前后带空白）→ 接口原样返回，不折叠空白、不截断 |
-| 原始输入的必要性对照 | 同一时刻 `GET /api/checks/{id}` 的 `source` 为 `null`（DOI 无处可读），`GET .../input` 仍返回提交 DOI |
+| 详情视图的 DOI 空窗 | 同一时刻 `GET /api/checks/{id}` 的 `source` 为 `null`，详情视图本身在该阶段没有 DOI，`GET .../input` 仍返回提交 DOI；但历史行的 `CheckSummary.doi` 同期也有值，故这是**详情视图**的空窗，不是全局缺口 |
 | 重试链保留 | 由 `previous_id` 指向的原任务被取消后，重试任务仍返回 `previous_id` 与提交原文 |
 | 邻段展开 | 序号 2 进入上下文、序号 3 被最终判断引用 → 返回 1..3，标志分别为 (F,F)、(T,F)、(F,T) |
 | 只读性 | 调用 `evidence-context` 前后任务详情（含 `finished_at`）不变 |
 | 来源未冻结 | `source_id` 为 `null`、`paragraphs` 为空（表示暂无内容，非来源不存在） |
+| 已冻结但无锚点 | 来源已冻结而尚无候选或引用（任务在 `query_generation` 阶段失败即此形态）时，`source_id` 有值而 `paragraphs` 为空——评审补充的第三种组合 |
 | 不越源 | 跨来源的段落标识经 `read_neighbors` 解析为空 |
 | 邻段不是证据 | `ContextParagraph` 不带 `validation` 字段 |
 | 四条终态路径时间戳 | 完成、排队取消、总超时、遗留 `RUNNING` 结算，均满足 `updated_at == finished_at` |
 | worker 循环活下去 | 首轮 `run_once` 抛 `RuntimeError` 后循环仍在领取（`calls > 3`），并记录 `Worker loop iteration failed; continuing` |
 | 工厂抛异常落终态 | 已领取任务落 `FAILED`、`error_code is None`、`finished_at` 非空，且不可重复领取 |
+| 冻结摘要重提边界 | 有效配置未变时，用 `/input` 的冻结摘要重提被接受（`202`）；配置改变后同一摘要被拒（`409`、`error_code=null`、固定文案「配置已更改，请重新预览并确认」） |
 
 ### 未覆盖
 
-- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型；「真实全文下邻段是否覆盖跨小节引用」未验证，冻结样本仅 3 段。
+- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型，且目前**无前端调用方**：`frontend/src/api/contracts.ts` 已声明两者，但 API 客户端没有对应方法，全仓也搜不到 `evidence-context` 的调用点。
+- **`evidence-context` 在真实来源上目前只能返回锚点自身**：真实 PMC 经 `metadataPrefix=pmc_fm` 取回的「全文」实际只含题录与摘要（`jats_bytes` 的 `<body>` 计数为 0，见 #28），该来源段落表仅 0~1 段，因此 `ordinal±1` 的邻段展开恒为空，「引文前后是什么」在当前冻结内容下无法兑现。此前写作「冻结样本仅 3 段」会让人误以为换成真实来源即可，属措辞不准；该项在 #20 中记为**阻塞**，随 #28 修复。
 - `evidence-context` 只按 `ordinal±1` 展开，不解析文内交叉引用（如「见第 2 节」），跨小节引用不在本次范围。
 - worker 兜底只在**进程内**隔离单个任务失败。它不解决任务级挂起（无超时地卡在某个 await），也覆盖不到「存储层持续不可用」这类跨轮次故障。
-- 时间戳一致只覆盖四条已实现的终态写入路径；若将来新增终态写入而忘记复用同一 `_now()`，本测试无法自动发现（它按路径枚举，不是全称断言）。
+- 时间戳一致覆盖**当前全部 4 处**终态写入点：全仓 `UPDATE tasks SET status` 仅 `finish`、排队取消、总超时、遗留 `RUNNING` 结算四处，均已复用同一 `_now()`（评审独立 grep 复核）。新增终态写入点需同步本用例，否则不在保护范围内。
+- `RUNNING` 态未取得快照：`/input` 的文档字符串点名 `QUEUED, RUNNING, BLOCKED` 三态，测试覆盖 `QUEUED` 与 `BLOCKED`（`BLOCKED` 由评审补充验证通过），`RUNNING` 因 worker 领取间隔与轮询起点错开未抓到，已记入 #20。
 - 最小密钥说明为文档描述，本次无可用密钥，未在真实上游端点下跑通一次完整核验。
+
+### 评审修正（2026-10-12）
+
+评审（lvyixi1110）复核后指出 `CheckInput` 的必要性论证与事实不符、且该接口当前无前端调用方；逐条复核属实并修正（对象提交 `3a53dc37b3c2dc6446a46ce793d9816466c108bb`）：
+
+| 评审项 | 处理 |
+| --- | --- |
+| `CheckSummary.doi` 早已覆盖提交 DOI，前端 `originalDoi` 已从历史行回退取值 | docstring 与两份文档改为准确口径，不再声称本接口是唯一路径 |
+| 冻结 `config_digest` 不是重提应发送的值 | 文档写明语义，并新增边界用例固化「配置未变放行 / 配置变更 409」 |
+| `source_id` 有值而 `paragraphs` 为空是第三种组合 | `architecture.md` 与本节补记 |
+| 时间戳未覆盖措辞偏保守 | 改为「覆盖当前全部 4 处终态写入点」 |
+| `RUNNING` 态未覆盖 | 记入本节与 #20 |
+| 未装前端依赖的失败形态 | `development.md` 写具体：`tests/boundary/test_frontend_shapes.py` 整组失败（检查器找不到 `typescript`） |
+| `contracts.ts` 两个新 interface 是死代码 | 两处标注「尚无客户端方法调用」 |
