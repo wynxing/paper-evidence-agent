@@ -1,0 +1,29 @@
+{
+  "case_id": "contradicted_negation",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.contra.0003",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该治疗显著降低了死亡率。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：原文明确报告未下降，论断主张显著下降，用于验证「相矛盾」下的否定方向翻转。",
+  "expected_label": "相矛盾",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "evidence 至少一条且 validation=pass",
+    "每条 evidence 的 quote 逐字出现在对应冻结段落中"
+  ],
+  "quotes": {
+    "contradiction": "The treatment did not reduce mortality compared with placebo."
+  },
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">The treatment did not reduce mortality compared with placebo.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"相矛盾\", \"rationale\": \"原文明确报告治疗组死亡率未下降，与论断方向相反。\", \"supported_parts\": [], \"scope_differences\": [\"原文为否定结论，论断为肯定结论\"], \"limitations\": [], \"evidence\": [{\"paragraph\": 1, \"quote\": \"The treatment did not reduce mortality compared with placebo.\"}]}}"
+  ]
+}

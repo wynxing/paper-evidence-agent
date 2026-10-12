@@ -1,0 +1,26 @@
+{
+  "case_id": "insufficient_unrelated",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.insufficient.0005",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该治疗把死亡率降低了 20%。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：全文只描述招募与分析，未涉及治疗或死亡率，用于验证「证据不足」。",
+  "expected_label": "证据不足",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "无确定判断时可无 evidence"
+  ],
+  "quotes": {},
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">The study enrolled 500 participants from three teaching hospitals.</p>\n<p id=\"n2\">Data were analysed with a mixed-effects model.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\", \"participants\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"证据不足\", \"rationale\": \"检索到的段落只涉及招募与分析方法，未涉及治疗或死亡率。\", \"supported_parts\": [], \"scope_differences\": [], \"limitations\": [\"本次未获得足够证据；这是本次有界检索的结果，不代表该文献绝对没有证据。\"], \"evidence\": []}}"
+  ]
+}

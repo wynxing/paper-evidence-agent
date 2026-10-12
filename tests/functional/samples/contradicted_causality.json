@@ -1,0 +1,29 @@
+{
+  "case_id": "contradicted_causality",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.contra.0007",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该治疗导致了死亡率下降。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：原文说明下降早于治疗引入已开始，论断主张因果归因，用于验证因果关系变化。",
+  "expected_label": "相矛盾",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "evidence 至少一条且 validation=pass",
+    "每条 evidence 的 quote 逐字出现在对应冻结段落中"
+  ],
+  "quotes": {
+    "contradiction": "Mortality fell after the treatment was introduced, but the decline had already begun two years earlier."
+  },
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">Mortality fell after the treatment was introduced, but the decline had already begun two years earlier.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"相矛盾\", \"rationale\": \"原文指出下降在治疗引入前两年即已开始，不能归因于该治疗。\", \"supported_parts\": [], \"scope_differences\": [\"原文否定因果归因，论断主张因果关系\"], \"limitations\": [], \"evidence\": [{\"paragraph\": 1, \"quote\": \"Mortality fell after the treatment was introduced, but the decline had already begun two years earlier.\"}]}}"
+  ]
+}

@@ -401,3 +401,56 @@ query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
 Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.sleep(0.08)` 会在约 0.078 秒返回。因此 Retry-After 用例断言的是适配层向 `asyncio.sleep` 请求的时长（精确相等），墙上时钟只做宽松校验。把该用例写回「墙上时钟 ≥ 请求时长」会在本平台失败，与实现正确与否无关。
 
 关闭远程价目表下载的收益只有「不再发这次请求」这一条：同一台机器上设与不设的导入耗时都在 4.0–4.2 秒，差异落在噪声里，耗时由 LiteLLM 自身的导入图决定。D6 与开发指南按这个结论表述，没有写成功率提升。
+
+## 功能准确性语义验收（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | 测试方案「功能准确性」维度：`tests/functional/` 冻结样本与人工核对标签 |
+| 环境 | Windows、Python 3.12.13，`backend/.venv` 由 uv 创建，依赖按 `backend/requirements.lock` 安装 |
+| 对象 | `tests/functional/conftest.py`（补完）、`tests/functional/test_semantic_acceptance.py`（新增）、`tests/functional/samples/`（7 份样本） |
+
+该目录此前已有 `conftest.py` 与一份样本，但没有测试文件，且该样本无法被现有解析器接受。本次把它做通，并补足测试方案要求的标签与语义维度覆盖。
+
+### 补完的三处缺陷（接手时实测确认，非推测）
+
+| 缺陷 | 现象 | 处理 |
+| --- | --- | --- |
+| 样本的 evidence 用 `paragraph`（段号），解析器要求 `paragraph_id`（字符串）且 `extra=forbid` | 照搬样本 transcript 得到 `OutputError: 动作字段不合法` | 保留样本可读的段号写法，在 `ScriptedGateway` 增加 `_resolve`：按冻结 JATS 的文档顺序把 1-based 段号换成真实 `paragraph_id`；越界抛 `SampleReferenceError` 而非静默丢弃摘录 |
+| `_load` 读顶层 `payload["doi"]`，样本把 DOI 放在 `source` 块内 | `KeyError: 'doi'` | 改读 `payload["source"]["doi"]`，与 `pmcid`/`version`/`license` 同处一块 |
+| `_load` 读 `checks`，样本写作 `expected_checks` | `FrozenCase` 该字段恒为空 | 统一为 `expected_checks`，并注明它是人工可读的验收说明，机器断言以测试模块为准 |
+
+### 验收集覆盖
+
+| 标签 | 样本 | 语义维度 |
+| --- | --- | --- |
+| 支持 | `support_object_scope` | 对象与条件一致 |
+| 部分支持 | `partial_population_scope` | 条件/对象范围被扩大（成人 → 所有年龄组） |
+| 部分支持 | `partial_quantity` | 数量不符（20% → 约 50%） |
+| 相矛盾 | `contradicted_negation` | 否定方向被翻转 |
+| 相矛盾 | `contradicted_object` | 对象被替换（Drug A → Drug B） |
+| 相矛盾 | `contradicted_causality` | 因果关系被主张（原文指出下降早于治疗引入） |
+| 证据不足 | `insufficient_unrelated` | 检索到内容但均不支持论断 |
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests/functional -q` | **19 passed** |
+| `pytest -q`（全量，取 `backend/pyproject.toml` 的 `testpaths`） | **220 passed，2 warnings**（201 既有 + 19 新增），无回归 |
+| 运行时隔离：`grep -rn "\bsamples\b\|\bfunctional\b\|tests\." backend/paper_evidence/` | **0 命中**，冻结样本与预期不被运行时导入（测试方案「功能准确性」首条） |
+| 确定性判定：摘录不在冻结段落时 | `FAILED` / `QUOTE_MISMATCH` / `label=None`，不发布确定判断。同一错误摘录连续给出两次（含一次修复请求）仍拒判 |
+| 负向控制：换成语义明确错误的标签 | 验收器检出（`acceptance_failures` 非空） |
+| 负向控制：摘录不在被引段落 | 验收器检出 |
+| 负向控制：确定判断不带摘录 | 验收器检出 |
+| 负向控制：正确对照 | 真实结果通过，验收器不会永远拒判 |
+| 可判定覆盖 | 7 份样本的发布标签覆盖 支持/部分支持/相矛盾，未全部以「证据不足」通过 |
+
+正向断言与负向控制共用同一个 `acceptance_failures`，因此控制不通过时不得用该验收器发布语义成绩（测试方案「验收器负向控制」）。
+
+### 未覆盖
+
+- 样本的 JATS 是**人工构造的最小可解析快照**，不是真实论文原文；`claim_kind` 均为 `constructed` 并附 `claim_note`，不冒充自然引文。测试方案要求的「小规模真实 PMC 来源集」尚未建立。
+- 标签由单人整理，尚无第二人复核（测试方案「标注」要求一人整理、另一人复核）。分歧解决前不计为确定真值。
+- 上游模型仍由 `ScriptedGateway` 回放，未调用真实模型；本维度检验的是判定链路的确定性与证据门槛，不是模型本身的语义能力。
+- 首版 7 例为构造样本，不声称标签稳定，也不给出总体准确率；摘录定位有效率等报告口径尚未产出。

@@ -1,0 +1,29 @@
+{
+  "case_id": "partial_population_scope",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.partial.0002",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该治疗降低了所有年龄组的死亡率。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：原文只报告成人结果且儿童未变化，论断把范围扩大到所有年龄组，用于验证「部分支持」。",
+  "expected_label": "部分支持",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "evidence 至少一条且 validation=pass",
+    "每条 evidence 的 quote 逐字出现在对应冻结段落中"
+  ],
+  "quotes": {
+    "support": "In adults, the treatment reduced mortality by 20 percent."
+  },
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">In adults, the treatment reduced mortality by 20 percent.</p>\n<p id=\"n2\">Mortality in children was unchanged.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"部分支持\", \"rationale\": \"原文只在成人中观察到死亡率下降，儿童未见变化；论断扩大到所有年龄组。\", \"supported_parts\": [\"成人死亡率下降\"], \"scope_differences\": [\"原文限于成人，论断称所有年龄组\"], \"limitations\": [], \"evidence\": [{\"paragraph\": 1, \"quote\": \"In adults, the treatment reduced mortality by 20 percent.\"}]}}"
+  ]
+}
