@@ -309,12 +309,13 @@ PY
 
 1. `config.py` 的默认 `pmc_oai_url` 仍指向 `https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi`，该地址现返回 **301**，重定向到 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
 2. `pmc.py` 的 `fetch_record` 请求 `metadataPrefix=pmc`，但该前缀对多数记录返回 **400 `cannotDisseminateFormat`**；`ListMetadataFormats` 返回可用值为 `oai_dc`、`pmc`、`pmc_fm`，其中**只有 `pmc_fm` 返回含 `<article>` 的完整 JATS 正文**。
+   > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见文末「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
 3. `pmc.py` 调用 `Fetcher.get` 时未传 `follow_redirects=True`；`http.py` 默认 `False`，且 301 小于 400 会被 `Fetcher` 原样返回，随后在 `fetch_record` 的 `status_code != 200` 分支被记为 `UPSTREAM_INVALID_REQUEST`。
 
 ### 修复
 
 - `config.py`：默认端点改为 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
-- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`；`fetch_record` 的请求显式传 `follow_redirects=True`。
+- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，见文末一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
 
 ### 实际检查
 
@@ -491,3 +492,53 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
+
+## PMC 全文取回：metadataPrefix 修正（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #28（本缺陷）；#20 清单中 `evidence-context` 邻段能力的阻塞项 |
+| 环境 | Windows、Python 3.12.13（`backend/.venv`，uv 创建）、Node 22.22.2 / npm 10.9.7 |
+| 对象 | `backend/paper_evidence/sources/pmc.py`、`tests/tools/test_sources.py` |
+
+### 缺陷与根因
+
+`fetch_record` 使用 `metadataPrefix=pmc_fm`。`pmc_fm` 是 PMC **F**ront **M**atter：返回的 `<article>` **不含 `<body>`**，只有题录、摘要与许可。于是冻结进 `SourceSnapshot` 的「全文」实际只有摘要，`parse_jats` 按设计回落到 `<abstract>`。
+
+后果有两个：
+
+- 系统只能据摘要判断论断，正好命中 `docs/prd.md` 明令禁止的「用摘要代替全文来声称全文没有相关证据」；
+- PR #27 新增的 `GET /api/checks/{id}/evidence-context` 的 `ordinal±1` 邻段展开在真实来源上**恒为空**——不是样本规模问题。
+
+上一节「PMC OAI 取回链路修复」曾判定「`pmc` 对多数记录返回 400 `cannotDisseminateFormat`，只有 `pmc_fm` 返回完整 JATS 正文」。该判断与实测相反，已在该节就地标注修正（保留原文以说明当时的依据）。
+
+### 实测对照（live PMC，3 个 CC BY 记录，2026-10-12）
+
+| metadataPrefix | PMC1182327 | PMC8806060 | PMC7461750 |
+| --- | --- | --- | --- |
+| `pmc_fm` | `<body>` 计数 **0**，`<p>` 4 | `<body>` 0，`<p>` 3 | `<body>` 0，`<p>` 0 |
+| `pmc` | `<body>` **1**，`<sec>` 8，`<p>` 38 | `<body>` **1**，`<sec>` 20，`<p>` 57 | `<body>` **1**，`<sec>` 0，`<p>` 6 |
+
+### 修复
+
+- `fetch_record` **先请求 `pmc`（正文）**；仅在 PMC 返回 OAI 错误码 **`cannotDisseminateFormat`**（记录不在 OA 子集）时，才回落到 `pmc_fm`。其它 OAI 错误照旧映射 `SOURCE_UNAVAILABLE`，且不做第二次请求。
+- 请求与解析拆为 `_get_record()`，错误处理按 `error` 元素的 **`code` 属性**判定，不再按「是否存在 `error` 元素」一刀切。
+- 就地订正两处与实测相反的说明：`pmc.py` 的常量注释、原测试的 docstring 与函数名（原名 `test_pmc_oai_request_uses_the_full_text_metadata_prefix` 断言 `pmc_fm`，前提本身是错的）。
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest -c backend/pyproject.toml -q`（全量） | **242 passed，2 warnings**（52.34s；origin/main 既有 239 + 本 PR 新增 3） |
+| 真实端到端（修复后的代码，live Crossref + PMC + OpenAlex） | `10.1371/journal.pmed.0020124` → `PMC1182327`、license CC BY、`<body>`=1、`<sec>`=8，**解析段落数 1 → 32**；`PMC8806060` → 55 段；`PMC7461750` → 5 段 |
+| 首个 GetRecord 请求的前缀 | `metadataPrefix=pmc`；只有在收到 `cannotDisseminateFormat` 后才会发出第二个 `pmc_fm` 请求 |
+| 非 `cannotDisseminateFormat` 的 OAI 错误（`idDoesNotExist` / `badArgument`，参数化两条） | 仍映射 `SOURCE_UNAVAILABLE`，且**不发起第二次请求** |
+| 回落路径的产物 | 回落得到的 `jats_bytes` **不含 `<body>`**（断言固化，防止把题录当正文） |
+| 许可门控未被改动 | 回落样例仍正常解析出 `CC BY`；`classify_license` 相关用例全部通过 |
+
+### 未覆盖与遗留
+
+- **OA 子集之外的记录仍然只有题录+摘要**，回落路径不报错。是否需要在这种情形下**阻断**（而不是据摘要做判断），是产品口径决定，超出本连接器的职责；本 PR 不做行为变更，已在代码 docstring 与 Issue #28 中点明。
+- 三个样例都是 CC BY 开放获取，**没有抽样非 OA 记录的真实 `cannotDisseminateFormat` 响应体**（该分支由 mock 用例覆盖，不是实测）。
+- `parse_jats` 的摘要回落行为本身未改；`evidence-context` 的邻段能力是否恢复，需在 #28 修复合并后按 #20 清单复测（本次只验证到「来源冻结后含 `<body>`」）。
+- 前端与文档的 `13 个业务接口` 等口径不受影响（本 PR 不改接口）。

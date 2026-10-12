@@ -22,6 +22,19 @@ _CC_BY = re.compile(r"\bcc[\s-]*by\b", re.IGNORECASE)
 _CC_ATTRIBUTION = re.compile(r"creative\s+commons\s+attribution", re.IGNORECASE)
 _CC_RESTRICTED = re.compile(r"\b(nc|nd|sa)\b", re.IGNORECASE)
 
+#: ``pmc`` serves the full JATS record, ``<body>`` included. A judgement may only
+#: rest on it. Verified against live PMC (2026-10-12): three CC BY records all
+#: returned a populated ``<body>`` under this prefix.
+_FULL_TEXT_PREFIX = "pmc"
+#: ``pmc_fm`` is PMC **F**ront **M**atter: title, abstract and permissions, and
+#: **no ``<body>`` at all** (three of three live records had ``<body>`` count 0).
+#: It is a fallback for records PMC will not serve as full text, never the first
+#: choice — judging a claim on an abstract alone is forbidden by 产品需求「不测」:
+#: 「用摘要代替全文来声称全文没有相关证据」.
+_FRONT_MATTER_PREFIX = "pmc_fm"
+#: The OAI-PMH error PMC returns when a record is outside the Open Access subset.
+_CANNOT_DISSEMINATE = "cannotDisseminateFormat"
+
 
 def classify_license(text: str | None, href: str | None = None) -> str:
     """Return the normalized supported licence, or raise a BLOCKED code.
@@ -44,6 +57,20 @@ def classify_license(text: str | None, href: str | None = None) -> str:
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _oai_error_code(root: ElementTree.Element) -> str | None:
+    """The OAI-PMH ``error`` code of a GetRecord response, or ``None``.
+
+    The code matters, not just its presence: ``cannotDisseminateFormat`` means
+    "this record has no full text to serve" and is the one case worth retrying
+    under a different ``metadataPrefix``; everything else is a real failure.
+    """
+
+    for item in root.iter():
+        if _local(item.tag) == "error":
+            return (item.get("code") or "").strip() or "error"
+    return None
 
 
 @dataclass(frozen=True)
@@ -91,15 +118,13 @@ class PmcClient:
                 return pmcid if pmcid.startswith("PMC") else f"PMC{pmcid}"
         return None
 
-    async def fetch_record(self, pmcid: str, deadline: float | None) -> PmcRecord:
-        """Fetch and validate one licensed JATS record from PMC OAI-PMH."""
+    async def _get_record(self, pmcid: str, prefix: str, deadline: float | None):
+        """One GetRecord call, returned as ``(root, raw_bytes)``."""
 
         params = {
             "verb": "GetRecord",
             "identifier": f"oai:pubmedcentral.nih.gov:{pmcid.removeprefix('PMC')}",
-            # pmc_fm returns the full JATS body; the plain "pmc" prefix is rejected
-            # as cannotDisseminateFormat for many records.
-            "metadataPrefix": "pmc_fm",
+            "metadataPrefix": prefix,
         }
         # The configured OAI host answers with a 301 to its API path; without
         # following it the redirect surfaces as an upstream parameter error.
@@ -112,7 +137,25 @@ class PmcClient:
             root = ElementTree.fromstring(response.content)
         except ElementTree.ParseError as error:
             raise ContractError(ErrorCode.CONTENT_INCOMPLETE, "PMC 返回内容无法解析") from error
-        if any(_local(item.tag) == "error" for item in root.iter()):
+        return root, response.content
+
+    async def fetch_record(self, pmcid: str, deadline: float | None) -> PmcRecord:
+        """Fetch and validate one licensed JATS record from PMC OAI-PMH.
+
+        Full text (``pmc``) is requested first, because that is the only form a
+        judgement may rest on. PMC serves it for records in the Open Access
+        subset; for the rest it answers ``cannotDisseminateFormat``, and only
+        then does the client fall back to ``pmc_fm`` front matter. The fallback
+        is a degradation, not an equivalent: it carries title, abstract and
+        permissions but **no ``<body>``**, so the caller cannot read it as the
+        article. Whether such a record should block instead of being judged on
+        an abstract is a product decision, not one this connector can make.
+        """
+
+        root, content = await self._get_record(pmcid, _FULL_TEXT_PREFIX, deadline)
+        if _oai_error_code(root) == _CANNOT_DISSEMINATE:
+            root, content = await self._get_record(pmcid, _FRONT_MATTER_PREFIX, deadline)
+        if _oai_error_code(root) is not None:
             raise ContractError(ErrorCode.SOURCE_UNAVAILABLE, "PMC 未返回该标识的记录")
         article = next((item for item in root.iter() if _local(item.tag) == "article"), None)
         if article is None:
@@ -141,7 +184,7 @@ class PmcClient:
         version = article.get("version")
         return PmcRecord(
             pmcid=pmcid, doi=doi, title=title, license=license_name, language=language,
-            version=version, jats_bytes=response.content,
+            version=version, jats_bytes=content,
         )
 
 
