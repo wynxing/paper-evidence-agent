@@ -491,3 +491,51 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
+## 端到端联调后端缺口（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #20「依赖后端 @Ziyiqian123」四项，与 Issue #7「待办 → 后端」同批，内含 #16 第 1、2 条 |
+| 环境 | Windows、Python 3.12.14（pytest 9.1.1）；Node v22.22.2、`node --test`、`vue-tsc` 3.3.11 + `vite` 8.3.1 |
+| 对象 | 后端 `domain/contracts.py`、`storage/sqlite.py`、`api/app.py`、`worker/runner.py`；前端 `src/api/contracts.ts`；文档 `architecture.md`、`development.md`、`README.md`；测试 `tests/tools/test_checks_api.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/boundary/test_domain_contract.py` |
+| 对象提交 | `ca593ca468e8526c2303b2a1c9215f00f43a900b`（本记录随后单独提交，避免哈希自指） |
+
+### 四项待办与实现
+
+| 待办 | 实现 |
+| --- | --- |
+| 证据邻段上下文读取接口 | 新增 `GET /api/checks/{id}/evidence-context` → `EvidenceContext`。锚点为「进入模型上下文的候选段落」与「最终判断引用的段落」，各自经 source-scoped 的 `read_neighbors` 按 `ordinal±1` 展开，按段落序号升序返回；每段带 `entered_context` / `cited` 两个来源标志 |
+| 原始输入读取接口 | 新增 `GET /api/checks/{id}/input` → `CheckInput`，返回提交时原文以及该任务冻结的 `config_digest` 与 `authorized_recipients` |
+| #16 第 1 条（worker 遇异常退出） | `run_once` 把工厂构造移入 `try`；`drain_forever` 捕获循环级异常后继续 |
+| #16 第 2 条（时间戳一致） | `updated_at` / `finished_at` 由同一处 `_now()` 复用 |
+| 最简模型密钥配置说明 | `development.md` / `README.md` 写明最小集与失败行为 |
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests -q`（全量） | **247 passed，3 warnings**，无回归 |
+| `pytest ../tests/tools/test_checks_api.py -q` | **29 passed** |
+| `pytest ../tests/boundary/test_storage_lifecycle.py ../tests/boundary/test_domain_contract.py -q` | **31 passed** |
+| `pytest ../tests/tools/test_api_contract.py ../tests/boundary/test_frontend_shapes.py -q` | **16 passed**（OpenAPI / 架构文档 / 前端契约三方一致） |
+| 前端 `node --experimental-strip-types --test tests/*.test.mjs` | **41 passed** |
+| 前端 `npm run build`（`vue-tsc --noEmit` + `vite build`） | 通过，29 modules transformed |
+| 原始输入逐字返回 | 提交 `"  The intervention reduced mortality.  "`（前后带空白）→ 接口原样返回，不折叠空白、不截断 |
+| 原始输入的必要性对照 | 同一时刻 `GET /api/checks/{id}` 的 `source` 为 `null`（DOI 无处可读），`GET .../input` 仍返回提交 DOI |
+| 重试链保留 | 由 `previous_id` 指向的原任务被取消后，重试任务仍返回 `previous_id` 与提交原文 |
+| 邻段展开 | 序号 2 进入上下文、序号 3 被最终判断引用 → 返回 1..3，标志分别为 (F,F)、(T,F)、(F,T) |
+| 只读性 | 调用 `evidence-context` 前后任务详情（含 `finished_at`）不变 |
+| 来源未冻结 | `source_id` 为 `null`、`paragraphs` 为空（表示暂无内容，非来源不存在） |
+| 不越源 | 跨来源的段落标识经 `read_neighbors` 解析为空 |
+| 邻段不是证据 | `ContextParagraph` 不带 `validation` 字段 |
+| 四条终态路径时间戳 | 完成、排队取消、总超时、遗留 `RUNNING` 结算，均满足 `updated_at == finished_at` |
+| worker 循环活下去 | 首轮 `run_once` 抛 `RuntimeError` 后循环仍在领取（`calls > 3`），并记录 `Worker loop iteration failed; continuing` |
+| 工厂抛异常落终态 | 已领取任务落 `FAILED`、`error_code is None`、`finished_at` 非空，且不可重复领取 |
+
+### 未覆盖
+
+- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型；「真实全文下邻段是否覆盖跨小节引用」未验证，冻结样本仅 3 段。
+- `evidence-context` 只按 `ordinal±1` 展开，不解析文内交叉引用（如「见第 2 节」），跨小节引用不在本次范围。
+- worker 兜底只在**进程内**隔离单个任务失败。它不解决任务级挂起（无超时地卡在某个 await），也覆盖不到「存储层持续不可用」这类跨轮次故障。
+- 时间戳一致只覆盖四条已实现的终态写入路径；若将来新增终态写入而忘记复用同一 `_now()`，本测试无法自动发现（它按路径枚举，不是全称断言）。
+- 最小密钥说明为文档描述，本次无可用密钥，未在真实上游端点下跑通一次完整核验。
