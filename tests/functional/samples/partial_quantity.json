@@ -1,0 +1,29 @@
+{
+  "case_id": "partial_quantity",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.partial.0006",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该治疗把死亡率降低了约 50%。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：方向与原文一致但幅度不符，用于验证数量变化下的「部分支持」。",
+  "expected_label": "部分支持",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "evidence 至少一条且 validation=pass",
+    "每条 evidence 的 quote 逐字出现在对应冻结段落中"
+  ],
+  "quotes": {
+    "support": "The treatment reduced mortality by 20 percent."
+  },
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">The treatment reduced mortality by 20 percent.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"部分支持\", \"rationale\": \"方向一致（死亡率下降），但幅度不符：原文为 20%，论断约为 50%。\", \"supported_parts\": [\"死亡率下降这一方向\"], \"scope_differences\": [\"原文降幅 20%，论断约 50%\"], \"limitations\": [], \"evidence\": [{\"paragraph\": 1, \"quote\": \"The treatment reduced mortality by 20 percent.\"}]}}"
+  ]
+}

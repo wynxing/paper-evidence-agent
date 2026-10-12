@@ -1,0 +1,29 @@
+{
+  "case_id": "contradicted_object",
+  "dimension": "功能准确性",
+  "source": {
+    "doi": "10.1000/frozen.contra.0004",
+    "pmcid": "PMC0000001",
+    "version": "1",
+    "license": "CC BY",
+    "note": "冻结样本：JATS 为人工构造的最小可解析快照，用于验证判定链路的确定性与证据门槛。"
+  },
+  "claim": "该研究显示 Drug B 能降低死亡率。",
+  "claim_kind": "constructed",
+  "claim_note": "构造论断：原文把有效药物归于 Drug A 并明确 Drug B 无可测效果，用于验证对象替换。",
+  "expected_label": "相矛盾",
+  "expected_checks": [
+    "status=COMPLETED",
+    "label 与人工核对一致",
+    "evidence 至少一条且 validation=pass",
+    "每条 evidence 的 quote 逐字出现在对应冻结段落中"
+  ],
+  "quotes": {
+    "contradiction": "Drug A reduced mortality, whereas Drug B had no measurable effect."
+  },
+  "jats": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<article xml:lang=\"en\"><front><article-meta/></front><body>\n<sec id=\"s1\"><title>Results</title>\n<p id=\"n1\">Drug A reduced mortality, whereas Drug B had no measurable effect.</p>\n</sec></body></article>\n",
+  "transcript": [
+    "{\"queries\": [\"mortality\"]}",
+    "{\"action\": \"final\", \"decision\": {\"label\": \"相矛盾\", \"rationale\": \"原文指出降低死亡率的是 Drug A，Drug B 无可测效果，对象被替换。\", \"supported_parts\": [], \"scope_differences\": [\"原文的有效药物是 Drug A，论断归因于 Drug B\"], \"limitations\": [], \"evidence\": [{\"paragraph\": 1, \"quote\": \"Drug A reduced mortality, whereas Drug B had no measurable effect.\"}]}}"
+  ]
+}
