@@ -506,9 +506,9 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 | 检查 | 结果 |
 | --- | --- |
-| `pytest ../tests/functional -q` | **28 passed**（19 既有 + 9 报告口径） |
-| `pytest -q`（全量） | **248 passed，2 warnings**（239 既有 + 9 新增），无回归 |
-| `python report.py` | 生成 `docs/semantic-report.md`，N=7，基线写入 `git rev-parse --short HEAD` 并在工作区脏时标注 |
+| `pytest ../tests/functional -q` | **32 passed**（19 既有 + 9 报告口径 + 4 本轮复核修正） |
+| `pytest -q`（全量） | **252 passed，2 warnings**（239 既有 + 13 本 PR），无回归 |
+| `python report.py` | 生成 `docs/semantic-report.md`，N 由样本数派生；正文不含随 commit 变化的字段，溯源改用样本集指纹 `sha256:3035a7030a983d95`，生成时的 commit 只打印到 stdout 并由本记录登记 |
 | 互斥恒等式 | `D+I+B+F+C+X+U = 7 = N`，报告内自带校验行 |
 | 零分母记 N/A | 真值可判定子集为空时 `coverage_truth_decidable` 为 `None`，渲染为 `N/A`；`ratio(0,0)` 与 `ratio(3,0)` 均为 `None` |
 | 真实零不被写成 N/A | 真值可判定子集有 1 槽位而系统未判断时，`0/1 = 0.0` 如实报出 |
@@ -518,16 +518,19 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 应拒判集合 R 的比率 | R 中无 COMPLETED 时 `r_error_rate` 为 `None`，不补成 0 |
 | U>0 时报告为暂定 | 存在未结算槽位时报告含「暂定」字样，不发布最终结论 |
 | 误判与过度拒判分列 | 两者各自单独计数，不只报条件准确率 |
+| 正文样本数与 metrics 一致 | 第 0 节的 `N` 由 `m['total']` 派生，正文不再出现与 `N` 冲突的写死计数（旧文案的「首版 n=1 单次抽样」与同节 `N = 7` 打架）；新增用例断言正文不含 `n=1`/`n=7` 字面量 |
+| macro-F1 参与类别顺序 | 按 `DEFINITIVE` 顺序（支持、部分支持、相矛盾）列出，与上方 F1 表一致；不再用 `sorted()` 按 Unicode 码位排成「支持、相矛盾、部分支持」 |
+| 报告可逐字节复现（`--check`） | 报告正文不含 `git rev-parse` 得到的基线，改记样本集指纹；`python report.py --check` 实测输出「与重新生成的结果逐字节一致（N=7）」并以 0 退出。此前正文写 `git rev-parse --short HEAD` 并在工作区脏时标注，该值随 commit 变化，任何「重新生成后比对」的 CI 检查都会恒红 |
 
-### 首次生成的数字（n=7，构造样本）
+### 首次生成的数字（N=7，构造样本）
 
 可判定覆盖率（全批次）85.7%（6/7）、真值可判定子集 100%（6/6）、摘录定位有效率 100%（6/6）、四类 precision/recall 均为 1.00、macro-F1 1.00、应拒判样本错误确定判断率 0%（0/1）。
 
-**这些数字不得当作总体准确率**：样本是人工构造的，n=7 单次抽样，且真值单人标注无第二人复核。
+**这些数字不得当作总体准确率**：样本是人工构造的，N=7 单次抽样，且真值单人标注无第二人复核。
 
 ### 未覆盖
 
 - **来源匹配准确率、证据 Recall@k** 需要独立基准与采样协议，本验收集不产出，报告内列为未覆盖而非填 0。
-- **不确定区间**需要采样协议，n=7 不估计。
+- **不确定区间**需要采样协议，N=7 不估计。
 - 报告只覆盖参赛首版有限验收集，与 [评测口径](evaluation.md) 的正式研究评测（120 对）不是同一层，不互相替代。
-- 报告由脚本生成，但**尚未接入 CI**：当前需手工运行 `python report.py`。若样本变动而报告未重生成，`docs/semantic-report.md` 会与仓库状态不一致。
+- 报告由脚本生成，**尚未在 CI 中启用比对**：此前因正文含随 commit 变化的基线行而无法成立，现已具备条件——报告改为逐字节可复现，`python report.py --check` 在提交的报告与重新生成结果不一致时以非零码退出，接入 CI 只需增加一条命令。本次未改 `.github/workflows/`，故仍属未覆盖；在此之前样本变动而报告未重生成时，需手工运行 `python report.py`。

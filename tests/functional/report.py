@@ -9,17 +9,28 @@ The denominators follow ``docs/evaluation.md`` §4 (the mutual-exclusion identit
 convenience definition invented here. A ratio whose denominator is zero is
 reported as ``None`` and rendered as ``N/A`` — never as 0 or 100%.
 
-The sample set is a *constructed* first version (n=7), so the report states that
-the labels are not claimed to be stable and the numbers are not a population
+The sample set is a *constructed* first version, so the report states that the
+labels are not claimed to be stable and the numbers are not a population
 accuracy estimate (测试方案「采样与分母」).
+
+Two properties make the report checkable rather than merely readable:
+
+* every count appearing in the prose is derived from :func:`metrics`, so the
+  text can never drift from the tables it summarises; and
+* the report carries no commit-dependent field (an embedded ``git rev-parse
+  HEAD`` would change on every commit and could never pass a "regenerate and
+  diff" check). Provenance is the digest of the sample set, which is the input
+  that actually determines the numbers. ``python report.py --check`` exits
+  non-zero when the committed report differs from a fresh generation.
 """
 
+import hashlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from conftest import available_cases, load_case, run_case
+from conftest import SAMPLES, available_cases, load_case, run_case
 
 from paper_evidence.domain.text import quote_spans
 
@@ -164,7 +175,9 @@ def metrics(outcomes: list[Outcome]) -> dict:
         "per_label": per_label,
         "f1_by_label": f1_by_label,
         "macro_f1": macro_f1,
-        "macro_f1_labels": sorted(contributing),
+        # DEFINITIVE order, so the prose below matches the F1 table above it;
+        # a plain sort() would reorder the labels by Unicode code point.
+        "macro_f1_labels": [label for label in DEFINITIVE if label in contributing],
         "r_total": len(r_set),
         "r_completed": len(r_completed),
         "r_wrong": len(r_wrong),
@@ -185,7 +198,7 @@ def _num(value: float | None) -> str:
     return "N/A" if value is None else f"{value:.2f}"
 
 
-def render(outcomes: list[Outcome], *, generated_from: str) -> str:
+def render(outcomes: list[Outcome], *, sample_fingerprint: str) -> str:
     """Render the report; every N/A is a zero denominator, never a silent zero."""
 
     m = metrics(outcomes)
@@ -198,10 +211,12 @@ def render(outcomes: list[Outcome], *, generated_from: str) -> str:
     add("")
     add("## 0. 口径与限制")
     add("")
-    add(f"- 数据来源：`tests/functional/samples/` 的冻结样本，基线 `{generated_from}`。")
+    add(f"- 数据来源：`tests/functional/samples/` 的冻结样本，样本集指纹 `{sample_fingerprint}`。"
+        "报告内不含随 commit 变化的字段，同一样本集重新生成的结果逐字节一致"
+        "（可用 `python report.py --check` 校验；生成时的 commit 记录在验证日志里，不写进正文）。")
     add(f"- 样本量：**N = {m['total']}**，全部为**人工构造**的最小可解析快照"
         "（每个样本标注 `claim_kind: \"constructed\"`），不是真实论文原文。")
-    add("- **不声称标签稳定，也不构成总体准确率估计**：首版 n=1 单次抽样，"
+    add(f"- **不声称标签稳定，也不构成总体准确率估计**：首版 N = {m['total']} 为单次抽样，"
         "指标只在本次有限验收集内成立（测试方案「采样与分母」）。")
     add("- 分母与对账规则取自 `docs/evaluation.md` §4；任何分母为零的比率记 **N/A**，"
         "不补成 0 或 100%。")
@@ -316,15 +331,35 @@ def render(outcomes: list[Outcome], *, generated_from: str) -> str:
     add("## 9. 未覆盖与不适用")
     add("")
     add("- 来源匹配准确率、证据 Recall@k 需要独立基准与采样协议，本验收集不产出。")
-    add("- 不确定区间需要采样协议，n=7 构造样本不估计。")
+    add(f"- 不确定区间需要采样协议，{m['total']} 个构造样本不估计。")
     add("- 正式研究评测（120 对）不是首版前置条件，本报告不涉及。")
     add("- 语义标签正确性受限于**单人标注、无第二人复核**。")
     add("")
     return "\n".join(lines)
 
 
-def baseline(repo: Path) -> str:
-    """The commit the report was generated from (verification.md asks for it)."""
+def sample_fingerprint(samples: Path) -> str:
+    """A digest of the frozen sample set — the provenance the numbers depend on.
+
+    Sample file *names* are hashed alongside their bytes so that adding,
+    removing or renaming a sample always changes the digest.
+    """
+
+    digest = hashlib.sha256()
+    for path in sorted(samples.glob("*.json")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return f"sha256:{digest.hexdigest()[:16]}"
+
+
+def revision(repo: Path) -> str:
+    """The commit the report was generated from, for the verification log only.
+
+    Deliberately *not* rendered into the report: the value changes with every
+    commit, so a report that embedded it could never pass ``--check``.
+    """
 
     import subprocess
 
@@ -335,25 +370,45 @@ def baseline(repo: Path) -> str:
         )
     except (OSError, subprocess.SubprocessError):
         return "unknown"
-    revision = done.stdout.strip()
-    if not revision:
-        return "unknown"
-    dirty = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=repo,
-        capture_output=True, text=True, timeout=15, check=False,
-    ).stdout.strip()
-    return f"{revision}（工作区有未提交改动）" if dirty else revision
+    return done.stdout.strip() or "unknown"
+
+
+def generate(cases, work_dir: Path, samples: Path) -> str:
+    """The exact bytes that ``docs/semantic-report.md`` must contain."""
+
+    outcomes = collect(cases, work_dir)
+    return render(outcomes, sample_fingerprint=sample_fingerprint(samples)) + "\n"
 
 
 def main() -> int:
+    args = sys.argv[1:]
+    check_only = "--check" in args
+    unknown = [a for a in args if a != "--check"]
+    if unknown:
+        print(f"未知参数：{' '.join(unknown)}（可用：--check）", file=sys.stderr)
+        return 2
+
     repo = Path(__file__).resolve().parents[2]
     with TemporaryDirectory(prefix="semantic-report-") as work:
         cases = [load_case(case_id) for case_id in available_cases()]
-        outcomes = collect(cases, Path(work))
-    report = render(outcomes, generated_from=baseline(repo))
+        report = generate(cases, Path(work), SAMPLES)
     target = repo / "docs" / "semantic-report.md"
-    target.write_text(report + "\n", encoding="utf-8")
-    print(f"已写入 {target.relative_to(repo)}（N={len(outcomes)}）")
+
+    if check_only:
+        # The CI gate this enables: same samples in, same bytes out.
+        current = target.read_text(encoding="utf-8") if target.exists() else ""
+        if current == report:
+            print(f"{target.relative_to(repo)} 与重新生成的结果逐字节一致（N={len(cases)}）")
+            return 0
+        print(
+            f"{target.relative_to(repo)} 与重新生成的结果不一致；"
+            "请运行 `python report.py` 并提交结果",
+            file=sys.stderr,
+        )
+        return 1
+
+    target.write_text(report, encoding="utf-8")
+    print(f"已写入 {target.relative_to(repo)}（N={len(cases)}，基线 {revision(repo)}）")
     return 0
 
 
