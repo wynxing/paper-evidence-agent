@@ -267,6 +267,31 @@ def test_finished_at_is_set_when_a_queued_cancel_commits(store):
     assert store.get("t1").finished_at is not None
 
 
+def test_every_terminal_path_stamps_updated_at_and_finished_at_together(store):
+    """#16 第 2 条：两个字段描述同一个时刻，不能各自读一次时钟。
+
+    「最后更新」晚于「结束」会让详情页显示一个不可能的顺序。四条终态路径都要
+    满足：完成、排队取消、总超时、遗留 RUNNING 结算。
+    """
+
+    for task_id in ("t1", "t2", "t3", "t4"):
+        make_task(store, task_id)
+
+    store.claim_next(time.time() + 180)                      # t1 -> RUNNING
+    assert store.finish("t1", status=TaskStatus.COMPLETED, stage="evidence_validation",
+                        error_code=None, label="支持", decision=None) is True
+    assert store.request_cancel("t2").status is TaskStatus.CANCELLED   # QUEUED -> CANCELLED
+    store.claim_next(time.time() - 1)                        # t3 -> RUNNING, deadline 已过
+    assert store.request_cancel("t3").status is TaskStatus.FAILED      # -> TASK_TIMEOUT
+    store.claim_next(time.time() + 180)                      # t4 -> RUNNING, 留给结算
+    assert store.settle_orphaned_running() == 1
+
+    for task_id in ("t1", "t2", "t3", "t4"):
+        row = store._query("SELECT updated_at, finished_at FROM tasks WHERE id = ?", (task_id,))[0]
+        assert row["finished_at"] is not None, task_id
+        assert row["updated_at"] == row["finished_at"], task_id
+
+
 def test_source_index_keeps_the_bibliographic_identity(store):
     make_task(store, "t1")
     source_id = index_source(store, "t1")

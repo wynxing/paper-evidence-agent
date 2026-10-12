@@ -276,6 +276,29 @@ flowchart TD
 | `decision` | [最终判断](glossary.md#最终判断) 对象，含多条 evidence、理由、支持部分、范围差异及限制；无有效最终判断时为 null |
 | 约束 | `label` 只使用结果标签的前五种。FAILED/INTERRUPTED/CANCELLED 时 label 与 decision 为 null，分别显示执行失败、运行中断、已取消。`BLOCKED` 时 `label` 为「无法核验来源」。BLOCKED 主文案按具体 error_code 展示；FAILED 按预算耗尽、上游原因、总超时及其他故障分列。criteria/accounting 与诊断包同形，limits 为任务冻结上限；账不完整按术语表展示未知。paper agent 的标签不冒充真值。响应不含第二名 agent 的意见 |
 
+### `GET /api/checks/{id}/input`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CheckInput` |
+
+| 项 | 内容 |
+| --- | --- |
+| `200` | `id`、`claim`、`doi`、`previous_id`、`config_digest`、`authorized_recipients` |
+| 约束 | 返回提交时的原始输入，不按处理结果改写。`CheckDetail` 只在 `source` 中给出 DOI，而 `source` 在来源身份解析成功前为 null，所以排队中、执行中或 BLOCKED 的任务只能靠本接口拿回自己提交的 DOI，供「修改原句」「拆分论断」预填；`doi` 是提交时的原文，不做标准化。`config_digest` 与 `authorized_recipients` 是该任务冻结的配置摘要与收窄后的授权范围，不是当前配置。只读本机记录，不调用来源连接器或模型 |
+
+### `GET /api/checks/{id}/evidence-context`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `EvidenceContext` |
+
+| 项 | 内容 |
+| --- | --- |
+| `200` | `id`、`source_id`、`paragraphs`；每段含 `paragraph_id`、`section`、`text`、`paragraph_hash`、`source_url`、`entered_context`、`cited` |
+| 范围 | 进入模型上下文的候选段落，加最终判断引用的段落，各自按 `ordinal±1` 展开为邻段；按段落序号升序返回 |
+| 约束 | 只读本任务的冻结来源，跨来源段落标识解析为空。`text` 是冻结段落原文，不是已发布的 quote；邻段只是上下文，不作为证据，因此不带 `validation`。未解析出来源或尚未检索时 `source_id` 为 null、`paragraphs` 为空，表示暂时没有内容而不是来源不存在。段落文本取自获许可的本地冻结版本，本接口是本机只读投影，不改变任务，也不放宽脱敏诊断包的对外传约束 |
+
 ### `GET /api/checks/{id}/diagnostic-packet`
 
 | HTTP 状态 | 响应类型 |

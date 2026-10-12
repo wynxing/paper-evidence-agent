@@ -44,6 +44,16 @@ npm run dev
 
 前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
+核验任务由单独的 worker 执行，API 进程只入队。要真的调用模型，在 worker 进程里提供上游密钥即可：
+
+```bash
+cd backend
+export PAPER_EVIDENCE_MODEL_API_KEY=sk-...     # 唯一必需的配置；uvicorn 进程不调用模型，不需要它
+.venv/bin/python -m paper_evidence.worker --loop
+```
+
+应用不读取 `.env` 文件，配置只来自进程环境，因此密钥要在启动命令的环境里给出。要换模型加 `PAPER_EVIDENCE_PROVIDER_MODEL`（LiteLLM 的「供应商/模型」写法）；只有上游不是该供应商的默认端点时才需要 `PAPER_EVIDENCE_MODEL_API_BASE`。密钥缺失或端点不可达时，任务以映射后的 `UPSTREAM_*` 错误码结束，不会回落到内置模型或模拟数据。完整变量清单与其他配置见[开发指南](docs/development.md#本地环境)。
+
 默认 `dev` 为真实接口模式。只预览前端交互时，从仓库根目录执行 `npm --prefix frontend run dev:demo`；该模式无需后端，文献、摘录与结果均为构造数据，不访问文献来源或模型。详细启动、接口缺口和验收进展见[联调 Issue #7](https://github.com/wynxing/paper-evidence-agent/issues/7)。
 
 ## 开发检查
