@@ -491,3 +491,60 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未做提示注入的**变形覆盖**（编码绕过、多语言、工具返回值注入等），仅覆盖明文指令一种形态。
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
+
+## 端到端联调前置基线与真实链路探测（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #20 端到端联调测试清单（真实后端）；测试方案「执行记录与当前边界」 |
+| 环境 | Windows、Python 3.12.13（`backend/.venv`）、Node 22.22.2 / npm 10.9.7 |
+| 对象 | 主工作树 `6a2ea8f`（分支 `test/semantic-report`）。该提交相对 `origin/main`（`373c0ca`）只改 `docs/` 与 `tests/`，**运行时文件改动为 0**，故下列运行时结论对 main 同样成立 |
+| 隔离 | 后端以 `PAPER_EVIDENCE_DATA_DIR` 指向系统临时目录启动，未触碰默认 `backend/.paper-evidence`；本次未修改仓库任何文件 |
+
+本节用于在开始 Issue #20 清单前，先钉住「基线是否绿」和「真实链路走到哪一步」，并确认无模型密钥时的可达范围。
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| 后端基线 `pytest -c backend/pyproject.toml -q` | **248 passed，2 warnings（34.51s）**，与既有记录一致，无回归 |
+| 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail** |
+| `npm --prefix frontend run build` | 通过（`vue-tsc --noEmit` + vite build，29 模块；`dist/` 已在 `.gitignore` 中） |
+| `python -m pip check` | No broken requirements found |
+| `GET /health` | 200 `{"status":"ok"}`（连续三次复测） |
+| `GET /api/run-config` | 200，`config_digest` 稳定；limits `3/1/2/1`、timeouts `45/15/180`、观测默认关闭 |
+| `GET /api/checks`（空库） | 200 `[]` |
+| 真实来源解析 `10.1371/journal.pmed.0020124` | 200，返回真实题名、作者、年份（**Crossref 与 PMC 实时链路可用**，README 中「来源连通性尚未验证」至此已有实测） |
+| DOI 格式非法 `not-a-doi` | 400 `DOI_INVALID` |
+| 不存在的 DOI | 404 `DOI_UNRESOLVABLE` |
+| 配置摘要过期（`config_digest` 不匹配） | 409「配置已更改，请重新预览并确认」，`error_code=null` |
+| `source_confirmed=false` / `cloud_consent=false` | 均 400「需要同时确认来源与云调用授权」，不创建任务、不调用模型 |
+| 空论断 | 400「论断不能为空」 |
+| 创建合法任务（无模型密钥） | **202 / `QUEUED`**；历史列表含论断摘要与 `created_at` |
+| 启动 worker（`--loop`）后任务推进 | `QUEUED → RUNNING → FAILED`，`stage=query_generation`，`error_code=UPSTREAM_UNAVAILABLE`，`label=null`，`decision=null` |
+| 来源阶段实测（同一任务） | `source_identity` 成功（1077ms）、`fetch` 成功（2532ms）；取到 `PMC1182327`、`license=CC BY`、`version=1`、`version_hash`（sha256） |
+| 调用账 | `verification=verified`，`main_requests_used=1`，`upstream_attempts_used=2`，`observed_upstream_attempts=2` |
+| 失败任务诊断包（redacted） | 200，`schema_version=2.2`；`execution` 三段 span 带 stage/tool/status/error_code/duration_ms/request_id；`model_calls` 含 attempts |
+| 逐次尝试记录 | attempt 1 `recovery_kind=none` → attempt 2 `recovery_kind=retry`（reason `UPSTREAM_UNAVAILABLE`），与「首次加一次恢复」一致 |
+| 未知 usage 不写零 | `usage=null`、`verified_model_version=null`，未写成 0 或别名 |
+| redacted 保留公开书目 | DOI、PMCID、题名、作者、license、version、access_url、version_hash 均保留；`input.claim` 为 `<redacted>` |
+| 脱敏泄漏扫描 | 原句文本在整包中出现 **0** 次 |
+| 语义导出：未配置诊断接收方 | 400「诊断接收方未获授权」 |
+| 语义导出：缺 `semantic_export_consent` | 400「缺少语义导出授权」 |
+| 反馈 | 200 `saved=true` |
+| 重试（终态任务） | 202 新建任务，`previous_id` 指向原任务；沿用原句；**新任务重新计账（1 次主请求 / 2 次尝试），预算未继承** |
+| 取消已终态任务 | 409「任务已结束，不能取消」，响应同时带 `status`/`stage` |
+| 删除终态任务 | 200，历史列表随即不再包含该任务 |
+
+### 未覆盖与阻塞
+
+- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒。**Issue #20 中所有需要成功语义结果的项目（主流程「查看结果」、确定判断与原文定位、consented 导出对照）本次无法执行**，需 Issue #7 后端待办「最简模型密钥配置说明」落地后才能补。
+- **Issue #20 清单未写明 worker 需单独以 `--loop` 启动**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`。建议在清单「前提」中补一行，避免执行人误判为功能缺陷。
+- 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
+- 未测在途任务的取消：本次只覆盖终态任务的取消拒绝分支，`QUEUED`/`RUNNING` 取消、重复取消与取消/完成竞态仍未实测。
+- 未在干净 `origin/main` 工作树上重跑全量测试。本次全量数字取自 `6a2ea8f`，其中含 PR #24 的 9 个报告口径用例，故 main 对应数应为 239；因该提交未改运行时，不影响上面各条运行时结论。
+- 语义报告 N=7 构造样本与单人标注的两条限制不变，本节不改变其口径。
+
+### 一条方法学提醒
+
+首次探测 `GET /health` 曾返回 **HTTP 502「upstream connect failed … (os error 10061)」**，随后连续三次复测均为 200。原因是 uvicorn 尚未完成端口绑定，请求被前置链路拒绝。`/health` 的实现为直接返回 `{"status":"ok"}`，不具备产生该错误码的路径。**探测前必须等后端就绪，否则会得到伪造的 502**；记录时须先复测再判定。
