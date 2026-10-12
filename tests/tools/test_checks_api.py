@@ -325,10 +325,11 @@ def test_history_is_filterable_and_keeps_the_claim_excerpt(client, services):
 
 
 def test_the_input_route_returns_exactly_what_was_submitted(client, services):
-    """详情只在 `source` 里给 DOI，而来源解析成功前 `source` 为 null。
+    """详情视图只在 `source` 里给 DOI，而 `source` 在来源身份解析成功前为 null —— 这是**详情视图**的空窗。
 
-    排队中、执行中或 BLOCKED 的任务因此只能靠本接口拿回自己提交的 DOI，
-    「修改原句」「拆分论断」才能按实际提交的内容预填。
+    本接口提供不必先列历史即可按任务取回提交原文，并给出该任务冻结的授权范围。
+    它并非取得提交 DOI 的唯一路径：`CheckSummary` 也带 DOI，工作台早已从历史行
+    回退预填「修改原句」「拆分论断」（`originalDoi` 的第二优先级即该行）。
     """
 
     submitted = "  The intervention reduced mortality.  "
@@ -344,7 +345,7 @@ def test_the_input_route_returns_exactly_what_was_submitted(client, services):
         "config_digest": services.settings.config_digest(),
         "authorized_recipients": [services.settings.primary_recipient],
     }
-    # 同一时刻的详情给不出 DOI，这正是本接口存在的理由。
+    # 同一时刻的详情视图给不出 DOI —— 这是详情视图在该阶段的空窗。
     assert client.get(f"/api/checks/{task_id}").json()["source"] is None
     assert client.get("/api/checks/unknown/input").status_code == 404
 
