@@ -197,51 +197,62 @@ class AcceptanceOutcome:
     paragraphs: dict
 
 
+def run_case(case: FrozenCase, work_dir, *, transcript=None) -> AcceptanceOutcome:
+    """Run one frozen case through the real workflow over an injected source.
+
+    Module-level so the acceptance tests and the report generator drive the same
+    implementation — a second copy would let the reported numbers drift from the
+    numbers the tests assert on.
+    """
+
+    settings = replace(Settings.from_env(), data_dir=work_dir, contact_email="")
+    store = SqliteStore(work_dir / f"{case.case_id}.sqlite3")
+    snapshot = SourceSnapshot(
+        source_id=f"PMC0000001:{VERSION_HASH}",
+        metadata=SourceRecord(
+            title="frozen", authors=["Ada Lovelace"], year=2026, doi=case.doi, pmcid="PMC0000001",
+            license="CC BY", version="1", access_url="https://example.org/frozen",
+            retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+        ),
+        jats_bytes=case.jats,
+    )
+    parsed = parse_jats(snapshot)
+    gateway = ScriptedGateway(
+        case.transcript if transcript is None else transcript,
+        [item.paragraph_id for item in parsed],
+    )
+    workflow = BoundedWorkflow(
+        store=store, resolver=FrozenResolver(case), fulltext=FrozenFulltext(case),
+        retriever=StoreRetriever(store, settings.retrieval_context_limit),
+        prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+    )
+    task = TaskInput(
+        id=case.case_id, claim=case.claim, doi=case.doi, config_digest="frozen",
+        authorized_recipients=("Agnes",),
+    )
+    store.create(
+        task,
+        RunConfigSnapshot(
+            profile="evaluation", config_digest="frozen", snapshot_ref="frozen",
+            authorized_recipients=["Agnes"], limits=settings.limits,
+            timeouts=settings.timeouts, observability=settings.observability,
+        ),
+        criteria_reference("rev"),
+    )
+    detail = asyncio.run(workflow.run(task, time.monotonic() + 180))
+    outcome = AcceptanceOutcome(
+        case=case, detail=detail, gateway=gateway,
+        paragraphs={item.paragraph_id: item for item in parsed},
+    )
+    store.close()
+    return outcome
+
+
 @pytest.fixture
 def acceptance(tmp_path):
     """Run one frozen case through the real workflow and return its outcome."""
 
     def _run(case: FrozenCase, *, transcript=None) -> AcceptanceOutcome:
-        settings = replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
-        store = SqliteStore(tmp_path / f"{case.case_id}.sqlite3")
-        snapshot = SourceSnapshot(
-            source_id=f"PMC0000001:{VERSION_HASH}",
-            metadata=SourceRecord(
-                title="frozen", authors=["Ada Lovelace"], year=2026, doi=case.doi, pmcid="PMC0000001",
-                license="CC BY", version="1", access_url="https://example.org/frozen",
-                retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
-            ),
-            jats_bytes=case.jats,
-        )
-        parsed = parse_jats(snapshot)
-        gateway = ScriptedGateway(
-            case.transcript if transcript is None else transcript,
-            [item.paragraph_id for item in parsed],
-        )
-        workflow = BoundedWorkflow(
-            store=store, resolver=FrozenResolver(case), fulltext=FrozenFulltext(case),
-            retriever=StoreRetriever(store, settings.retrieval_context_limit),
-            prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
-        )
-        task = TaskInput(
-            id=case.case_id, claim=case.claim, doi=case.doi, config_digest="frozen",
-            authorized_recipients=("Agnes",),
-        )
-        store.create(
-            task,
-            RunConfigSnapshot(
-                profile="evaluation", config_digest="frozen", snapshot_ref="frozen",
-                authorized_recipients=["Agnes"], limits=settings.limits,
-                timeouts=settings.timeouts, observability=settings.observability,
-            ),
-            criteria_reference("rev"),
-        )
-        detail = asyncio.run(workflow.run(task, time.monotonic() + 180))
-        outcome = AcceptanceOutcome(
-            case=case, detail=detail, gateway=gateway,
-            paragraphs={item.paragraph_id: item for item in parsed},
-        )
-        store.close()
-        return outcome
+        return run_case(case, tmp_path, transcript=transcript)
 
     return _run
