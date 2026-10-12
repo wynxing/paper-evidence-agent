@@ -542,7 +542,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - `evidence-context` 只按 `ordinal±1` 展开，不解析文内交叉引用（如「见第 2 节」），跨小节引用不在本次范围。
 - worker 兜底只在**进程内**隔离单个任务失败。它不解决任务级挂起（无超时地卡在某个 await），也覆盖不到「存储层持续不可用」这类跨轮次故障。
 - 时间戳一致覆盖**当前全部 4 处**终态写入点：全仓 `UPDATE tasks SET status` 仅 `finish`、排队取消、总超时、遗留 `RUNNING` 结算四处，均已复用同一 `_now()`（评审独立 grep 复核）。新增终态写入点需同步本用例，否则不在保护范围内。
-- `RUNNING` 态未取得快照：`/input` 的文档字符串点名 `QUEUED, RUNNING, BLOCKED` 三态，测试覆盖 `QUEUED` 与 `BLOCKED`（`BLOCKED` 由评审补充验证通过），`RUNNING` 因 worker 领取间隔与轮询起点错开未抓到，已记入 #20。
+- `/input` 未取得 `RUNNING` 态快照：自动化用例覆盖 `QUEUED`；`BLOCKED` 为评审手工复核（无对应用例）；`RUNNING` 因 worker 领取间隔与轮询起点错开未抓到，已记入 #20。
 - 最小密钥说明为文档描述，本次无可用密钥，未在真实上游端点下跑通一次完整核验。
 
 ### 评审修正（2026-10-12）
@@ -558,3 +558,32 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | `RUNNING` 态未覆盖 | 记入本节与 #20 |
 | 未装前端依赖的失败形态 | `development.md` 写具体：`tests/boundary/test_frontend_shapes.py` 整组失败（检查器找不到 `typescript`） |
 | `contracts.ts` 两个新 interface 是死代码 | 两处标注「尚无客户端方法调用」 |
+
+### 评审修正（第二轮，2026-10-12）
+
+第二轮评审（lvyixi1110）指出首轮修正未收口：同一「唯一路径」前提仍留在 `tests/tools/test_checks_api.py` 与本节的过期记录里；另指出时间戳用例在本机时钟分辨率下近乎恒真。逐条处理后记录如下（对象提交为本 PR 在 `3687b9f` 之上的两次提交 —— 口径修正与用例硬化，本记录随后单独提交以避免哈希自指）：
+
+| 评审项 | 处理 |
+| --- | --- |
+| B1 用例 docstring 仍是旧前提（「只能靠本接口」） | 与 `api/app.py`、`domain/contracts.py` 的口径对齐：说明这是**详情视图**的空窗（DOI 只在 `source` 里、`source` 在来源身份解析成功前为 null），本接口是按任务直接读取并给出冻结授权范围，且**并非**取得提交 DOI 的唯一路径（历史行 `CheckSummary.doi` 与 `originalDoi` 已覆盖） |
+| B2 同一用例的行内注释仍是同一口径 | 改为「同一时刻的详情视图给不出 DOI —— 这是详情视图在该阶段的空窗」 |
+| B3 本节有一行因首轮修正而过期 | 删去「`/input` 的文档字符串点名 `QUEUED, RUNNING, BLOCKED` 三态」半句（该措辞已在首轮改掉） |
+| B4 同一行把「评审手工复核」写成「测试覆盖」 | 改为「自动化用例覆盖 `QUEUED`；`BLOCKED` 为评审手工复核（无对应用例）；`RUNNING` 未覆盖」 |
+| 时间戳用例在 Windows 上近乎恒真（非阻塞） | 采纳评审建议 1：用例内把 `sqlite._now` 换成自增计数，使「同一处复用」仍相等而「两次取钟」必然不等，断言脱离时钟分辨率 |
+
+#### 实际检查（第二轮）
+
+环境：Windows、Python 3.12.14、pytest 9.1.1；Node v22.22.2。后端全量前已装齐 `requirements.lock`（含 `litellm` 及其传递依赖），前端已有 `node_modules`。
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests -q`（全量） | **248 passed，3 warnings**（86.21s），无回归 |
+| `pytest ../tests/tools/test_checks_api.py -q` | **30 passed** |
+| `pytest ../tests/boundary/test_storage_lifecycle.py ../tests/boundary/test_domain_contract.py -q` | **31 passed** |
+| `pytest ../tests/tools/test_api_contract.py ../tests/boundary/test_frontend_shapes.py -q` | **16 passed**（OpenAPI / 架构文档 / 前端契约三方一致） |
+| 前端 `node --experimental-strip-types --test tests/*.test.mjs` | **41 passed** |
+| 前端 `npm run build`（`vue-tsc --noEmit` + `vite build`） | 通过，29 modules transformed |
+| 时间戳用例的检出力（变异验证） | 把 `finish()` 的 `stamp, stamp` 退回 `_now(), _now()` 后该用例**失败**（`AssertionError: t1` / `assert 'tick-7' == 'tick-8'`）；恢复后通过。硬化前该断言在本机约 1/400 才检出，硬化后稳定检出 |
+
+一处环境注记：首次跑全量时出现 6 个与业务无关的失败，来源是执行环境的沙箱拦截了用例对临时目录的删除（`[safe-delete]`），换一次运行即得 248 passed；两条结果均为实际执行记录。
+
