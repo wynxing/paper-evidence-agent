@@ -93,6 +93,9 @@ const pythonEnv = {
   PYTHONPATH: path.join(ROOT, 'backend'),
   PYTHONUTF8: '1',
   PYTHONIOENCODING: 'utf-8',
+  // 管道下 Python 的 stdout 是块缓冲，不关掉的话 `print` 要等缓冲区满才出现在
+  // CI 控制台里——常驻 worker 的日志本来就不多，等于看不见。
+  PYTHONUNBUFFERED: '1',
   // 见文件头的说明：把回环摘出代理，子进程也不许走代理。
   NO_PROXY: LOOPBACK,
   no_proxy: LOOPBACK,
@@ -139,10 +142,11 @@ export default defineConfig({
       port: WORKER_READY_PORT,
       reuseExistingServer: false,
       timeout: 60_000,
-      env: pythonEnv,
+      // 日志落在 `.run/` 下、不以 `data-` 开头：那是 prepareRun 负责清理的那一类，
+      // 诊断文件不该跟着被测对象的生命周期走（`PAPER_EVIDENCE_E2E_WORKER_LOG`）。
+      env: { ...pythonEnv, PAPER_EVIDENCE_E2E_WORKER_LOG: path.join(runDir, `worker-${runId}.log`) },
       // 就绪只看 8001 端口通不通，看不出一句话之后它还活不活着。stdout 默认是
-      // ignore，接出来才能在 CI 上看到它到底停在哪一步（同一份输出另外还落在
-      // 数据目录的 worker.log 里，随产物上传）。
+      // ignore，接出来才能在 CI 上看到它到底停在哪一步。
       stdout: 'pipe',
       stderr: 'pipe',
     },

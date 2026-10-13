@@ -128,10 +128,11 @@ jobs:
           PAPER_EVIDENCE_E2E_PYTHON: python
 
       # 一轮运行的产物都在 .run/ 下：轨迹（trace: 'retain-on-failure'）、HTML 报告、
-      # 以及常驻 worker 自己写的那份 worker.log。不传上去等于失败只剩一个「排队中」。
-      # include-hidden-files 是必需的：.run/ 是隐藏目录，upload-artifact 默认跳过隐藏
-      # 文件，实测不加这个开关会报 "No files were found with the provided path"（首次
-      # 运行就是这样，什么都没传上来）。
+      # 以及常驻 worker 自己写的那份 worker-<runId>.log。不传上去等于失败只剩一个
+      # 「排队中」。include-hidden-files 是必需的：.run/ 是隐藏目录，upload-artifact
+      # 默认跳过隐藏文件，实测不加这个开关会报 "No files were found with the provided
+      # path"（首次运行就是这样，什么都没传上来）。if-no-files-found 用 warn 而不是
+      # ignore：真收不到产物时至少留一条告警，不会静默跳过。
       - name: Upload run artifacts
         if: failure()
         uses: actions/upload-artifact@v4
@@ -139,5 +140,5 @@ jobs:
           name: e2e-run
           path: tests/e2e/.run/
           include-hidden-files: true
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 7
