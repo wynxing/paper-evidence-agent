@@ -6,7 +6,7 @@
 
 import json
 
-from conftest import (
+from doubles import (
     CLAIM_MARKER,
     PARAGRAPH_MARKER,
     QUERY_MARKER,

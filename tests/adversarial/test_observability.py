@@ -9,7 +9,7 @@
 
 import pytest
 
-from conftest import final_action, jats_with, query_action
+from doubles import final_action, jats_with, query_action
 
 from paper_evidence.config import Settings
 from paper_evidence.domain import TaskStatus

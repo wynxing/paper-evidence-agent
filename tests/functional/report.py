@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from conftest import SAMPLES, available_cases, load_case, run_case
+from acceptance import SAMPLES, available_cases, load_case, run_case
 
 from paper_evidence.domain.text import quote_spans
 
