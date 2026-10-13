@@ -44,7 +44,11 @@ PAPER_EVIDENCE_E2E_PYTHON=<后端 venv 的 python> npm test
 | `specs/*.spec.ts` | 用例；`specs/helpers.ts` 是共用动作 |
 
 `.run/` 是本轮运行的临时空间（任务库、轨迹、报告），已被 gitignore；每轮用独立目录，
-不会覆盖上一轮，也不会被下一轮读到。
+不会覆盖上一轮，也不会被下一轮读到。清理上一轮的 `data-*` 由 `npm test` 的 pretest
+（`support/clean_run.mjs`）负责——**不要**把它挪回 `playwright.config.ts`：那份配置在
+一次运行里会被评测多次（runner 与每个测试 worker 进程各一次），放在配置里就等于在运行
+中途删掉本轮正在用的任务库，worker 会再也看不到新任务（`playwright.config.ts` 的
+`prepareRun` 上有详细说明）。所以请用 `npm test` 跑，而不是直接 `npx playwright test`。
 
 ## CI
 
