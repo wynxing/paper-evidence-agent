@@ -84,7 +84,16 @@ export async function expectStatus(page: Page, text: string): Promise<void> {
   await expect(page.locator('.result-line .status-label')).toHaveText(text)
 }
 
-/** 历史列表里某个 DOI 的记录条数。 */
+/** 历史列表里的记录总条数。列表展示全部本地记录，不按 DOI 过滤。 */
 export async function historyCount(page: Page): Promise<number> {
   return page.locator('.history-list button').count()
+}
+
+/** 历史列表里论断摘要等于给定文本的条目数。
+ *
+ * 论断摘要是至多 80 字的单行副本（后端 `CLAIM_EXCERPT_LIMIT`）；用例内的论断都短于该
+ * 上限，所以按可见文本即可定位到具体某一条记录，用来断言它删除后不再出现。
+ */
+export async function historyClaimCount(page: Page, claim: string): Promise<number> {
+  return page.locator('.history-list .history-claim').filter({ hasText: claim }).count()
 }

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { DOI, QUOTE, TITLE, currentId, expectStatus, openCheck, submitCheck } from './helpers'
+import { DOI, QUOTE, TITLE, expectStatus, openCheck, submitCheck } from './helpers'
 
 /**
  * 界面主路径：确认来源 → 同意整次任务的接收方/数据范围/预算 → 提交 → 查看判断

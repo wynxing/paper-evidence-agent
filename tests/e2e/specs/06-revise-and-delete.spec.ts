@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { authorize, expectStatus, historyCount, openCheck, readSource, submitCheck } from './helpers'
+import { authorize, expectStatus, historyClaimCount, historyCount, openCheck, readSource, submitCheck } from './helpers'
 
 /**
  * 澄清重提与删除本地记录（测试方案「2. 维度」：澄清重提、删除本地记录）。
@@ -56,10 +56,17 @@ test('重试用后端原输入，论断框保持只读', async ({ page }) => {
 })
 
 test('删除本地记录需要确认，删掉后不再出现在历史里', async ({ page }) => {
-  const target = await submitCheck(page, CLAIM)
+  // 用本用例独有的论断，才能在历史列表里把这条记录认出来：同一个数据目录里，
+  // 上面的用例也用 CLAIM 建过记录，只用 DOI 或共用论断都定位不到具体这一条。
+  const doomed = '阿司匹林在老年患者中降低了全因死亡率。'
+  const target = await submitCheck(page, doomed)
   await expectStatus(page, '支持')
 
   await openCheck(page, target)
+  // 删除前：历史里恰好有这一条，并记下总条数作基线。
+  await expect(page.locator('.history-list .history-claim').filter({ hasText: doomed })).toHaveCount(1)
+  const before = await historyCount(page)
+
   await page.getByRole('button', { name: '删除本地记录' }).click()
 
   const dialog = page.getByRole('dialog', { name: '删除本地记录？' })
@@ -68,7 +75,10 @@ test('删除本地记录需要确认，删掉后不再出现在历史里', async
   await dialog.getByRole('button', { name: '删除记录' }).click()
 
   await expect(page.getByRole('heading', { name: '新的核验' })).toBeVisible()
-  expect(await historyCount(page)).toBeGreaterThanOrEqual(0)
+  // 删除后：总数恰好少一条（等到历史刷新，避免列表还在加载时误判）。
+  await expect(page.locator('.history-list button')).toHaveCount(before - 1)
+  expect(await historyClaimCount(page, doomed)).toBe(0)
+
   await page.goto(`/#/checks/${encodeURIComponent(target)}`)
   await expect(page.locator('.result-line .status-label')).toHaveCount(0)
 })
