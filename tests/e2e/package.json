@@ -4,6 +4,7 @@
   "private": true,
   "description": "Playwright 端到端用例（界面主路径）。依赖放在本目录，不改 frontend/ 的 package.json。",
   "scripts": {
+    "pretest": "node support/clean_run.mjs",
     "test": "playwright test",
     "browser": "playwright install chromium"
   },

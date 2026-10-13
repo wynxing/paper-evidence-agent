@@ -51,20 +51,19 @@ process.env.no_proxy = LOOPBACK
  * 先一步打开 SQLite，后启动的进程再去 `unlink` 就撞上文件锁（实测 WinError 32）。
  * 换成新目录既绕开锁，也保证本轮不受上一轮残留影响。
  *
+ * **清理上一轮的 `data-*` 不在这里做**，由 `npm test` 的 pretest（`support/
+ * clean_run.mjs`）负责。原因是这份配置在一次运行里会被评测多次——runner 一次，
+ * 每个测试 worker 进程各一次——而 `data-<runId>` 是 runner 那次评测建出来、交给
+ * 四个 webServer 用的。把删除写在这里，等于在运行中途把本轮的库删掉：POSIX 上
+ * 删除会成功，API 与常驻 worker 于是各自拿着一个已经 unlink 的文件继续跑，任务
+ * 永远停在「排队中」；Windows 上因为进程占着文件而删除失败，反倒看不出这个错，
+ * 只在 Linux 上暴露。（Issue #26 的 e2e 作业第一次在 ubuntu-latest 上跑就是这样
+ * 失败的：13 条里 10 条卡在「排队中」。）
+ *
  * 轨迹与报告同样按轮次分目录：Playwright 每次启动会先清空 `outputDir`，复用同一个
- * 名字等于让它去删上一轮的成百个轨迹文件。只清 `data-*`（文件很少）是安全的。
+ * 名字等于让它去删上一轮的成百个轨迹文件。
  */
 function prepareRun(): { runId: string; dataDir: string } {
-  if (fs.existsSync(runDir)) {
-    for (const entry of fs.readdirSync(runDir)) {
-      if (!entry.startsWith('data-')) continue
-      try {
-        fs.rmSync(path.join(runDir, entry), { recursive: true, force: true })
-      } catch {
-        // 上一轮残留（例如还占着句柄），忽略即可：本轮用的是新名字。
-      }
-    }
-  }
   const runId = `${Date.now().toString(36)}-${process.pid}`
   const dir = path.join(runDir, `data-${runId}`)
   fs.mkdirSync(dir, { recursive: true })
@@ -141,6 +140,11 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: pythonEnv,
+      // 就绪只看 8001 端口通不通，看不出一句话之后它还活不活着。stdout 默认是
+      // ignore，接出来才能在 CI 上看到它到底停在哪一步（同一份输出另外还落在
+      // 数据目录的 worker.log 里，随产物上传）。
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
       command: `npm --prefix "${path.join(ROOT, 'frontend')}" run dev -- --port ${FRONTEND_PORT} --strictPort`,

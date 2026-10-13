@@ -899,6 +899,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 - 上游全部换成替身（`tests/e2e/support/upstreams.py`，stdlib `ThreadingHTTPServer`）：Crossref 元数据与 agency、DOI 解析探针（302）、PMC idconv、PMC OAI-PMH 的 GetRecord（含真 JATS 的 `<article>`）、OpenAlex 线索，外加一个 OpenAI 兼容的 `/v1/chat/completions`。`POST /_stub/delay`、`POST /_stub/mode` 让用例按需制造「任务在途」与「上游不可用」，不必重启进程。
 - 两个 Python 进程必须拿到**完全一致**的 `Settings`：提交时 API 用提交的 `config_digest` 与自己的快照比对（`api/app.py:403`），所以来源地址与 `timeouts` 共用一份构造（`support/runtime.py`）。单次模型尝试上限调到 8 秒，只为让「上游超时」用例不必真等 45 秒；两个进程同值，快照仍自洽。
 - 任务库的「空」起点由**每轮新建数据目录**保证，不在启动脚本里删上一轮的库：四个 `webServer` 并发启动，worker 可能先一步打开 SQLite，后启动的进程再 `unlink` 就撞上文件锁（实测 `PermissionError: [WinError 32]`）。轨迹与报告同样按轮次分目录，避免 Playwright 启动时去清上一轮的成百个轨迹文件。
+- 按 Issue #26 定下的口径（2026-10-13）：Playwright 依赖由 `tests/e2e/` 自持，**不并入** `frontend/package.json`；`.github/workflows/ci.yml` 增加独立的 **`e2e` 检查项**，该作业装后端依赖与前端依赖（用例要起真前端 dev server）、`cd tests/e2e && npm ci`、`npx playwright install --with-deps chromium` 后跑 `npm test`，失败时上传整轮运行目录 `tests/e2e/.run/` 供定位（轨迹、HTML 报告，以及常驻 worker 自己写的那份 `worker.log`）；`.run/` 是隐藏目录，作业里必须开 `include-hidden-files`。`PAPER_EVIDENCE_E2E_PYTHON` 在该作业里指向 setup-python 装到 PATH 上的解释器。该作业在 `ubuntu-latest` 上的**首次结果是失败**（13 条里 10 条卡在「排队中」），根因与修复见本节末的过程缺陷第 4 条。
 
 ### 端到端维度的前置
 
@@ -927,11 +928,14 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
    - `02-main-path`「运行诊断」一条断言尝试行不出现「未知」，但该表第 4 列是**模型版本**，而 `verified_model_version` 在无法验证版本时按口径就是 `null`（`docs/glossary.md:230`、`docs/verification.md:391`），界面显示「未知」是正确行为。改为列级断言：Tokens 列是替身声明的 `33`，模型版本列是「未知」。
    - `06-revise-and-delete`「修改原句」一条漏了「重新读取来源并重新授权」这一步：`workbench.ts` 的 `prepareEdit` 只把 DOI 与原句带进新草稿，`source`/`config` 被清空，`canSubmit` 因此不成立，提交按钮保持禁用。用例补上 `readSource` + `authorize`，并把「草稿里没有来源预览」写成正面断言。
 3. **替身按预期吞掉落线，但仍会把断开打成完整 traceback，刷掉用例输出（已修）。** 应用在超时或取消时主动断开上游连接是**被覆盖的行为**（`04-upstream-timeout`、`03-cancel` 正是靠它成立），`BaseHTTPRequestHandler` 却把它当异常记录。替身改为吞掉 `ConnectionError`，并在代码里注明这不是替身故障。
+4. **配置里的「清理上一轮数据目录」把本轮正在用的库删掉了，这是本维度在 Linux 上第一条就挂的原因（已修）。** 现象来自 Issue #26 的 `e2e` 作业第一次在 `ubuntu-latest` 上运行：13 条里 3 条通过、10 条失败，且 10 条的失败点完全相同——`helpers.ts:84` 的 `expectStatus` 在 15 秒里始终解析到 `<span class="status-label queued">排队中</span>`，也就是常驻 worker 没有消费队列。失败现场起初一个字节都没留下：`upload-artifact` 默认跳过隐藏文件，`.run/` 是隐藏目录，作业报的是 `No files were found with the provided path`；补上 `include-hidden-files: true` 之后产物才到手。
+   根因放在 `playwright.config.ts` 的 `prepareRun()` 里：它每次评测都先删掉 `.run/data-*`。**这份配置在一次运行中会被评测多次**——runner 一次，每个测试 worker 进程各一次——而 `data-<runId>` 正是 runner 那次评测建出来、写进四个 webServer 环境的目录（失败那次 10 条用例落在 10 个不同的 `results-<runId>` 里，就是 10 次评测的直接证据）。删除因此发生在运行中途：POSIX 上 `rmSync` 成功，API 与常驻 worker 各自拿着一个已经 unlink 的库文件继续跑，worker 再也看不到 API 写进去的任务；Windows 上因为有进程占着库，`rmSync` 抛 `WinError 32`（正是原先注释里记的那个错）被 `catch` 吞掉，目录保住，**所以这个错只在 Linux 上暴露，本机三次全绿也照样盖不住它**。旁证是产物里**一个 `data-*` 目录都没有**，包括 API 重建的那份——API 的 store 在第一次请求时就已经缓存，不会因为路径被删而重开，于是两边各错各的、界面上始终只有 API 那一侧的数据。
+   修法：清理搬出配置，改由 `npm test` 的 pretest（`support/clean_run.mjs`）执行，一次运行只跑一次、只删上一轮的目录。修复后本机复测 `npm test` → **13 passed（1.7m）**，`.run/` 里本轮数据目录与 `worker.log` 都在（另有 1 个空 `data-*` 来自第二次评测，属正常残留）；同时把常驻 worker 的 stdout/stderr 另存一份到 `<数据目录>/worker.log` 并随产物上传——就绪端口只能证明「进程起过」，证明不了它还在消费队列，而 Playwright 默认把 webServer 的 stdout 丢掉。
 
 ### 端到端维度未覆盖与已知限制
 
 - **界面主路径的判定不构成论文语义结论。** 替身回的是构造数据（固定题名、固定摘录、固定「支持」标签），语义真值仍在 `tests/functional/` 的冻结样本与语义报告口径里。本维度的 13 条不能拿来当准确率或性能数字。
-- **没有接进 CI。** `.github/workflows/` 未增加端到端步骤，可见 Issue #26 中待定的「是否接 CI」。CI 跑这套还需要在 runner 上装 Chromium 并接受比后端全量更长的墙钟时间，属团队决定。
+- **CI 上是独立检查项，暂不是合并必须通过。** 这是 Issue #26 定下的口径（先跑稳一段时间再考虑转为必需），所以本维度即使在 CI 变红也不阻断合并，需要靠评审看结果。CI 的墙钟时间也比后端全量长：本机约 40s 花在四个进程的启动与就绪探测上，再加上在 runner 上装 Chromium 的时间。该作业在 `ubuntu-latest` 上的**首次运行结果是 13 条里 3 条通过、10 条失败**，根因在测试脚手架自身（见「端到端维度的过程缺陷」第 4 条），与产品实现无关；修复后**尚未取得第二次 `ubuntu-latest` 的结果**，本机 Windows 上的 13 passed 不能代替它。
 - **只覆盖 Chromium，且 headless。** 未覆盖其他浏览器、移动视口与有头模式；界面没有 `data-testid`，定位全靠可见文案与元素 `id`，文案改动会同时改动用例。
 - **没有真实模型调用。** 因此「界面显示真实模型的判断」只验证到渲染与流转；`verified_model_version` 在这套用例里必然显示「未知」，与 `docs/verification.md:391` 的结论一致。顺带记录一个观察：`models/recording.py:134` 的 `attempt_record` 根本不接受可验证版本这个入参，而同样来自上游声明的 `response_model` 是被记录下来的——也就是说这个字段当前**没有任何写入路径**，界面上也无从区分「上游没给」与「给了但不可验证」。这与术语表「不能验证版本则为 null」并不冲突，所以本次只记为观察，未开 Issue；是否要补一条写入路径或把 `response_model` 一并呈现，属产品口径。
 - **脱敏/语义导出只验证到下载由本机浏览器发起。** 没有真实外发给接收方，也没有校验外发侧的接收方一致性。
