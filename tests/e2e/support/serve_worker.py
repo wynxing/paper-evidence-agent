@@ -8,9 +8,13 @@ worker，否则任务永远停在 ``QUEUED``。轮询间隔调小到 0.2 秒，�
 ``port`` 判断进程是否起来，它本身不提供任何功能。
 
 就绪信标只能证明「进程起过」，证明不了「它还在消费队列」：这个进程若在就绪之后
-退出，界面上只会看到任务永远停在「排队中」。所以这里把 stdout / stderr 另存一份到
-数据目录（``worker.log``），随作业产物上传——Playwright 自己接管 webServer 的
-stdout（默认 ``ignore``），光靠它的转述不足以定位。
+退出，界面上只会看到任务永远停在「排队中」。所以这里把 stdout / stderr 另存一份
+（路径由 ``PAPER_EVIDENCE_E2E_WORKER_LOG`` 给出，配的是 ``.run/worker-<runId>.log``），
+随作业产物上传——Playwright 自己接管 webServer 的 stdout（默认 ``ignore``），光靠
+它的转述不足以定位。
+
+日志**不放在** ``data-*`` 目录里：那份目录归 ``prepareRun()`` 管，写法上属于会被清理
+的一类；诊断文件不该跟着被测对象的生命周期走。
 """
 
 import asyncio
@@ -58,7 +62,11 @@ class _Tee:
     def write(self, text: str) -> int:
         self._handle.write(text)
         self._handle.flush()
-        return self._stream.write(text)
+        written = self._stream.write(text)
+        # 每次写都把原始流推出去：管道下它是块缓冲的，不推的话 CI 控制台里就
+        # 一直看不到 worker 的输出（``stdout`` 默认还是 ``ignore``）。
+        self._stream.flush()
+        return written
 
     def flush(self) -> None:
         self._handle.flush()
@@ -67,23 +75,40 @@ class _Tee:
     def isatty(self) -> bool:
         return False
 
+    def __getattr__(self, name: str):
+        """其余属性转发给原始流。
+
+        ``faulthandler``、部分日志与 CLI 库会访问 ``fileno()``、``.encoding``、
+        ``.buffer`` 之类；缺一个就是 ``AttributeError``，等于这个诊断旁路把 worker
+        弄停了，跟它的初衷正相反。走 ``__dict__`` 取原始流，避免 ``__init__`` 还没
+        跑完时的自我递归。
+        """
+
+        stream = self.__dict__.get("_stream")
+        if stream is None:
+            raise AttributeError(name)
+        return getattr(stream, name)
+
 
 def _mirror_output() -> None:
-    """Mirror stdout/stderr into ``<数据目录>/worker.log``; no-op without the env.
+    """Mirror stdout/stderr into the run's worker log; no-op without the env vars.
 
     这是诊断用的旁路，不是功能的一部分：拿不到目录、写不进去都只当没这回事，
     绝不能因为记录失败把 worker 自己弄停——那正是它要防的那种失败。
     """
 
-    data_dir = os.environ.get("PAPER_EVIDENCE_DATA_DIR")
-    if not data_dir:
+    path = os.environ.get("PAPER_EVIDENCE_E2E_WORKER_LOG")
+    if not path and os.environ.get("PAPER_EVIDENCE_DATA_DIR"):
+        # 兜底：没有显式给路径时写在数据目录里（本机单独起 worker 时常用）。
+        path = os.path.join(os.environ["PAPER_EVIDENCE_DATA_DIR"], "worker.log")
+    if not path:
         return
-    path = Path(data_dir) / "worker.log"
+    log = Path(path)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = path.open("a", encoding="utf-8", errors="backslashreplace")
+        log.parent.mkdir(parents=True, exist_ok=True)
+        handle = log.open("a", encoding="utf-8", errors="backslashreplace")
     except OSError as exc:
-        print(f"worker: 无法写运行日志 {path}（{exc}）；继续以原有输出运行", file=sys.stderr)
+        print(f"worker: 无法写运行日志 {log}（{exc}）；继续以原有输出运行", file=sys.stderr)
         return
     sys.stdout = _Tee(sys.stdout, handle)
     sys.stderr = _Tee(sys.stderr, handle)
