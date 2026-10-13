@@ -9,7 +9,7 @@ import asyncio
 
 import httpx
 
-from conftest import (
+from doubles import (
     CLAIM_MARKER,
     INJECTION,
     PMCID,

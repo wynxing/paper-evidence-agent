@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from conftest import available_cases, load_case
+from acceptance import available_cases, load_case
 from paper_evidence.domain import ErrorCode, TaskStatus
 from paper_evidence.domain.rules import DEFINITIVE_LABELS
 from paper_evidence.domain.text import quote_spans
@@ -81,7 +81,7 @@ def test_a_frozen_case_is_judged_against_the_frozen_version(frozen_case, accepta
     outcome = acceptance(frozen_case)
     assert outcome.detail.status is TaskStatus.COMPLETED
     assert outcome.detail.source is not None
-    from conftest import VERSION_HASH
+    from acceptance import VERSION_HASH
 
     assert outcome.detail.source.version_hash == VERSION_HASH
     assert outcome.detail.source.pmcid == "PMC0000001"
@@ -132,7 +132,7 @@ def test_the_evaluator_rejects_a_definitive_label_without_evidence(acceptance):
 def test_a_sample_that_points_at_a_missing_paragraph_is_refused(acceptance):
     """样本写错段落号时必须显式失败，不能静默丢掉摘录。"""
 
-    from conftest import SampleReferenceError
+    from acceptance import SampleReferenceError
 
     case = load_case(CASES[0])
     # 把第一条 evidence 指向一个不存在的段号。
