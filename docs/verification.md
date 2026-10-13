@@ -309,13 +309,13 @@ PY
 
 1. `config.py` 的默认 `pmc_oai_url` 仍指向 `https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi`，该地址现返回 **301**，重定向到 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
 2. `pmc.py` 的 `fetch_record` 请求 `metadataPrefix=pmc`，但该前缀对多数记录返回 **400 `cannotDisseminateFormat`**；`ListMetadataFormats` 返回可用值为 `oai_dc`、`pmc`、`pmc_fm`，其中**只有 `pmc_fm` 返回含 `<article>` 的完整 JATS 正文**。
-   > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见文末「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
+   > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
 3. `pmc.py` 调用 `Fetcher.get` 时未传 `follow_redirects=True`；`http.py` 默认 `False`，且 301 小于 400 会被 `Fetcher` 原样返回，随后在 `fetch_record` 的 `status_code != 200` 分支被记为 `UPSTREAM_INVALID_REQUEST`。
 
 ### 修复
 
 - `config.py`：默认端点改为 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
-- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，见文末一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
+- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，详见「PMC 全文取回：metadataPrefix 修正」一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
 
 ### 实际检查
 
@@ -594,7 +594,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | --- | --- |
 | 关联 | Issue #20 端到端联调测试清单（真实后端）；测试方案「执行记录与当前边界」。**#20 上已有「端到端联调结果（第 1 轮）」**，用本地 OpenAI 兼容替身把主流程跑到 `COMPLETED`；本节不改写其结论，只补基线数字、环境前置与探测方法学提醒 |
 | 环境 | Windows、Python 3.12.13（`backend/.venv`）、Node 22.22.2 / npm 10.9.7 |
-| 对象 | 主工作树 `6a2ea8f`（分支 `test/semantic-report`）。该提交相对 `origin/main`（`373c0ca`）只改 `docs/` 与 `tests/`，**运行时文件改动为 0**，故下列运行时结论对 main 同样成立 |
+| 对象 | 主工作树 `6a2ea8f`（分支 `test/semantic-report`）。该提交相对当时的 `origin/main`（`373c0ca`）只改 `docs/` 与 `tests/`，**运行时文件改动为 0**，故下列运行时结论对**当时的** main 同样成立。注意 main 其后已前进（`eb0e117` 并入 PR #24、`a919d5b` 并入 PR #29，后者改了 `sources/pmc.py` 的运行时代码），故「对 main 成立」的适用区间截至 `373c0ca`；各条运行时结论未在合并后的 main 上重放 |
 | 隔离 | 后端以 `PAPER_EVIDENCE_DATA_DIR` 指向系统临时目录启动，未触碰默认 `backend/.paper-evidence`；本次未修改仓库任何文件 |
 
 本节用于在开始 Issue #20 清单前，先钉住「基线是否绿」和「真实链路走到哪一步」，并确认无模型密钥时的可达范围。
@@ -606,6 +606,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 检查 | 结果 |
 | --- | --- |
 | 后端基线 `pytest -c backend/pyproject.toml -q` | **239 passed，2 warnings（66.02s）**，在本 PR head（`ee79e53` = `origin/main` + 本节文档改动）实测。**此前记的 248 取自 `6a2ea8f`，它含尚未合并的 PR #24 的 9 条报告口径用例（239 + 9 = 248），不是本分支或 main 的现值**，本行已按复核意见更正 |
+| 合并 `origin/main` 后定稿复测（`pytest -c backend/pyproject.toml -q`） | **255 passed，2 warnings（42.29s）**；= 合并后 main 现值（含 PR #24 的 13 条与 PR #29 的 3 条），本节为纯文档改动，无回归 |
 | 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail**。较 2026-10-11 记录的 42 少 1 条，来源已定位：#21（`373c0ca`）删除了 `frontend/tests/workbench.test.mjs` 中 `501 is explicit and never falls back to demo`（对应实现已随该 PR 移除），属用例随实现下线，非静默削弱断言 |
 | `npm --prefix frontend run build` | 通过（`vue-tsc --noEmit` + vite build，29 模块；`dist/` 已在 `.gitignore` 中） |
 | `python -m pip check` | No broken requirements found |
@@ -644,8 +645,8 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒，本次探测在 `query_generation` 止步。链路正确性已由 #20 第 1 轮的本地替身上游证明（主流程跑到 `COMPLETED`）；**仍未完成的是真实模型下的语义判断**，需 Issue #7 的「最简模型密钥配置说明」落地后才能补。替身或构造数据的结果不得用于声称语义验收通过。
 - **Issue #20 清单未链接 worker 常驻要求**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`（本次实测确认）。该要求已写在 `docs/development.md` 第 58 行，但清单「前提」没有链接它，建议补一行，避免执行人误判为功能缺陷。
 - 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
-- 未测在途任务的取消：本次只覆盖终态任务的取消拒绝分支，`QUEUED`/`RUNNING` 取消、重复取消与取消/完成竞态仍未实测。
-- 探测本身在 `6a2ea8f` 的主工作树上进行（该提交相对 `origin/main` 只改 `docs/` 与 `tests/`，运行时文件改动为 0）；定稿时已在本分支 head 重跑全量（239 passed，见上表）。但**各条运行时结论没有在本分支代码上重放**，其运行环境基线仍是 `6a2ea8f`。
+- 未测在途任务的取消：本次只覆盖 **`QUEUED` 任务的取消**（含重复取消的幂等）与 **终态任务的取消拒绝分支**；**`RUNNING` 在途任务的取消、取消与完成的竞态仍未实测**。
+- 探测本身在 `6a2ea8f` 的主工作树上进行（该提交相对 `origin/main` 只改 `docs/` 与 `tests/`，运行时文件改动为 0）；定稿时已在合并 `origin/main` 后的本分支 head 重跑全量（见上表「合并 `origin/main` 后定稿复测」一行）。但**各条运行时结论没有在本分支代码上重放**，其运行环境基线仍是 `6a2ea8f`。
 - 语义报告 N=7 构造样本与单人标注的两条限制不变，本节不改变其口径。
 
 ### 复现方式（供 #20 执行人照抄）
@@ -653,7 +654,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 ```bash
 # 1) 后端：用隔离数据目录启动，避免污染默认 backend/.paper-evidence
 cd backend
-export PAPER_EVIDENCE_DATA_DIR="$TEMP/pe_e2e_probe"   # Windows 写具体路径，如 C:/Users/<you>/AppData/Local/Temp/pe_e2e_probe
+export PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe"   # Windows 写具体路径，如 C:/Users/<you>/AppData/Local/Temp/pe_e2e_probe
 .venv/bin/python -m uvicorn paper_evidence.api.app:app --host 127.0.0.1 --port 8000
 # Windows 用 .\.venv\Scripts\python 代替 .venv/bin/python
 
@@ -665,7 +666,10 @@ curl -s http://127.0.0.1:8000/api/run-config     # → config_digest
 
 # 4) 另开一个进程常驻 worker：API 进程自己不执行任务，
 #    不启动 worker 时任务会永远停在 QUEUED（不是功能缺陷）
-cd backend && .venv/bin/python -m paper_evidence.worker --loop --interval 1
+#    两个进程必须指向同一个数据目录；否则 worker 会读默认的 backend/.paper-evidence，
+#    与第 1 步的临时库不是同一个，任务同样会停在 QUEUED
+cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
+  .venv/bin/python -m paper_evidence.worker --loop --interval 1
 ```
 
 关键请求与期望（`$DIGEST` 取自第 3 步）：
