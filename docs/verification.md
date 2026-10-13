@@ -309,13 +309,13 @@ PY
 
 1. `config.py` 的默认 `pmc_oai_url` 仍指向 `https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi`，该地址现返回 **301**，重定向到 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
 2. `pmc.py` 的 `fetch_record` 请求 `metadataPrefix=pmc`，但该前缀对多数记录返回 **400 `cannotDisseminateFormat`**；`ListMetadataFormats` 返回可用值为 `oai_dc`、`pmc`、`pmc_fm`，其中**只有 `pmc_fm` 返回含 `<article>` 的完整 JATS 正文**。
-   > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见文末「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
+   > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
 3. `pmc.py` 调用 `Fetcher.get` 时未传 `follow_redirects=True`；`http.py` 默认 `False`，且 301 小于 400 会被 `Fetcher` 原样返回，随后在 `fetch_record` 的 `status_code != 200` 分支被记为 `UPSTREAM_INVALID_REQUEST`。
 
 ### 修复
 
 - `config.py`：默认端点改为 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
-- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，见文末一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
+- `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，详见「PMC 全文取回：metadataPrefix 修正」一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
 
 ### 实际检查
 
@@ -493,6 +493,104 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 未测真实模型下的注入抵抗：上游仍由脚本化 gateway 回放，模型对不可信文本的实际服从度未被检验。
 - 未覆盖密钥泄漏面：本节未注入凭据标记扫描进程环境、异常与日志，因为当前无密钥可用。
 
+## 端到端联调后端缺口（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #20「依赖后端 @Ziyiqian123」四项，与 Issue #7「待办 → 后端」同批，内含 #16 第 1、2 条 |
+| 环境 | Windows、Python 3.12.14（pytest 9.1.1）；Node v22.22.2、`node --test`、`vue-tsc` 3.3.11 + `vite` 8.3.1 |
+| 对象 | 后端 `domain/contracts.py`、`storage/sqlite.py`、`api/app.py`、`worker/runner.py`；前端 `src/api/contracts.ts`；文档 `architecture.md`、`development.md`、`README.md`；测试 `tests/tools/test_checks_api.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/boundary/test_domain_contract.py` |
+| 对象提交 | 首版 `ca593ca468e8526c2303b2a1c9215f00f43a900b`；评审修正 `3a53dc37b3c2dc6446a46ce793d9816466c108bb`（本记录随后单独提交，避免哈希自指） |
+
+### 四项待办与实现
+
+| 待办 | 实现 |
+| --- | --- |
+| 证据邻段上下文读取接口 | 新增 `GET /api/checks/{id}/evidence-context` → `EvidenceContext`。锚点为「进入模型上下文的候选段落」与「最终判断引用的段落」，各自经 source-scoped 的 `read_neighbors` 按 `ordinal±1` 展开，按段落序号升序返回；每段带 `entered_context` / `cited` 两个来源标志 |
+| 原始输入读取接口 | 新增 `GET /api/checks/{id}/input` → `CheckInput`，返回提交时原文以及该任务冻结的 `config_digest` 与 `authorized_recipients`。这是一条**按任务**的直接读取、不依赖历史列表是否已加载；`CheckSummary` 也带 `doi`，故它**不是**取得提交 DOI 的唯一路径（评审修正，见下） |
+| #16 第 1 条（worker 遇异常退出） | `run_once` 把工厂构造移入 `try`；`drain_forever` 捕获循环级异常后继续 |
+| #16 第 2 条（时间戳一致） | `updated_at` / `finished_at` 由同一处 `_now()` 复用 |
+| 最简模型密钥配置说明 | `development.md` / `README.md` 写明最小集与失败行为 |
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests -q`（全量） | **248 passed，3 warnings**，无回归 |
+| `pytest ../tests/tools/test_checks_api.py -q` | **30 passed** |
+| `pytest ../tests/boundary/test_storage_lifecycle.py ../tests/boundary/test_domain_contract.py -q` | **31 passed** |
+| `pytest ../tests/tools/test_api_contract.py ../tests/boundary/test_frontend_shapes.py -q` | **16 passed**（OpenAPI / 架构文档 / 前端契约三方一致） |
+| 前端 `node --experimental-strip-types --test tests/*.test.mjs` | **41 passed** |
+| 前端 `npm run build`（`vue-tsc --noEmit` + `vite build`） | 通过，29 modules transformed |
+| 原始输入逐字返回 | 提交 `"  The intervention reduced mortality.  "`（前后带空白）→ 接口原样返回，不折叠空白、不截断 |
+| 详情视图的 DOI 空窗 | 同一时刻 `GET /api/checks/{id}` 的 `source` 为 `null`，详情视图本身在该阶段没有 DOI，`GET .../input` 仍返回提交 DOI；但历史行的 `CheckSummary.doi` 同期也有值，故这是**详情视图**的空窗，不是全局缺口 |
+| 重试链保留 | 由 `previous_id` 指向的原任务被取消后，重试任务仍返回 `previous_id` 与提交原文 |
+| 邻段展开 | 序号 2 进入上下文、序号 3 被最终判断引用 → 返回 1..3，标志分别为 (F,F)、(T,F)、(F,T) |
+| 只读性 | 调用 `evidence-context` 前后任务详情（含 `finished_at`）不变 |
+| 来源未冻结 | `source_id` 为 `null`、`paragraphs` 为空（表示暂无内容，非来源不存在） |
+| 已冻结但无锚点 | 来源已冻结而尚无候选或引用（任务在 `query_generation` 阶段失败即此形态）时，`source_id` 有值而 `paragraphs` 为空——评审补充的第三种组合 |
+| 不越源 | 跨来源的段落标识经 `read_neighbors` 解析为空 |
+| 邻段不是证据 | `ContextParagraph` 不带 `validation` 字段 |
+| 四条终态路径时间戳 | 完成、排队取消、总超时、遗留 `RUNNING` 结算，均满足 `updated_at == finished_at` |
+| worker 循环活下去 | 首轮 `run_once` 抛 `RuntimeError` 后循环仍在领取（`calls > 3`），并记录 `Worker loop iteration failed; continuing` |
+| 工厂抛异常落终态 | 已领取任务落 `FAILED`、`error_code is None`、`finished_at` 非空，且不可重复领取 |
+| 冻结摘要重提边界 | 有效配置未变时，用 `/input` 的冻结摘要重提被接受（`202`）；配置改变后同一摘要被拒（`409`、`error_code=null`、固定文案「配置已更改，请重新预览并确认」） |
+
+### 未覆盖
+
+- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型，且目前**无前端调用方**：`frontend/src/api/contracts.ts` 已声明两者，但 API 客户端没有对应方法，全仓也搜不到 `evidence-context` 的调用点。
+- **`evidence-context` 在真实来源上目前只能返回锚点自身**：真实 PMC 经 `metadataPrefix=pmc_fm` 取回的「全文」实际只含题录与摘要（`jats_bytes` 的 `<body>` 计数为 0，见 #28），该来源段落表仅 0~1 段，因此 `ordinal±1` 的邻段展开恒为空，「引文前后是什么」在当前冻结内容下无法兑现。此前写作「冻结样本仅 3 段」会让人误以为换成真实来源即可，属措辞不准；该项在 #20 中记为**阻塞**，随 #28 修复。
+  > ⚠️ **2026-10-12 更新**：#28 已修复并合入 main（PR #29：PMC 取回先请求 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，见下方「PMC 全文取回：metadataPrefix 修正」一节），本分支随本次合并已包含该修复。故上面「只能返回锚点自身」描述的是**修复前**的状态；邻段能力在真实来源上**是否恢复尚未复测**（本节用例仍只覆盖冻结样本），按 #20 清单复测前不声明为已验证能力。
+- `evidence-context` 只按 `ordinal±1` 展开，不解析文内交叉引用（如「见第 2 节」），跨小节引用不在本次范围。
+- worker 兜底只在**进程内**隔离单个任务失败。它不解决任务级挂起（无超时地卡在某个 await），也覆盖不到「存储层持续不可用」这类跨轮次故障。
+- 时间戳一致覆盖**当前全部 4 处**终态写入点：全仓 `UPDATE tasks SET status` 仅 `finish`、排队取消、总超时、遗留 `RUNNING` 结算四处，均已复用同一 `_now()`（评审独立 grep 复核）。新增终态写入点需同步本用例，否则不在保护范围内。
+- `/input` 未取得 `RUNNING` 态快照：自动化用例覆盖 `QUEUED`；`BLOCKED` 为评审手工复核（无对应用例）；`RUNNING` 因 worker 领取间隔与轮询起点错开未抓到，已记入 #20。
+- 最小密钥说明为文档描述，本次无可用密钥，未在真实上游端点下跑通一次完整核验。
+
+### 评审修正（2026-10-12）
+
+评审（lvyixi1110）复核后指出 `CheckInput` 的必要性论证与事实不符、且该接口当前无前端调用方；逐条复核属实并修正（对象提交 `3a53dc37b3c2dc6446a46ce793d9816466c108bb`）：
+
+| 评审项 | 处理 |
+| --- | --- |
+| `CheckSummary.doi` 早已覆盖提交 DOI，前端 `originalDoi` 已从历史行回退取值 | docstring 与两份文档改为准确口径，不再声称本接口是唯一路径 |
+| 冻结 `config_digest` 不是重提应发送的值 | 文档写明语义，并新增边界用例固化「配置未变放行 / 配置变更 409」 |
+| `source_id` 有值而 `paragraphs` 为空是第三种组合 | `architecture.md` 与本节补记 |
+| 时间戳未覆盖措辞偏保守 | 改为「覆盖当前全部 4 处终态写入点」 |
+| `RUNNING` 态未覆盖 | 记入本节与 #20 |
+| 未装前端依赖的失败形态 | `development.md` 写具体：`tests/boundary/test_frontend_shapes.py` 整组失败（检查器找不到 `typescript`） |
+| `contracts.ts` 两个新 interface 是死代码 | 两处标注「尚无客户端方法调用」 |
+
+### 评审修正（第二轮，2026-10-12）
+
+第二轮评审（lvyixi1110）指出首轮修正未收口：同一「唯一路径」前提仍留在 `tests/tools/test_checks_api.py` 与本节的过期记录里；另指出时间戳用例在本机时钟分辨率下近乎恒真。逐条处理后记录如下（对象提交为本 PR 在 `3687b9f` 之上的两次提交 —— 口径修正与用例硬化，本记录随后单独提交以避免哈希自指）：
+
+| 评审项 | 处理 |
+| --- | --- |
+| B1 用例 docstring 仍是旧前提（「只能靠本接口」） | 与 `api/app.py`、`domain/contracts.py` 的口径对齐：说明这是**详情视图**的空窗（DOI 只在 `source` 里、`source` 在来源身份解析成功前为 null），本接口是按任务直接读取并给出冻结授权范围，且**并非**取得提交 DOI 的唯一路径（历史行 `CheckSummary.doi` 与 `originalDoi` 已覆盖） |
+| B2 同一用例的行内注释仍是同一口径 | 改为「同一时刻的详情视图给不出 DOI —— 这是详情视图在该阶段的空窗」 |
+| B3 本节有一行因首轮修正而过期 | 删去「`/input` 的文档字符串点名 `QUEUED, RUNNING, BLOCKED` 三态」半句（该措辞已在首轮改掉） |
+| B4 同一行把「评审手工复核」写成「测试覆盖」 | 改为「自动化用例覆盖 `QUEUED`；`BLOCKED` 为评审手工复核（无对应用例）；`RUNNING` 未覆盖」 |
+| 时间戳用例在 Windows 上近乎恒真（非阻塞） | 采纳评审建议 1：用例内把 `sqlite._now` 换成自增计数，使「同一处复用」仍相等而「两次取钟」必然不等，断言脱离时钟分辨率 |
+
+#### 实际检查（第二轮）
+
+环境：Windows、Python 3.12.14、pytest 9.1.1；Node v22.22.2。后端全量前已装齐 `requirements.lock`（含 `litellm` 及其传递依赖），前端已有 `node_modules`。
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest ../tests -q`（全量） | **248 passed，3 warnings**（86.21s），无回归 |
+| `pytest ../tests/tools/test_checks_api.py -q` | **30 passed** |
+| `pytest ../tests/boundary/test_storage_lifecycle.py ../tests/boundary/test_domain_contract.py -q` | **31 passed** |
+| `pytest ../tests/tools/test_api_contract.py ../tests/boundary/test_frontend_shapes.py -q` | **16 passed**（OpenAPI / 架构文档 / 前端契约三方一致） |
+| 前端 `node --experimental-strip-types --test tests/*.test.mjs` | **41 passed** |
+| 前端 `npm run build`（`vue-tsc --noEmit` + `vite build`） | 通过，29 modules transformed |
+| 时间戳用例的检出力（变异验证） | 把 `finish()` 的 `stamp, stamp` 退回 `_now(), _now()` 后该用例**失败**（`AssertionError: t1` / `assert 'tick-7' == 'tick-8'`）；恢复后通过。硬化前该断言在本机约 1/400 才检出，硬化后稳定检出 |
+
+一处环境注记：首次跑全量时出现 6 个与业务无关的失败，来源是执行环境的沙箱拦截了用例对临时目录的删除（`[safe-delete]`），换一次运行即得 248 passed；两条结果均为实际执行记录。
+
+> 合并 main 后复跑：本分支随后合并 main（PR #24「语义验收报告口径」、PR #29「PMC 取回修正」），全量用例由 248 增至 **264 passed**（本分支 248 + PR #24 的 13 + PR #29 的 3，集合互不重叠）；上方诸数字是第二轮（尚未合并 main）的实测快照，判读时以合并后的 264 为准。
+
 ## 语义验收报告口径（2026-10-12）
 
 | 项目 | 记录 |
@@ -587,6 +685,110 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 三个样例都是 CC BY 开放获取，**没有抽样非 OA 记录的真实 `cannotDisseminateFormat` 响应体**（该分支由 mock 用例覆盖，不是实测）。
 - `parse_jats` 的摘要回落行为本身未改；`evidence-context` 的邻段能力是否恢复，需在 #28 修复合并后按 #20 清单复测（本次只验证到「来源冻结后含 `<body>`」）。
 - 前端与文档的 `13 个业务接口` 等口径不受影响（本 PR 不改接口）。
+
+## 端到端联调前置基线与真实链路探测（2026-10-12）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #20 端到端联调测试清单（真实后端）；测试方案「执行记录与当前边界」。**#20 上已有「端到端联调结果（第 1 轮）」**，用本地 OpenAI 兼容替身把主流程跑到 `COMPLETED`；本节不改写其结论，只补基线数字、环境前置与探测方法学提醒 |
+| 环境 | Windows、Python 3.12.13（`backend/.venv`）、Node 22.22.2 / npm 10.9.7 |
+| 对象 | 主工作树 `6a2ea8f`（分支 `test/semantic-report`）。该提交相对当时的 `origin/main`（`373c0ca`）只改 `docs/` 与 `tests/`，**运行时文件改动为 0**，故下列运行时结论对**当时的** main 同样成立。注意 main 其后已前进（`eb0e117` 并入 PR #24、`a919d5b` 并入 PR #29，后者改了 `sources/pmc.py` 的运行时代码），故「对 main 成立」的适用区间截至 `373c0ca`；各条运行时结论未在合并后的 main 上重放 |
+| 隔离 | 后端以 `PAPER_EVIDENCE_DATA_DIR` 指向系统临时目录启动，未触碰默认 `backend/.paper-evidence`；本次未修改仓库任何文件 |
+
+本节用于在开始 Issue #20 清单前，先钉住「基线是否绿」和「真实链路走到哪一步」，并确认无模型密钥时的可达范围。
+
+按复核意见，本节同时把 README「当前状态」里已被实测推翻的「外部来源连通性尚未验证」收窄为「模型连通性与论文语义验收尚未验证」（见下表），使仓库内表述与实测一致；两处改动同属本 PR。
+
+### 实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| 后端基线 `pytest -c backend/pyproject.toml -q` | **239 passed，2 warnings（66.02s）**，在本 PR head（`ee79e53` = `origin/main` + 本节文档改动）实测。**此前记的 248 取自 `6a2ea8f`，它含尚未合并的 PR #24 的 9 条报告口径用例（239 + 9 = 248），不是本分支或 main 的现值**，本行已按复核意见更正 |
+| 合并 `origin/main` 后定稿复测（`pytest -c backend/pyproject.toml -q`） | **255 passed，2 warnings**（合并提交 `68ff1dc` 实测 42.29s；定稿复测 39.18s，同一代码树、仅文档差异）；= 合并后 main 现值（含 PR #24 的 13 条与 PR #29 的 3 条），本节为纯文档改动，无回归 |
+| 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail**。较 2026-10-11 记录的 42 少 1 条，来源已定位：#21（`373c0ca`）删除了 `frontend/tests/workbench.test.mjs` 中 `501 is explicit and never falls back to demo`（对应实现已随该 PR 移除），属用例随实现下线，非静默削弱断言 |
+| `npm --prefix frontend run build` | 通过（`vue-tsc --noEmit` + vite build，29 模块；`dist/` 已在 `.gitignore` 中） |
+| `python -m pip check` | No broken requirements found |
+| `GET /health` | 200 `{"status":"ok"}`（连续三次复测） |
+| `GET /api/run-config` | 200，`config_digest` 稳定；limits `3/1/2/1`、timeouts `45/15/180`、观测默认关闭 |
+| `GET /api/checks`（空库） | 200 `[]` |
+| 真实来源解析 `10.1371/journal.pmed.0020124` | 200，返回真实题名、作者、年份（**Crossref 与 PMC 实时链路可用**）。README「当前状态」原称「真实外部来源与模型连通性…尚未验证」，本 PR 按此实测把该句收窄为「模型连通性与论文语义验收尚未验证」 |
+| DOI 格式非法 `not-a-doi` | 400 `DOI_INVALID` |
+| 不存在的 DOI | 404 `DOI_UNRESOLVABLE` |
+| 配置摘要过期（`config_digest` 不匹配） | 409「配置已更改，请重新预览并确认」，`error_code=null` |
+| `source_confirmed=false` / `cloud_consent=false` | 均 400「需要同时确认来源与云调用授权」，不创建任务、不调用模型 |
+| 空论断 | 400「论断不能为空」 |
+| 创建合法任务（无模型密钥） | **202 / `QUEUED`**；历史列表含论断摘要与 `created_at` |
+| 启动 worker（`--loop`）后任务推进 | `QUEUED → RUNNING → FAILED`，`stage=query_generation`，`error_code=UPSTREAM_UNAVAILABLE`，`label=null`，`decision=null` |
+| 来源阶段实测（同一任务） | `source_identity` 成功（1077ms）、`fetch` 成功（2532ms）；取到 `PMC1182327`、`license=CC BY`、`version=1`、`version_hash`（sha256） |
+| 调用账 | `verification=verified`，`main_requests_used=1`，`upstream_attempts_used=2`，`observed_upstream_attempts=2` |
+| 失败任务诊断包（redacted） | 200，`schema_version=2.2`；`execution` 三段 span 带 stage/tool/status/error_code/duration_ms/request_id；`model_calls` 含 attempts |
+| 逐次尝试记录 | attempt 1 `recovery_kind=none` → attempt 2 `recovery_kind=retry`（reason `UPSTREAM_UNAVAILABLE`），与「首次加一次恢复」一致 |
+| 未知 usage 不写零 | `usage=null`、`verified_model_version=null`，未写成 0 或别名 |
+| redacted 保留公开书目 | DOI、PMCID、题名、作者、license、version、access_url、version_hash 均保留；`input.claim` 为 `<redacted>` |
+| 脱敏泄漏扫描 | 原句文本在整包中出现 **0** 次 |
+| 语义导出：未配置诊断接收方 | 400「诊断接收方未获授权」 |
+| 语义导出：缺 `semantic_export_consent` | 400「缺少语义导出授权」 |
+| 反馈 | 200 `saved=true` |
+| 重试（终态任务） | 202 新建任务，`previous_id` 指向原任务；沿用原句；**新任务重新计账（1 次主请求 / 2 次尝试），预算未继承** |
+| 取消已终态任务 | 409「任务已结束，不能取消」，响应同时带 `status`/`stage` |
+| 取消 `QUEUED` 任务 | 200 `CANCELLED`，`cancel_requested=true`，`label` 与 `decision` 均为 null |
+| 重复取消 | 对已 `CANCELLED` 的任务再次 `POST /cancel` 仍返回 200，幂等，不报错 |
+| 带 `previous_id` 重提（修改/拆分机制） | 202 新任务并记录关联；原任务输入未被改写；模型上下文不继承 |
+| `previous_id` 指向不存在的任务 | 404「关联的原任务不存在」 |
+| 无 worker 时任务不推进 | 不启动 worker 时任务停在 `QUEUED`，API 进程不自行执行 |
+| 删除终态任务 | 200，历史列表随即不再包含该任务 |
+
+### 未覆盖与阻塞
+
+- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒，本次探测在 `query_generation` 止步。链路正确性已由 #20 第 1 轮的本地替身上游证明（主流程跑到 `COMPLETED`）；**仍未完成的是真实模型下的语义判断**，需 Issue #7 的「最简模型密钥配置说明」落地后才能补。替身或构造数据的结果不得用于声称语义验收通过。
+- **Issue #20 清单未链接 worker 常驻要求**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`（本次实测确认）。该要求已写在 `docs/development.md` 第 58 行，但清单「前提」没有链接它，建议补一行，避免执行人误判为功能缺陷。
+- 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
+- 未测在途任务的取消：本次只覆盖 **`QUEUED` 任务的取消**（含重复取消的幂等）与 **终态任务的取消拒绝分支**；**`RUNNING` 在途任务的取消、取消与完成的竞态仍未实测**。
+- 探测本身在 `6a2ea8f` 的主工作树上进行（该提交相对 `origin/main` 只改 `docs/` 与 `tests/`，运行时文件改动为 0）；定稿时已在合并 `origin/main` 后的本分支 head 重跑全量（见上表「合并 `origin/main` 后定稿复测」一行）。但**各条运行时结论没有在本分支代码上重放**，其运行环境基线仍是 `6a2ea8f`。
+- 语义报告 N=7 构造样本与单人标注的两条限制不变，本节不改变其口径。
+
+### 复现方式（供 #20 执行人照抄）
+
+```bash
+# 1) 后端：用隔离数据目录启动，避免污染默认 backend/.paper-evidence
+cd backend
+export PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe"   # Windows 写具体路径，如 C:/Users/<you>/AppData/Local/Temp/pe_e2e_probe
+.venv/bin/python -m uvicorn paper_evidence.api.app:app --host 127.0.0.1 --port 8000
+# Windows 用 .\.venv\Scripts\python 代替 .venv/bin/python
+
+# 2) 必须等端口 bind 完成再探测，否则 /health 可能得到伪造的 502
+until [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health)" = "200" ]; do sleep 1; done
+
+# 3) 取当前配置摘要；创建任务时的 config_digest 必须用它
+curl -s http://127.0.0.1:8000/api/run-config     # → config_digest
+
+# 4) 另开一个进程常驻 worker：API 进程自己不执行任务，
+#    不启动 worker 时任务会永远停在 QUEUED（不是功能缺陷）
+#    两个进程必须指向同一个数据目录；否则 worker 会读默认的 backend/.paper-evidence，
+#    与第 1 步的临时库不是同一个，任务同样会停在 QUEUED
+cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
+  .venv/bin/python -m paper_evidence.worker --loop --interval 1
+```
+
+关键请求与期望（`$DIGEST` 取自第 3 步）：
+
+| 请求 | 期望 |
+| --- | --- |
+| `GET /api/sources/resolve?doi=not-a-doi` | 400 `DOI_INVALID` |
+| `GET /api/sources/resolve?doi=10.9999/does-not-exist` | 404 `DOI_UNRESOLVABLE` |
+| `POST /api/checks`，`config_digest` 用过期值 | 409「配置已更改，请重新预览并确认」，`error_code=null` |
+| `POST /api/checks`，`source_confirmed=false` 或 `cloud_consent=false` | 400「需要同时确认来源与云调用授权」 |
+| `POST /api/checks`，`claim=""` | 400「论断不能为空」 |
+| `POST /api/checks`（合法、无模型密钥） | 202 + `QUEUED`；落后 worker 取走 → `FAILED`，`stage=query_generation`、`error_code=UPSTREAM_UNAVAILABLE`、`label=null` |
+| `GET /api/checks/{id}/diagnostic-packet` | 200，`schema_version=2.2`；`usage=null`（不是 0）；原句出现 0 次 |
+| `POST /api/checks/{id}/retry` | 202，新任务 `previous_id` 指向原任务；调用账重开，预算不继承 |
+| `POST /api/checks/{id}/cancel`（终态任务） | 409「任务已结束，不能取消」 |
+| `POST /api/checks/{id}/cancel`（`QUEUED` 任务） | 200 `CANCELLED`；重复调用仍 200（幂等） |
+| `DELETE /api/checks/{id}` | 200，历史列表随即不再包含该任务 |
+
+### 一条方法学提醒
+
+首次探测 `GET /health` 曾返回 **HTTP 502「upstream connect failed … (os error 10061)」**，随后连续三次复测均为 200。原因是 uvicorn 尚未完成端口绑定，请求被前置链路拒绝。`/health` 的实现为直接返回 `{"status":"ok"}`，不具备产生该错误码的路径。**探测前必须等后端就绪，否则会得到伪造的 502**；记录时须先复测再判定。
 
 ## 端到端维度：界面主路径（2026-10-13）
 

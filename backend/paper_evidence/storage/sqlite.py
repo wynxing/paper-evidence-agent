@@ -22,10 +22,13 @@ from paper_evidence.domain.contracts import (
     Accounting,
     CancelResponse,
     CheckDetail,
+    CheckInput,
     CheckSummary,
     ConflictResponse,
+    ContextParagraph,
     CriteriaReference,
     EvidenceCandidate,
+    EvidenceContext,
     ExecutionRecord,
     Limits,
     ModelCall,
@@ -280,6 +283,54 @@ class SqliteStore:
             "previous_id": row["previous_id"], "cancel_requested": bool(row["cancel_requested"]),
         }
 
+    def check_input(self, task_id: str) -> CheckInput | None:
+        """The as-submitted input, readable whatever the processing state.
+
+        Unlike ``get_input`` this returns the declared contract rather than a
+        loose dict, and it carries the frozen authorization the task was created
+        with. Neither read rebuilds anything from the source or the model.
+        """
+
+        row = self._row(task_id)
+        if row is None:
+            return None
+        run_config = RunConfigSnapshot.model_validate(json.loads(row["run_config"]))
+        return CheckInput(
+            id=row["id"], claim=row["claim"], doi=row["doi"], previous_id=row["previous_id"],
+            config_digest=run_config.config_digest,
+            authorized_recipients=list(run_config.authorized_recipients),
+        )
+
+    def evidence_context(self, task_id: str) -> EvidenceContext | None:
+        """Paragraphs that entered the model context, plus their ±1 neighbours.
+
+        Two anchor sets are expanded together: the candidates that entered the
+        context (what the model actually read) and the paragraphs the final
+        decision cites (what the result rests on). Expansion goes through
+        ``read_neighbors``, which is source-scoped, so a task without a frozen
+        source yields no paragraphs and no id can leak across sources.
+        """
+
+        detail = self.get(task_id)
+        if detail is None:
+            return None
+        source_id = self.source_for_task(task_id)
+        if source_id is None:
+            return EvidenceContext(id=task_id, source_id=None, paragraphs=[])
+        entered = {item.paragraph_id for item in self.candidates(task_id) if item.entered_context}
+        cited = {item.paragraph_id for item in (detail.decision.evidence if detail.decision else [])}
+        return EvidenceContext(
+            id=task_id, source_id=source_id,
+            paragraphs=[
+                ContextParagraph(
+                    paragraph_id=item.paragraph_id, section=item.section, text=item.text,
+                    paragraph_hash=item.paragraph_hash, source_url=item.source_url,
+                    entered_context=item.paragraph_id in entered, cited=item.paragraph_id in cited,
+                )
+                for item in self.read_neighbors(source_id, sorted(entered | cited))
+            ],
+        )
+
     def source_record(self, task_id: str) -> SourceRecord | None:
         row = self._row(task_id)
         if row is None:
@@ -372,18 +423,20 @@ class SqliteStore:
                 deadline = row["deadline_at"]
                 if deadline is not None and not row["cancel_requested"] and _epoch() > deadline:
                     # An expired task settles as TASK_TIMEOUT before this conflict.
+                    stamp = _now()
                     self._conn.execute(
                         "UPDATE tasks SET status = ?, error_code = ?, updated_at = ?, finished_at = ? WHERE id = ?",
-                        (TaskStatus.FAILED.value, ErrorCode.TASK_TIMEOUT.value, _now(), _now(), task_id),
+                        (TaskStatus.FAILED.value, ErrorCode.TASK_TIMEOUT.value, stamp, stamp, task_id),
                     )
                     self._conn.execute("COMMIT")
                     return self._conflict(
                         {**dict(row), "status": TaskStatus.FAILED.value}, "任务已超过执行时限"
                     )
                 if status is TaskStatus.QUEUED:
+                    stamp = _now()
                     self._conn.execute(
                         "UPDATE tasks SET status = ?, cancel_requested = 1, updated_at = ?, finished_at = ? WHERE id = ?",
-                        (TaskStatus.CANCELLED.value, _now(), _now(), task_id),
+                        (TaskStatus.CANCELLED.value, stamp, stamp, task_id),
                     )
                 else:  # RUNNING: accept and let the worker finish the local wait.
                     self._conn.execute(
@@ -418,12 +471,16 @@ class SqliteStore:
 
     def settle_orphaned_running(self) -> int:
         rows = self._query("SELECT id, cancel_requested FROM tasks WHERE status = ?", (TaskStatus.RUNNING.value,))
+        # One stamp for the whole startup sweep: every row here terminates in the
+        # same pass, so updated_at and finished_at must not differ per row by the
+        # microseconds between two clock reads.
+        stamp = _now()
         changed = 0
         for row in rows:
             target = TaskStatus.CANCELLED if row["cancel_requested"] else TaskStatus.INTERRUPTED
             self._write(
                 "UPDATE tasks SET status = ?, updated_at = ?, finished_at = ? WHERE id = ? AND status = ?",
-                (target.value, _now(), _now(), row["id"], TaskStatus.RUNNING.value),
+                (target.value, stamp, stamp, row["id"], TaskStatus.RUNNING.value),
             )
             changed += 1
         return changed
@@ -450,13 +507,17 @@ class SqliteStore:
           returns ``False`` for that reason the caller commits ``CANCELLED``.
         """
 
+        # updated_at and finished_at describe one instant — the terminal commit —
+        # so the clock is read once. Two reads could differ, and the detail view
+        # would then show a task that finished after it last updated.
+        stamp = _now()
         cursor = self._write(
             """UPDATE tasks SET status = ?, stage = ?, error_code = ?, label = ?, decision = ?,
                    updated_at = ?, finished_at = ?
                WHERE id = ? AND status IN (?, ?) AND (? = ? OR cancel_requested = 0)""",
             (status.value, stage, error_code.value if error_code else None, label,
              json.dumps(decision, ensure_ascii=False) if decision is not None else None,
-             _now(), _now(), task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
+             stamp, stamp, task_id, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
              status.value, TaskStatus.CANCELLED.value),
         )
         return cursor.rowcount > 0
