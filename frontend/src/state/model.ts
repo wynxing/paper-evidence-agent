@@ -58,8 +58,9 @@ export function attemptText(a: Accounting) { return a.verification === 'verified
 export function safeSourceUrl(value: string): string | null { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
 export interface AnchorWindow { anchor: ContextParagraph | null; before: ContextParagraph | null; after: ContextParagraph | null }
 /**
- * The evidence-context list is ordered by paragraph ordinal and already includes each anchor's neighbours.
- * The entries immediately beside an anchor are those neighbours. A list that contains only the anchor has none.
+ * The evidence-context list is ordered by paragraph ordinal.
+ * Entries beside an anchor are its original neighbours only when the server has fully expanded each anchor by ordinal±1.
+ * A list that contains only the anchor has none. Known cases still awaiting retest are tracked in issue #20.
  */
 export function anchorWindow(paragraphs: readonly ContextParagraph[], paragraphId: string): AnchorWindow {
   const index = paragraphs.findIndex(item => item.paragraph_id === paragraphId)

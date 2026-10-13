@@ -87,11 +87,20 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   function releaseProjectionReads() {
     submittedReads?.abort(); contextReads?.abort(); submittedInputLoading.value = false; evidenceContextLoading.value = false
   }
-  /** Input and context belong to one task. A visibility reload of that same task keeps what was already read. */
+  /**
+   * Input and context belong to one task. A visibility reload keeps a projection that already landed.
+   * loadRoute bumps the route version first, so an in-flight read cannot land; if it had no data yet, start it again.
+   */
   function adoptRoute() {
     const nextId = route.value.invalid ? null : route.value.id
+    const retryInput = submittedInputLoading.value && submittedInput.value === null
+    const retryContext = evidenceContextLoading.value && evidenceContext.value === null
     releaseProjectionReads()
-    if (nextId === activeId) return
+    if (nextId === activeId) {
+      if (retryInput) void loadSubmittedInput(true)
+      if (retryContext) void loadEvidenceContext(true)
+      return
+    }
     activeId = nextId; contextWatched = false
     submittedInput.value = null; submittedInputError.value = ''
     evidenceContext.value = null; evidenceContextError.value = ''

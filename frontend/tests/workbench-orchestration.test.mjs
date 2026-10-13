@@ -583,6 +583,52 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     } finally { s.unmount() }
   })
 
+  test('a visibility reload retries an in-flight projection read that has not landed', async () => {
+    const s = session('#/checks/done')
+    const waiters = []
+    s.api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    s.api.overrides.getCheckInput = id => new Promise(resolve => waiters.push({ kind: 'input', id, resolve }))
+    s.api.overrides.getEvidenceContext = id => new Promise(resolve => waiters.push({ kind: 'context', id, resolve }))
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done', 'loaded')
+      const pendingInput = work.loadSubmittedInput()
+      const pendingContext = work.loadEvidenceContext()
+      await until(() => waiters.some(item => item.kind === 'input') && waiters.some(item => item.kind === 'context'), 'reads started')
+      assert.equal(work.submittedInput.value, null)
+      assert.equal(work.evidenceContext.value, null)
+      s.host.document.setHidden(true)
+      s.host.document.setHidden(false)
+      await until(() => waiters.filter(item => item.kind === 'input').length >= 2 && waiters.filter(item => item.kind === 'context').length >= 2, 'projection reads retried')
+      assert.equal(work.submittedInputLoading.value, true)
+      assert.equal(work.evidenceContextLoading.value, true)
+      waiters.find(item => item.kind === 'input').resolve({ id: 'done', claim: '旧', doi: '10.1000/OLD', previous_id: null, config_digest: 'old', authorized_recipients: [] })
+      waiters.find(item => item.kind === 'context').resolve({ id: 'done', source_id: 'old', paragraphs: [] })
+      await pendingInput
+      await pendingContext
+      assert.equal(work.submittedInput.value, null)
+      assert.equal(work.evidenceContext.value, null)
+      assert.equal(work.submittedInputError.value, '')
+      assert.equal(work.evidenceContextError.value, '')
+      const retriedInput = waiters.filter(item => item.kind === 'input').at(-1)
+      const retriedContext = waiters.filter(item => item.kind === 'context').at(-1)
+      retriedInput.resolve({ id: 'done', claim: '  原论断  ', doi: '10.1000/RAW', previous_id: null, config_digest: 'frozen', authorized_recipients: [] })
+      retriedContext.resolve({ id: 'done', source_id: 'src', paragraphs: [] })
+      await until(() => work.submittedInput.value?.doi === '10.1000/RAW' && work.evidenceContext.value?.source_id === 'src', 'retried reads landed')
+      assert.equal(work.submittedInputLoading.value, false)
+      assert.equal(work.evidenceContextLoading.value, false)
+      const inputCalls = named(s.api, 'getCheckInput').length
+      const contextCalls = named(s.api, 'getEvidenceContext').length
+      s.host.document.setHidden(true)
+      s.host.document.setHidden(false)
+      await until(() => work.detail.value?.id === 'done' && !work.loading.value, 'visible again')
+      assert.equal(named(s.api, 'getCheckInput').length, inputCalls)
+      assert.equal(named(s.api, 'getEvidenceContext').length, contextCalls)
+      assert.equal(work.submittedInput.value.doi, '10.1000/RAW')
+      assert.equal(work.evidenceContext.value.source_id, 'src')
+    } finally { s.unmount() }
+  })
+
   test('evidence context is read on demand and refreshed when the task moves on', async () => {
     const s = session('#/checks/run')
     const { api } = s
