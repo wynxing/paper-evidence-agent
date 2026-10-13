@@ -7,7 +7,7 @@
 
 import json
 
-from conftest import PMCID, VERSION_HASH, final_action, jats_with, pid, query_action
+from doubles import PMCID, VERSION_HASH, final_action, jats_with, pid, query_action
 
 from paper_evidence.diagnosis.projector import REDACTION_PLACEHOLDER
 from paper_evidence.domain import ErrorCode, TaskStatus

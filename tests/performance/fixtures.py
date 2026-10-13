@@ -12,14 +12,14 @@ RUNNING 起算，含解析与重试等待、不含队列时间。
 本目录不引入 Redis / Locust / JMeter，也不做分布式压测；数据目录固定在
 ``tmp_path``，不碰 ``backend/.paper-evidence``。
 
-为什么不叫 ``conftest.py``
---------------------------
+为什么夹具不放在 ``conftest.py``
+--------------------------------
 
-``tests/adversarial``、``tests/functional`` 与 ``tests/conftest.py`` 里的用例都写
-``from conftest import ...``，靠的是「同目录的 conftest 恰好是 sys.path 上第一个
-``conftest``」。再添一个 ``conftest.py`` 会把这个顺序顶掉，让它们的裸导入拿到
-别的目录的 conftest（实测会让 `tests/functional` 的 8 条用例 ImportError）。
-所以这里用普通模块名，由各用例文件显式导入夹具；根因见 Issue #31。
+本目录沿用与 ``tests/functional``、``tests/adversarial`` 相同的约定：夹具放在
+普通模块（本文件）里，由用例文件显式导入，不用 ``from conftest import ...``
+这种按 ``sys.path`` 顺序解析的裸导入。根因见 Issue #31——各维度已改为「维度
+独有的模块名 + 显式导入」，因此现在再往 ``tests/`` 下加 ``conftest.py`` 不会
+再串目录；本目录保留 ``fixtures.py`` 只是与既有约定保持一致。
 """
 
 import importlib
