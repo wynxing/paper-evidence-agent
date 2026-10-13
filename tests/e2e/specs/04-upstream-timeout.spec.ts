@@ -26,9 +26,11 @@ test('上游超时落成执行失败，并把它与学术判断区分开', async
     // 没有通过校验的证据，就不能显示任何摘录。
     await expect(page.getByText('尚无通过校验的最终证据。')).toBeVisible()
 
-    // 终态任务三个时刻都落定。
-    await page.locator('details.disclosure summary').first().click()
-    const facts = page.locator('details.disclosure dl.facts')
+    // 终态任务三个时刻都落定。按摘要文案定位，理由同 `02-main-path.spec.ts`。
+    const accounting = page.locator('details.disclosure', { hasText: '调用账与运行信息' })
+    await accounting.locator('summary').click()
+    await expect(accounting).toHaveAttribute('open', '')
+    const facts = accounting.locator('dl.facts')
     await expect(facts.getByText('尚未结束')).toHaveCount(0)
     await expect(facts.getByText('暂无数据')).toHaveCount(0)
   } finally {

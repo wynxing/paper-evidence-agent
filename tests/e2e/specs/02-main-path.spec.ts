@@ -56,8 +56,14 @@ test('提交后任务跑完，判断与可定位的原文位置都渲染出来',
   await expect(page.getByText('段落校验标识')).toBeVisible()
 
   // 计时字段：终态任务的三个时刻都落定，用时不是「暂无数据」。
-  await page.locator('details.disclosure summary').first().click()
-  const facts = page.locator('details.disclosure dl.facts')
+  // 按摘要文案定位，不用 `.first()`：详情页有多个 `details.disclosure`，一旦
+  // 前面新增同类面板，`.first()` 就指向别的面板；而 `toHaveText` 不要求可见，
+  // 断言会在**关闭的**面板上静默通过（实测：改成 `.first()` 后打开的是
+  // 「原始提交」，被断言的字段 `visible=false`，用例照样绿）。
+  const accounting = page.locator('details.disclosure', { hasText: '调用账与运行信息' })
+  await accounting.locator('summary').click()
+  await expect(accounting).toHaveAttribute('open', '')
+  const facts = accounting.locator('dl.facts')
   const value = (term: string) => facts.locator('dt', { hasText: term }).locator('xpath=following-sibling::dd[1]')
   for (const term of ['创建时间', '开始时间', '结束时间']) {
     await expect(value(term)).not.toHaveText(/未知|尚未/)
