@@ -6,6 +6,7 @@ are persisted and read by the API process, so a process-local monotonic
 timestamp would be wrong across a restart.
 """
 
+import itertools
 import time
 from dataclasses import replace
 
@@ -18,6 +19,7 @@ from paper_evidence.domain.records import TaskInput
 from paper_evidence.domain.rules import criteria_reference
 from paper_evidence.retrieval.jats import parse_jats
 from paper_evidence.domain.records import SourceSnapshot
+from paper_evidence.storage import sqlite
 from paper_evidence.storage.sqlite import SqliteStore
 
 VERSION_HASH = "d" * 64
@@ -265,6 +267,39 @@ def test_finished_at_is_set_when_a_queued_cancel_commits(store):
     make_task(store, "t1")
     store.request_cancel("t1")
     assert store.get("t1").finished_at is not None
+
+
+def test_every_terminal_path_stamps_updated_at_and_finished_at_together(store, monkeypatch):
+    """#16 第 2 条：两个字段描述同一个时刻，不能各自读一次时钟。
+
+    「最后更新」晚于「结束」会让详情页显示一个不可能的顺序。四条终态路径都要
+    满足：完成、排队取消、总超时、遗留 RUNNING 结算。
+
+    断言不依赖时钟分辨率：本机 ``datetime.now`` 在同一微秒内常返回同一字符串，
+    直接把两个真实时间戳贴在一起比，会让「两次取钟」的回归几乎检不出。这里把
+    ``sqlite._now`` 换成自增计数，同一处复用仍然相等，而两次取钟必然不等 ——
+    因此该断言能稳定检出回归，而不是只在时钟足够细的平台上才有效。
+    """
+
+    ticks = itertools.count(1)
+    monkeypatch.setattr(sqlite, "_now", lambda: f"tick-{next(ticks)}")
+
+    for task_id in ("t1", "t2", "t3", "t4"):
+        make_task(store, task_id)
+
+    store.claim_next(time.time() + 180)                      # t1 -> RUNNING
+    assert store.finish("t1", status=TaskStatus.COMPLETED, stage="evidence_validation",
+                        error_code=None, label="支持", decision=None) is True
+    assert store.request_cancel("t2").status is TaskStatus.CANCELLED   # QUEUED -> CANCELLED
+    store.claim_next(time.time() - 1)                        # t3 -> RUNNING, deadline 已过
+    assert store.request_cancel("t3").status is TaskStatus.FAILED      # -> TASK_TIMEOUT
+    store.claim_next(time.time() + 180)                      # t4 -> RUNNING, 留给结算
+    assert store.settle_orphaned_running() == 1
+
+    for task_id in ("t1", "t2", "t3", "t4"):
+        row = store._query("SELECT updated_at, finished_at FROM tasks WHERE id = ?", (task_id,))[0]
+        assert row["finished_at"] is not None, task_id
+        assert row["updated_at"] == row["finished_at"], task_id
 
 
 def test_source_index_keeps_the_bibliographic_identity(store):

@@ -113,6 +113,18 @@ export interface CheckDetail {
   /** Set when a terminal status commits; null while the task is not finished. */
   finished_at: string | null
 }
+/** Declared from the backend contract; no API client method calls it yet. */
+export interface CheckInput {
+  id: string
+  /** The submitted claim, verbatim; readable whatever the processing state. */
+  claim: string
+  /** The submitted DOI, kept outside `source`, which stays null until identity resolves. */
+  doi: string
+  previous_id: string | null
+  /** Frozen at creation, not the current effective digest a resubmission validates. */
+  config_digest: string
+  authorized_recipients: string[]
+}
 export interface CancelResponse {
   id: string
   status: TaskStatus
@@ -135,6 +147,25 @@ export interface SourceRecord {
   version_hash: string | null
 }
 export interface EvidenceCandidate extends Omit<Evidence, 'validation'> { round: 0 | 1; rank: number; entered_context: boolean }
+export interface ContextParagraph {
+  paragraph_id: string
+  section: string
+  /** Frozen paragraph text; a neighbour is read for context, not claimed as evidence. */
+  text: string
+  paragraph_hash: string
+  source_url: string
+  /** Was a retrieved candidate that entered the model context. */
+  entered_context: boolean
+  /** Is quoted by the final decision. */
+  cited: boolean
+}
+/** Declared from the backend contract; no API client method calls it yet. */
+export interface EvidenceContext {
+  id: string
+  /** Frozen source these paragraphs belong to; null before source identity resolves. */
+  source_id: string | null
+  paragraphs: ContextParagraph[]
+}
 export interface ExecutionRecord {
   stage: Stage
   span_id: string

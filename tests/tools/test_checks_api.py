@@ -3,9 +3,19 @@
 from dataclasses import replace
 
 from paper_evidence.config import Settings
-from paper_evidence.domain.contracts import Observability, SourceRecord
+from paper_evidence.domain import TaskStatus
+from paper_evidence.domain.contracts import EvidenceCandidate, Observability, SourceRecord
+from paper_evidence.domain.records import SourceSnapshot
+from paper_evidence.retrieval.jats import parse_jats
 
 DOI = "10.1000/xyz123"
+
+CONTEXT_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en"><front><article-meta/></front><body>
+<sec><title>Methods</title><p id="m1">First method paragraph.</p><p id="m2">Second method paragraph.</p></sec>
+<sec><title>Results</title><p id="r1">The treatment reduced mortality.</p></sec>
+</body></article>
+"""
 
 
 def body(services, **overrides):
@@ -35,6 +45,39 @@ def record_source(services, task_id):
         access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash="a" * 64,
     ))
+
+
+def index_context_source(services, task_id, version_hash="a" * 64):
+    """Freeze a three-paragraph source so a quoted one has real neighbours."""
+
+    source_id = f"PMC123:{version_hash}"
+    record = SourceRecord(
+        title="Demo study", authors=["Ada Lovelace"], year=2026, doi=DOI, pmcid="PMC123",
+        license="CC BY", version="1",
+        access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
+        retrieved_at="2026-10-01T00:00:00+00:00", version_hash=version_hash,
+    )
+    snapshot = SourceSnapshot(source_id=source_id, metadata=record, jats_bytes=CONTEXT_JATS)
+    paragraphs = parse_jats(snapshot)
+    services.store.link_task_source(task_id, source_id)
+    services.store.index_source(source_id, record, CONTEXT_JATS)
+    services.store.index_paragraphs(source_id, paragraphs)
+    return source_id, paragraphs
+
+
+def retrieved(paragraph, rank=1):
+    return EvidenceCandidate(paragraph_id=paragraph.paragraph_id, section=paragraph.section,
+                             quote=paragraph.text, paragraph_hash=paragraph.paragraph_hash,
+                             source_url=paragraph.source_url, round=0, rank=rank, entered_context=True)
+
+
+def citing(paragraph):
+    return {"agent": "paper", "label": "支持", "rationale": "原文支持该论断。",
+            "supported_parts": [], "scope_differences": [], "limitations": [],
+            "evidence": [{"paragraph_id": paragraph.paragraph_id, "quote": paragraph.text,
+                          "section": paragraph.section, "source_url": paragraph.source_url,
+                          "paragraph_hash": paragraph.paragraph_hash, "validation": "pass"}],
+            "validation": "pass"}
 
 
 def test_run_config_exposes_the_frozen_digest(client, services):
@@ -279,6 +322,132 @@ def test_history_is_filterable_and_keeps_the_claim_excerpt(client, services):
     task_id = create(client, services).json()["id"]
     assert [row["id"] for row in client.get("/api/checks", params={"status": "QUEUED"}).json()] == [task_id]
     assert client.get("/api/checks", params={"status": "COMPLETED"}).json() == []
+
+
+def test_the_input_route_returns_exactly_what_was_submitted(client, services):
+    """详情视图只在 `source` 里给 DOI，而 `source` 在来源身份解析成功前为 null —— 这是**详情视图**的空窗。
+
+    本接口提供不必先列历史即可按任务取回提交原文，并给出该任务冻结的授权范围。
+    它并非取得提交 DOI 的唯一路径：`CheckSummary` 也带 DOI，工作台早已从历史行
+    回退预填「修改原句」「拆分论断」（`originalDoi` 的第二优先级即该行）。
+    """
+
+    submitted = "  The intervention reduced mortality.  "
+    task_id = create(client, services, claim=submitted).json()["id"]
+
+    response = client.get(f"/api/checks/{task_id}/input")
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": task_id,
+        "claim": submitted,                       # 逐字返回，不折叠空白也不截断
+        "doi": DOI,
+        "previous_id": None,
+        "config_digest": services.settings.config_digest(),
+        "authorized_recipients": [services.settings.primary_recipient],
+    }
+    # 同一时刻的详情视图给不出 DOI —— 这是详情视图在该阶段的空窗。
+    assert client.get(f"/api/checks/{task_id}").json()["source"] is None
+    assert client.get("/api/checks/unknown/input").status_code == 404
+
+
+def test_the_input_route_keeps_the_link_to_the_original_task(client, services):
+    original = create(client, services).json()["id"]
+    services.store.request_cancel(original)
+
+    retried = create(client, services, previous_id=original).json()["id"]
+    payload = client.get(f"/api/checks/{retried}/input").json()
+    assert payload["previous_id"] == original
+    assert payload["claim"] == "The intervention reduced mortality."
+
+
+def test_evidence_context_reads_the_frozen_paragraphs_and_their_neighbours(client, services):
+    task_id = create(client, services).json()["id"]
+    source_id, paragraphs = index_context_source(services, task_id)
+    # 序号 2 被检索到并进入上下文，序号 3 被最终判断引用。
+    services.store.record_candidates(task_id, [retrieved(paragraphs[1])])
+    assert services.store.finish(task_id, status=TaskStatus.COMPLETED, stage="evidence_validation",
+                                 error_code=None, label="支持",
+                                 decision=citing(paragraphs[2])) is True
+    finished_at = client.get(f"/api/checks/{task_id}").json()["finished_at"]
+
+    response = client.get(f"/api/checks/{task_id}/evidence-context")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == task_id
+    assert payload["source_id"] == source_id
+    # 两处锚点各自展开 ordinal±1，合起来正是 1..3 且按序号升序。
+    assert [item["paragraph_id"] for item in payload["paragraphs"]] == [
+        paragraph.paragraph_id for paragraph in paragraphs
+    ]
+
+    flags = {item["paragraph_id"]: (item["entered_context"], item["cited"])
+             for item in payload["paragraphs"]}
+    assert flags[paragraphs[0].paragraph_id] == (False, False)   # 仅作为邻段进入
+    assert flags[paragraphs[1].paragraph_id] == (True, False)
+    assert flags[paragraphs[2].paragraph_id] == (False, True)
+
+    quoted = payload["paragraphs"][2]
+    assert quoted["text"] == paragraphs[2].text                  # 冻结原文，不是脱敏占位
+    assert quoted["section"] == "Results"
+    assert quoted["paragraph_hash"] == paragraphs[2].paragraph_hash
+    assert quoted["source_url"] == paragraphs[2].source_url
+    assert "validation" not in quoted                            # 邻段只作上下文，不是证据
+
+    # 只读投影：读过之后任务状态与结束时刻都不变。
+    after = client.get(f"/api/checks/{task_id}").json()
+    assert after["status"] == "COMPLETED" and after["finished_at"] == finished_at
+
+
+def test_evidence_context_is_empty_until_a_source_is_frozen(client, services):
+    """空数组表示「暂时没有内容」，不是「来源不存在」，也不是失败。"""
+
+    task_id = create(client, services).json()["id"]
+    response = client.get(f"/api/checks/{task_id}/evidence-context")
+    assert response.status_code == 200
+    assert response.json() == {"id": task_id, "source_id": None, "paragraphs": []}
+    assert client.get("/api/checks/unknown/evidence-context").status_code == 404
+
+
+def test_evidence_context_never_reads_across_sources(client, services):
+    """跨来源段落标识解析为空：邻段读取只在冻结来源内，不泄漏别处的段落。"""
+
+    task_id = create(client, services).json()["id"]
+    source_id, _paragraphs = index_context_source(services, task_id)
+    services.store.record_candidates(task_id, [
+        EvidenceCandidate(paragraph_id=f"p:PMC999:{'b' * 64}:jats-0.1.0:2", section="Results",
+                          quote="foreign paragraph", paragraph_hash="f" * 64,
+                          source_url="https://example.invalid/elsewhere", round=0, rank=1,
+                          entered_context=True),
+    ])
+
+    payload = client.get(f"/api/checks/{task_id}/evidence-context").json()
+    assert payload["source_id"] == source_id
+    assert payload["paragraphs"] == []
+
+
+def test_a_frozen_digest_stops_being_accepted_once_the_effective_config_changes(client, services):
+    """`/input` 给的是冻结摘要，而 POST 校验当前摘要——两者不等时必须 409。
+
+    这是接前端时最容易踩的一处：把 `/input` 的 `config_digest` 直接回填进
+    「修改原句」的重提请求，只要有效配置没变就能通过，配置一旦变过就会 409。
+    """
+
+    task_id = create(client, services).json()["id"]
+    frozen = client.get(f"/api/checks/{task_id}/input").json()["config_digest"]
+    # 刚创建的任务，冻结摘要就是当前有效摘要。
+    assert frozen == services.settings.config_digest()
+
+    # 有效配置未变：冻结摘要仍在允许集合内，重提被接受。
+    assert create(client, services, config_digest=frozen, previous_id=task_id).status_code == 202
+
+    # 有效配置改变后，同一个冻结摘要不再属于允许集合，重提被拒。
+    services.settings = replace(
+        services.settings, retrieval_context_limit=services.settings.retrieval_context_limit + 1
+    )
+    assert services.settings.config_digest() != frozen
+    rejected = create(client, services, config_digest=frozen, previous_id=task_id)
+    assert rejected.status_code == 409
+    assert rejected.json() == {"error_code": None, "message": "配置已更改，请重新预览并确认"}
 
 
 def test_diagnostic_export_rejects_a_blank_recipient_and_normalizes_spacing(client, services):
