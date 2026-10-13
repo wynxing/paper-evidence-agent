@@ -899,7 +899,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 - 上游全部换成替身（`tests/e2e/support/upstreams.py`，stdlib `ThreadingHTTPServer`）：Crossref 元数据与 agency、DOI 解析探针（302）、PMC idconv、PMC OAI-PMH 的 GetRecord（含真 JATS 的 `<article>`）、OpenAlex 线索，外加一个 OpenAI 兼容的 `/v1/chat/completions`。`POST /_stub/delay`、`POST /_stub/mode` 让用例按需制造「任务在途」与「上游不可用」，不必重启进程。
 - 两个 Python 进程必须拿到**完全一致**的 `Settings`：提交时 API 用提交的 `config_digest` 与自己的快照比对（`api/app.py:403`），所以来源地址与 `timeouts` 共用一份构造（`support/runtime.py`）。单次模型尝试上限调到 8 秒，只为让「上游超时」用例不必真等 45 秒；两个进程同值，快照仍自洽。
 - 任务库的「空」起点由**每轮新建数据目录**保证，不在启动脚本里删上一轮的库：四个 `webServer` 并发启动，worker 可能先一步打开 SQLite，后启动的进程再 `unlink` 就撞上文件锁（实测 `PermissionError: [WinError 32]`）。轨迹与报告同样按轮次分目录，避免 Playwright 启动时去清上一轮的成百个轨迹文件。
-- 按 Issue #26 定下的口径（2026-10-13）：Playwright 依赖由 `tests/e2e/` 自持，**不并入** `frontend/package.json`；`.github/workflows/ci.yml` 增加独立的 **`e2e` 检查项**，该作业装后端依赖与前端依赖（用例要起真前端 dev server）、`cd tests/e2e && npm ci`、`npx playwright install --with-deps chromium` 后跑 `npm test`，失败时上传 `tests/e2e/.run/results-*` 供定位；`PAPER_EVIDENCE_E2E_PYTHON` 在该作业里指向 setup-python 装到 PATH 上的解释器。**本节只到「作业已写入工作流」为止**：该作业在 CI 上的实际结果此刻尚未取得，本轮能确证的只有本机 Windows 上 13 条用例通过（见上表）。
+- 按 Issue #26 定下的口径（2026-10-13）：Playwright 依赖由 `tests/e2e/` 自持，**不并入** `frontend/package.json`；`.github/workflows/ci.yml` 增加独立的 **`e2e` 检查项**，该作业装后端依赖与前端依赖（用例要起真前端 dev server）、`cd tests/e2e && npm ci`、`npx playwright install --with-deps chromium` 后跑 `npm test`，失败时上传整轮运行目录 `tests/e2e/.run/` 供定位（轨迹、HTML 报告，以及常驻 worker 自己写的那份 `worker.log`）；`.run/` 是隐藏目录，作业里必须开 `include-hidden-files`。`PAPER_EVIDENCE_E2E_PYTHON` 在该作业里指向 setup-python 装到 PATH 上的解释器。**本节只到「作业已写入工作流」为止**：该作业在 CI 上的实际结果此刻尚未取得，本轮能确证的只有本机 Windows 上 13 条用例通过（见上表）。
 
 ### 端到端维度的前置
 

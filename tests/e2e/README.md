@@ -49,4 +49,6 @@ PAPER_EVIDENCE_E2E_PYTHON=<后端 venv 的 python> npm test
 ## CI
 
 `.github/workflows/ci.yml` 里有一个独立的 `e2e` 检查项跑这套用例。按 Issue #26 的决定，
-它**先跑稳、暂不设为合并必须通过**；失败时会把轨迹上传成 `e2e-traces` 产物便于定位。
+它**先跑稳、暂不设为合并必须通过**；失败时把整轮运行目录 `tests/e2e/.run/` 上传成
+`e2e-run` 产物（轨迹、HTML 报告、常驻 worker 自己写的 `worker.log`）。
+`.run/` 是隐藏目录，上传时要开 `include-hidden-files`，否则等于什么都没传。

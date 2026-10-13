@@ -141,6 +141,11 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: pythonEnv,
+      // 就绪只看 8001 端口通不通，看不出一句话之后它还活不活着。stdout 默认是
+      // ignore，接出来才能在 CI 上看到它到底停在哪一步（同一份输出另外还落在
+      // 数据目录的 worker.log 里，随产物上传）。
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
       command: `npm --prefix "${path.join(ROOT, 'frontend')}" run dev -- --port ${FRONTEND_PORT} --strictPort`,
