@@ -31,7 +31,7 @@
 | 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0。结果来自本地检查。仓库现有 CI：`backend` 执行 pytest，`frontend` 执行前端测试与构建 |
 | 对象 | 接口占位、领域契约、端口说明、锁定文件、README、开发指南和前端类型。没有来源解析、持久化、模型调用或任务执行实现 |
 
-## 实际检查
+## 骨架评审修正：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -40,7 +40,7 @@
 | `npm --prefix frontend ci && npm --prefix frontend run build` | 安装锁定依赖后，vue-tsc 与 Vite 构建通过 |
 | README 与开发指南的本地链接、`git diff --check` | 本地链接均存在；`git diff --check` 无输出 |
 
-## 未覆盖项
+## 骨架评审修正：未覆盖项
 
 来源解析、持久化、真实模型调用、任务执行和论文语义验收仍未实现。实现方没有在 Windows 上重跑测试；原 Windows 失败来自评审记录的 `socket.connect` 拦截，本次改为拦截 `create_connection` 与 `getaddrinfo`，并在 Windows 上改用选择器事件循环。[评审方复审](https://github.com/wynxing/paper-evidence-agent/pull/4#issuecomment-5950892819)报告在 Windows / Python 3.13 上复现此提交为 21 passed、1 warning；这是第三方记录，不是实现方本机验证，也不代表 editable 安装支持 Python 3.13。临时目录为空不能证明没有绝对路径写入。没有性能、取消时限或真实论文验收数据。
 
@@ -53,7 +53,7 @@
 | 环境 | Linux、Python 3.12.14、Node.js v26.10.0、npm 12.2.0；新建 venv 并安装既有锁定依赖。没有新增依赖 |
 | 改动 | 保留 HTTP 错误响应头、来源预览 ContractError 映射、创建任务 409 模型、422 脱敏字段信息、TS 对象形状及响应状态双向检查、默认预算/超时工厂和平台说明 |
 
-### 实际检查
+### 最新复审修正：实际检查
 
 以下命令均从独立工作树的仓库根目录执行，完整测试和构建在对象提交已落地且工作区干净时运行。
 
@@ -87,11 +87,11 @@ print(f'{count} local file links passed')
 PY
 ```
 
-### 失败与修复过程
+### 最新复审修正：失败与修复过程
 
 初轮完整测试为 **4 failed / 49 passed**：422 脱敏字段路径使用了当前 FastAPI 已移除的 ModelField.type_，导致已声明的字段也被遮成 `<unknown>`。对照安装版本确认应读取 field_info.annotation 后修复；新增公共响应规则检查后，对象提交的完整套件为上述 54 passed。没有削弱字段路径断言。首次提交因环境未配置 Git 作者身份失败，随后仅在提交命令中沿用原 PR 提交的作者身份，没有修改全局或仓库配置。
 
-### 覆盖与限制
+### 最新复审修正：覆盖与限制
 
 新增检查使用合成请求及测试应用：九种来源预览业务错误保留真实错误码和 HTTP 映射；未定义的错误或其他端点不会被预览映射重分类；405 保留 Allow、自定义头透传、结构化 HTTPException 日志不含原始键值；422 覆盖缺字段、类型错误、非法 JSON、查询字段、数组位置及额外字段脱敏。前后端对象检查覆盖继承、Omit、字段集合、必填性和可空性，包含刻意改变接口的失败用例；响应状态检查覆盖两侧状态增删、错误模型及公共规则移除。七个默认配置值从术语表核对，并验证每次生成独立实例。
 
@@ -106,7 +106,7 @@ PY
 | 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；新建 venv 安装 `backend/requirements.lock` 与 editable 包；未新增依赖 |
 | 对象 | 后端实现：领域摘要与文本契约、SQLite+FTS5 存储、FTS5 检索与 JATS 冻结、来源连接器、模型网关、有界核验状态机、诊断投影、本地轨迹、HTTP 路由与单进程 worker；README 与开发指南同步更新 |
 
-### 实际检查
+### 后端实现验证记录：实际检查
 
 以下命令均从工作树仓库根目录执行；完整测试与构建在对象提交已落地后运行。
 
@@ -119,11 +119,11 @@ PY
 | 本地 Markdown 文件链接检查（README、architecture、development、verification） | 42 个本地文件链接存在；不检查锚点及外部 URL |
 | `git diff --cached --check`、暂存文件范围与凭据模式检查 | 无空白错误；代码提交含 37 个任务文件，未包含环境、`node_modules`、`dist` 或缓存；未匹配常见私钥与 token 模式。不是全仓敏感信息审计 |
 
-### 失败与修复过程
+### 后端实现验证记录：失败与修复过程
 
 实现进行中的一轮为 **4 failed / 104 passed**：两处是实现与契约不一致（DOI 未按大小写不敏感标准化、PMC 记录缺少许可时先于正文语言门槛报错），两处是用例期望写错（负零摘要、引号重复位置）。分别修正 `normalize_doi` 的小写标准化、在来源测试夹具中补上 CC BY 许可声明、并修正用例期望；未削弱任何断言。另修复 `class SqliteStore` 内的 `list` 方法遮蔽内置名导致的注解求值错误（改用 `from __future__ import annotations`）。对象提交最终为本节的 108 passed。
 
-### 覆盖与限制
+### 后端实现验证记录：覆盖与限制
 
 覆盖：OpenAPI 响应表与架构文档双向一致（不再放宽 `501`）、前端对象形状、领域枚举与默认预算、规范 JSON 摘要与文本/定位契约、FTS5 查询编译与 JATS 确定性、来源内检索与索引故障返回 `RETRIEVAL_FAILED`、任务路由的创建/授权/取消/重试/删除/反馈/诊断脱敏、来源与网关的状态映射（含 `httpx.MockTransport` 桩）、有界工作流的正常/补读/全局修复/预算耗尽/来源阻断/总超时/已受理取消出口。
 
@@ -157,7 +157,7 @@ PY
 | 非阻塞：失败路径 `params_digest` | `ModelFailure` 携带完整 `ModelCall`，成功与失败路径共用同一 `params_digest` |
 | 非阻塞：ElementTree 前提 | 开发指南注明 PMC OAI-PMH 使用标准库 `xml.etree.ElementTree`（expat）及其实体膨胀限制为前提 |
 
-### 实际检查
+### PR #8 复审修正：实际检查
 
 以下命令均从工作树仓库根目录执行。
 
@@ -172,11 +172,11 @@ PY
 
 说明：不加 `--basetemp` 时，测试进度到 100% 后本机沙箱的 safe-delete 守卫会拦截 pytest 清理历史临时目录（`SAFE_DELETE_BULK_GUARD_ERROR`），导致汇总行未打印、退出码为 1；进度点共 138 个且无 `F`/`E`。使用独立 `--basetemp` 可得完整汇总，即上表的 138 passed。
 
-### 失败与修复过程
+### PR #8 复审修正：失败与修复过程
 
 首轮完整测试为 **11 failed / 97 passed**，其中 9 条是测试替身与期望未随接口同步（`FakeResolver.resolve` 新增 deadline 形参、`ModelFailure` 改为携带 `ModelCall`、`access_url` 期望值），2 条是实现缺陷。新增回归用例又暴露一处复审未提到的既有缺陷：`_decide` 与 `_generate_queries` 的修复路径漏传 `repairs_request_id`，一旦输出结构错误就会抛 `TypeError` 并被记成 `FAILED + error_code=null`；已补齐目标请求 ID 并留下用例。另移除 `sources/http.py` 与 `storage/sqlite.py` 中两处同类断言依赖。未削弱任何断言。
 
-### 覆盖与限制
+### PR #8 复审修正：覆盖与限制
 
 新增覆盖：确定判断零摘录（修复后发布 / 修复后仍失败为 `QUOTE_MISMATCH`）、「证据不足」可无摘录、修复输出不可解析与请求 3 修复不可解析均为 `MODEL_INVALID_OUTPUT`、仅邻居 retrieve 成功且不消耗修复额度、无 queries 无邻居的 retrieve 被修复、首次空检索拒绝仅邻居 retrieve、引用上下文外段落被修复、摘录错误在修复额度用尽时报 `QUOTE_MISMATCH`、失败与成功路径 `params_digest` 一致、接收方越权 400 与收窄 202、诊断导出只认观测接收方、PMC 转换与 Crossref 的 401/403/400/503 映射、`access_url` 归属、邻居读取与精确读取、墙钟截止时间与到期结算、RUNNING 取消结算、删除的引用计数与单事务。
 
@@ -191,7 +191,7 @@ PY
 | 环境 | Windows / Git Bash、Python 3.12.14、Node.js v22.22.2、npm 10.9.7；沿用既有 venv 与锁定依赖，未新增依赖 |
 | 对象 | `storage/sqlite.py`、`graph/workflow.py`、`worker/runner.py`、`tests/boundary/test_storage_lifecycle.py`、`tests/session/test_workflow.py`、`docs/development.md` |
 
-### 缺陷与根因
+### 取消竞态修正：缺陷与根因
 
 复审复现：任务经 `claim_next` 进入 `RUNNING` 后受理取消，最终仍落 `COMPLETED` 并带确定判断。根因有两处：
 
@@ -210,7 +210,7 @@ PY
 
 两条建议都做了：流程内复查缩小窗口，存储层条件写入把窗口原子关闭。取消现在同时优先于「完成」与「失败」。
 
-### 实际检查
+### 取消竞态修正：实际检查
 
 以下命令均从工作树仓库根目录执行。
 
@@ -222,7 +222,7 @@ PY
 | `npm --prefix frontend run build` | vue-tsc 类型检查与 Vite 生产构建通过（前端未改动） |
 | `PAPER_EVIDENCE_DATA_DIR=<临时目录> backend/.venv/Scripts/python.exe -m paper_evidence.worker` | 退出码 `0`，输出“本次处理了 0 个任务，队列已空” |
 
-### 覆盖与限制
+### 取消竞态修正：覆盖与限制
 
 新增覆盖：RUNNING + 已受理取消时 `COMPLETED` 与 `FAILED` 写入均被拒且状态保持 `RUNNING`、随后 `CANCELLED` 落库；无取消时普通完成仍写入（守卫不误伤）；取消在最终 decision 响应返回时受理 → 终态 `CANCELLED` 且 `label`/`decision` 为 `null`；取消先于上游失败受理 → 终态 `CANCELLED` 而非 `FAILED`。
 
@@ -237,7 +237,7 @@ PY
 | 环境 | Linux、Node.js v22.14.0、npm 10.9.7。命令从仓库根目录执行。未新增依赖，未改锁定文件、后端或公共契约 |
 | 对象 | `frontend/src/state/workbench.ts`、`frontend/tests/workbench-orchestration.test.mjs`、`.github/workflows/ci.yml`、README 持续集成两句 |
 
-### 实际检查
+### 前端工作台编排层：实际检查
 
 `npm ci` 在改代码之前执行，锁定文件与对象提交相同。测试与构建在对象提交落地且工作区干净时执行。差异检查比较的是该提交与 main。
 
@@ -248,7 +248,7 @@ PY
 | `npm --prefix frontend run build` | `vue-tsc --noEmit` 通过，Vite 生产构建通过 |
 | `git diff --check origin/main...HEAD` | 无输出，退出码 0。范围是对象提交相对 main，不含本节 |
 
-### 覆盖与限制
+### 前端工作台编排层：覆盖与限制
 
 编排测试在 Node 内置测试运行器里挂载 `useWorkbench`，注入替身客户端、短间隔的真实轮询器或可控轮询器，以及 hash / 可见性替身。覆盖：提交（含 DOI 规范化、进行中的第二次提交不重发）、轮询推进到终态后停止、网络错误与 503 后续轮询、契约不一致 / 404 / 409 停止轮询、导航后的迟到读取不覆盖当前任务、重试走 `retryCheck` 且新历史行保留 DOI、取消成功后停止轮询、取消失败后续轮询、409 后刷新配置、501 保留草稿且不进入模拟模式、隐藏页面不启动轮询、畸形 hash 提示、注入客户端优先于 demo 模式、未注入时 demo 模式仍用内存客户端、语义导出缺少同意标记时不发请求。
 
@@ -263,7 +263,7 @@ PY
 | 环境 | Windows、Python 3.12.14、Node.js v22.22.2、npm 10.9.7。后端依赖装在新临时 venv 中，命令从工作树仓库根目录执行。未新增依赖，未改 `pyproject.toml` 依赖列表与锁定文件 |
 | 对象 | `backend/paper_evidence/` 下的 `domain/contracts.py`、`domain/text.py`、`storage/sqlite.py`、`sources/service.py`、`config.py`、`api/app.py`、`worker/__main__.py`、`worker/runner.py`；`frontend/src/`；两处契约文档；相关测试 |
 
-### 实际检查
+### 前后端接口缺口：实际检查
 
 测试与构建在对象提交落地、工作区干净时执行。
 
@@ -279,14 +279,14 @@ PY
 
 关于中断的实测细节：用 `CTRL_BREAK_EVENT` 结束时进程退出码为 `3221225786`（`0xC000013A`，`STATUS_CONTROL_C_EXIT`），stderr 为空，即 Python 层的中断分支没有机会执行。控制台控制事件如何到达进程因平台与终端而异，因此该路径改由 `tests/boundary/test_domain_contract.py` 的入口层用例固定：`--loop` 走到 `drain_forever`、中断按正常停止处理、退出码 `0`、打印「worker 收到中断，已停止。」。真实信号下的可观测行为在本机 Windows 终端上仍未确认。
 
-### 覆盖
+### 前后端接口缺口：覆盖
 
 - 契约双向比对：`tests/boundary/test_frontend_shapes.py` 把 `contracts.ts` 与 OpenAPI 逐字段比对（字段名、必填性、可空性、继承与 `Omit`），`tests/tools/test_api_contract.py` 把架构文档的响应状态表与 OpenAPI 双向比对。二者在本轮随契约扩展一起通过，因此新字段的前后端一致是被断言过的，不是只看代码。这 6 条用例在本次之前的工作树里因未安装 Node 与前端依赖而未实际执行。
 - 存储：历史行带摘要与创建时间、倒序、筛选；详情返回原句、书目与三个时刻；排队期取消会写 `finished_at`；书目索引保留作者与年份；旧行缺 `authors`/`year` 时按空值读出；用构造的旧版 schema 数据库打开后补齐列且保留原有行。
 - 接口：历史与详情返回新字段、按 `status` 筛选；诊断导出对空字符串与全空白收件人返回 `400`，对带首尾空格的已授权收件人按归一化值返回 `200`；配置读取归一化 `"A, B"` 与全空白值。
 - 前端：演示数据满足新契约；历史倒序与摘要；详情计时助手在缺失或时间倒挂时返回未知而非估算；未缓存上下文时由任务记录恢复原句，从而「修改原句」「拆分论断」可用，且任务未记录原句时仍拒绝；重试草稿仍不填原句。
 
-### 未覆盖
+### 前后端接口缺口：未覆盖
 
 - 没有真实上游调用。Crossref、DOI 官方解析、PMC ID 转换与 OAI-PMH、OpenAlex、本机 LiteLLM Proxy 仍未实测，连接器与网关只用 `httpx.MockTransport`。
 - 没有端到端联调。前端轮询 + 常驻 worker + 真实取回全文的完整链路未跑通；“任务从 `QUEUED` 进入 `RUNNING` 并被前端看到”只有单元与编排测试支持，没有跨进程实测。
@@ -303,7 +303,7 @@ PY
 | 关联 | 独立端到端复核发现：真实网络中 `fetch` 阶段恒定失败于 `UPSTREAM_INVALID_REQUEST`。属新增发现，非既有清单项 |
 | 环境 | Windows / Git Bash、Python 3.12.13、Node.js v22.22.2、npm 10.9.7。命令从仓库根目录执行。未新增依赖 |
 
-### 缺陷与根因
+### PMC OAI 取回链路修复：缺陷与根因
 
 三项叠加，全部在 PMC 全文取回链路上，mock 测试无法暴露：
 
@@ -312,12 +312,12 @@ PY
    > ⚠️ **该结论已于 2026-10-12 被实测推翻（Issue #28）**：`pmc_fm` 返回的 `<article>` **不含 `<body>`**，只有题录+摘要；`pmc` 才返回正文（OA 子集记录，3/3 样例）。详见「PMC 全文取回：metadataPrefix 修正」一节。此处保留原文以说明当时的判断依据。
 3. `pmc.py` 调用 `Fetcher.get` 时未传 `follow_redirects=True`；`http.py` 默认 `False`，且 301 小于 400 会被 `Fetcher` 原样返回，随后在 `fetch_record` 的 `status_code != 200` 分支被记为 `UPSTREAM_INVALID_REQUEST`。
 
-### 修复
+### PMC OAI 取回链路修复：修复
 
 - `config.py`：默认端点改为 `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/`。
 - `pmc.py`：`metadataPrefix` 改为 `pmc_fm`（**已于 2026-10-12 订正为先 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，详见「PMC 全文取回：metadataPrefix 修正」一节**）；`fetch_record` 的请求显式传 `follow_redirects=True`。
 
-### 实际检查
+### PMC OAI 取回链路修复：实际检查
 
 测试在改动落地、工作区干净时执行。
 
@@ -338,7 +338,7 @@ fetch                success    ← 此前恒为 error
 query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
 ```
 
-### 未覆盖
+### PMC OAI 取回链路修复：未覆盖
 
 - 未验证真实模型调用：本机 LiteLLM Proxy（`127.0.0.1:4000`）未运行，`query_generation` 及之后的判断、证据校验阶段仍未在真实上游下跑通。
 - 端到端只到 `fetch` 为止，仍是单进程内直接调用 `drain`，未使用 PR #15 的 `--loop` 常驻模式做跨进程联调。
@@ -357,7 +357,7 @@ query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
 
 新增依赖 `litellm==1.105.0` 已获用户明确授权（此前 `AGENTS.md` 要求不擅自加依赖）。
 
-### 实际检查
+### 模型传输切到进程内 LiteLLM SDK：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -376,7 +376,7 @@ query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
 
 探针查出一处真实缺陷，随本提交修掉：litellm 的 `BadGatewayError`、`InvalidRequestError`、`APIResponseValidationError` 直接继承 `openai` 的基类而非 litellm 的同名类，原来的映射表只列 litellm 同名类、兜底项也取自 `litellm.APIError`，这些类因此漏出未映射。修前「上游端口未监听」会以 `error_code=null`（worker 的未分类失败分支）结束，修后为上表的 `UPSTREAM_UNAVAILABLE`。
 
-### 覆盖
+### 模型传输切到进程内 LiteLLM SDK：覆盖
 
 - 错误映射：十类 litellm 异常到错误码的映射，并单独固定 `Timeout` 不因继承 `APIConnectionError` 而被读成连接失败。穷尽性用例遍历 `litellm.exceptions` 命名空间，要求每个异常类要么被映射、要么在 `NOT_UPSTREAM_FAILURES` 里显式列出，因此 litellm 升版新增异常类会直接失败，而不是静默漏成 `error_code=null`。
 - 恢复：可恢复错误消耗一次恢复额度并记 `recovery_kind=retry`；不可恢复错误不重试；`attempts_per_request=1` 时不重试；Retry-After 被等待；Retry-After 超过任务剩余时间时不消耗预算直接失败；任务余量不足时按 `TASK_TIMEOUT` 结束。
@@ -386,7 +386,7 @@ query_generation     error      UPSTREAM_UNAVAILABLE（Proxy 未启动）
 - SDK 入口本身：两条用例经真实 `litellm.acompletion` 加 `mock_response` 走通，证明真实 `ModelResponse` 里确实取得到调用标识与 usage，真实失败也落到同一张映射表。`mock_response` 在派发前返回，不访问网络。
 - 依赖闭包：闭包校验覆盖了新增依赖；`_distribution_name` 现能处理 setuptools 旧式 `name (<1,>=x)` 元数据（botocore 仍是这种写法，此前会让 boto 一整支不被遍历），extra 归属修正为依赖自身，litellm 的 `httpx[http2]` 因此被正确遍历。
 
-### 未覆盖
+### 模型传输切到进程内 LiteLLM SDK：未覆盖
 
 - 没有真实模型调用。Agnes 或任何供应商的端点、鉴权与真实响应形状未实测；本机无网络出口，真实入口验证止于 `mock_response` 与「连不上」两类路径。因此「SDK 形态能拿到真实模型版本」未验证，`verified_model_version` 仍只能是 null。
 - Proxy 形态未做真实连通性验证，仍只用 `httpx.MockTransport` 的状态映射用例；`PAPER_EVIDENCE_MODEL_TRANSPORT=gateway` 与真实 LiteLLM Proxy 的联调未做。
@@ -433,7 +433,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 相矛盾 | `contradicted_causality` | 因果关系被主张（原文指出下降早于治疗引入） |
 | 证据不足 | `insufficient_unrelated` | 检索到内容但均不支持论断 |
 
-### 实际检查
+### 功能准确性语义验收：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -449,7 +449,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 正向断言与负向控制共用同一个 `acceptance_failures`，因此控制不通过时不得用该验收器发布语义成绩（测试方案「验收器负向控制」）。
 
-### 未覆盖
+### 功能准确性语义验收：未覆盖
 
 - 样本的 JATS 是**人工构造的最小可解析快照**，不是真实论文原文；`claim_kind` 均为 `constructed` 并附 `claim_note`，不冒充自然引文。测试方案要求的「小规模真实 PMC 来源集」尚未建立。
 - 标签由单人整理，尚无第二人复核（测试方案「标注」要求一人整理、另一人复核）。分歧解决前不计为确定真值。
@@ -464,7 +464,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 环境 | Windows、Python 3.12.13，`backend/.venv` 由 uv 创建，依赖按 `backend/requirements.lock` 安装 |
 | 对象 | `tests/adversarial/conftest.py`、`test_untrusted_input.py`、`test_leakage.py`、`test_export_boundary.py`、`test_observability.py`（均为新增） |
 
-### 实际检查
+### 对抗与安全维度：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -485,7 +485,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 观测接收方配置缺失或全空白 | 均为 `None`，不产生接收方 |
 | 启用观测不改变核验 | 任务仍 `COMPLETED`；模型请求数仍为 2（查询生成 + 判断），不增加业务重试 |
 
-### 未覆盖
+### 对抗与安全维度：未覆盖
 
 - **Langfuse 导出尚未实现**：`tracing/` 只有本地 SQLite 记录器（`LocalTraceRecorder`），没有出站导出路径。因此测试方案中「启用后的故障不改变核验状态、脱敏回调不得带出原句或响应」没有可测对象，本节只覆盖「启用不改变核验结果」与「默认关闭」。**「默认关闭时零网络导出」在本实现下是通过"没有导出代码"而非"导出被关闭"满足的**，实现时必须重新验证。
 - **`Fetcher` 没有端点白名单**：`sources/http.py` 的 `get()` 接受任意 URL，端点固定靠调用方约定（各 connector 用构造时传入的配置前缀）。本节从调用方一侧验证了前缀不被输入改变，但没有覆盖"未来新增 connector 是否遵守约定"。
@@ -512,7 +512,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | #16 第 2 条（时间戳一致） | `updated_at` / `finished_at` 由同一处 `_now()` 复用 |
 | 最简模型密钥配置说明 | `development.md` / `README.md` 写明最小集与失败行为 |
 
-### 实际检查
+### 端到端联调后端缺口：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -536,7 +536,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 工厂抛异常落终态 | 已领取任务落 `FAILED`、`error_code is None`、`finished_at` 非空，且不可重复领取 |
 | 冻结摘要重提边界 | 有效配置未变时，用 `/input` 的冻结摘要重提被接受（`202`）；配置改变后同一摘要被拒（`409`、`error_code=null`、固定文案「配置已更改，请重新预览并确认」） |
 
-### 未覆盖
+### 端到端联调后端缺口：未覆盖
 
 - 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型，且目前**无前端调用方**：`frontend/src/api/contracts.ts` 已声明两者，但 API 客户端没有对应方法，全仓也搜不到 `evidence-context` 的调用点。
 - **`evidence-context` 在真实来源上目前只能返回锚点自身**：真实 PMC 经 `metadataPrefix=pmc_fm` 取回的「全文」实际只含题录与摘要（`jats_bytes` 的 `<body>` 计数为 0，见 #28），该来源段落表仅 0~1 段，因此 `ordinal±1` 的邻段展开恒为空，「引文前后是什么」在当前冻结内容下无法兑现。此前写作「冻结样本仅 3 段」会让人误以为换成真实来源即可，属措辞不准；该项在 #20 中记为**阻塞**，随 #28 修复。
@@ -573,7 +573,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | B4 同一行把「评审手工复核」写成「测试覆盖」 | 改为「自动化用例覆盖 `QUEUED`；`BLOCKED` 为评审手工复核（无对应用例）；`RUNNING` 未覆盖」 |
 | 时间戳用例在 Windows 上近乎恒真（非阻塞） | 采纳评审建议 1：用例内把 `sqlite._now` 换成自增计数，使「同一处复用」仍相等而「两次取钟」必然不等，断言脱离时钟分辨率 |
 
-#### 实际检查（第二轮）
+#### 评审修正（第二轮）：实际检查
 
 环境：Windows、Python 3.12.14、pytest 9.1.1；Node v22.22.2。后端全量前已装齐 `requirements.lock`（含 `litellm` 及其传递依赖），前端已有 `node_modules`。
 
@@ -601,7 +601,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 此前 PR #22 只产出「逐例通过」，没有任何指标数字，而测试方案要求报告摘录定位、语义正确情况、各类 precision/recall 与可判定覆盖率。本节补齐该口径。
 
-### 实际检查
+### 语义验收报告口径：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -627,7 +627,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 **这些数字不得当作总体准确率**：样本是人工构造的，N=7 单次抽样，且真值单人标注无第二人复核。
 
-### 未覆盖
+### 语义验收报告口径：未覆盖
 
 - **来源匹配准确率、证据 Recall@k** 需要独立基准与采样协议，本验收集不产出，报告内列为未覆盖而非填 0。
 - **不确定区间**需要采样协议，N=7 不估计。
@@ -642,7 +642,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 环境 | Windows、Python 3.12.13（`backend/.venv`，uv 创建）、Node 22.22.2 / npm 10.9.7 |
 | 对象 | `backend/paper_evidence/sources/pmc.py`、`tests/tools/test_sources.py` |
 
-### 缺陷与根因
+### PMC 全文取回：缺陷与根因
 
 `fetch_record` 使用 `metadataPrefix=pmc_fm`。`pmc_fm` 是 PMC **F**ront **M**atter：返回的 `<article>` **不含 `<body>`**，只有题录、摘要与许可。于是冻结进 `SourceSnapshot` 的「全文」实际只有摘要，`parse_jats` 按设计回落到 `<abstract>`。
 
@@ -660,13 +660,13 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | `pmc_fm` | `<body>` 计数 **0**，`<p>` 4 | `<body>` 0，`<p>` 3 | `<body>` 0，`<p>` 0 |
 | `pmc` | `<body>` **1**，`<sec>` 8，`<p>` 38 | `<body>` **1**，`<sec>` 20，`<p>` 57 | `<body>` **1**，`<sec>` 0，`<p>` 6 |
 
-### 修复
+### PMC 全文取回：修复
 
 - `fetch_record` **先请求 `pmc`（正文）**；仅在 PMC 返回 OAI 错误码 **`cannotDisseminateFormat`**（记录不在 OA 子集）时，才回落到 `pmc_fm`。其它 OAI 错误照旧映射 `SOURCE_UNAVAILABLE`，且不做第二次请求。
 - 请求与解析拆为 `_get_record()`，错误处理按 `error` 元素的 **`code` 属性**判定，不再按「是否存在 `error` 元素」一刀切。
 - 就地订正两处与实测相反的说明：`pmc.py` 的常量注释、原测试的 docstring 与函数名（原名 `test_pmc_oai_request_uses_the_full_text_metadata_prefix` 断言 `pmc_fm`，前提本身是错的）。
 
-### 实际检查
+### PMC 全文取回：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -699,7 +699,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 按复核意见，本节同时把 README「当前状态」里已被实测推翻的「外部来源连通性尚未验证」收窄为「模型连通性与论文语义验收尚未验证」（见下表），使仓库内表述与实测一致；两处改动同属本 PR。
 
-### 实际检查
+### 端到端联调前置基线与真实链路探测：实际检查
 
 | 检查 | 结果 |
 | --- | --- |
@@ -789,6 +789,56 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 ### 一条方法学提醒
 
 首次探测 `GET /health` 曾返回 **HTTP 502「upstream connect failed … (os error 10061)」**，随后连续三次复测均为 200。原因是 uvicorn 尚未完成端口绑定，请求被前置链路拒绝。`/health` 的实现为直接返回 `{"status":"ok"}`，不具备产生该错误码的路径。**探测前必须等后端就绪，否则会得到伪造的 502**；记录时须先复测再判定。
+
+## 验证记录标题去重与协作规范角色化（2026-10-13）
+
+| 项目 | 记录 |
+| --- | --- |
+| 对象提交 | `0ccb753`（纯文档改动：`AGENTS.md` 与 `docs/verification.md`），不含代码；本节随后单独提交，避免提交哈希自指 |
+| 关联 | Issue #33（#30 评审的三条后续）；分支 `docs/heading-dedup-and-roles`，按 [AGENTS.md](../AGENTS.md) 从 `617c48d`（main）新建独立工作树 |
+| 环境 | Windows / Git Bash、Python 3.12（主工作树 `backend/.venv`）。本轮只改文档，未涉及后端与前端代码 |
+| 改动 | 1）`AGENTS.md` 把「标题不得重名」从「追加时的子标题」扩到节标题与各级子标题，并写明角色到账号的对应只在「分工」一节维护；2）`docs/verification.md` 把 39 个重名标题改为带节名前缀的唯一措辞 |
+
+### 标题去重：实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| 标题抽取与重名统计（跳过围栏代码块，`#`~`####`） | 改动前 **72 个标题 / 40 个不同文本**（8 组重名）；改动后 **72 个标题 / 72 个不同文本，无重名** |
+| 重名明细（改动前） | `实际检查`×16、`未覆盖`×7、`覆盖与限制`×5、`失败与修复过程`×3、`缺陷与根因`×3、`未覆盖项`×2、`覆盖`×2、`修复`×2 |
+| `git diff --numstat` | `docs/verification.md` 39 增 39 删。逐行核对 39 组改动**全部落在标题行**，正文一行未动 |
+| 行尾与编码 | 改动前后均为 CRLF、UTF-8 无 BOM，总行数 791 不变 |
+| 锚点失效风险 | 全仓搜索 `verification.md#` **无命中**；文档内对其它小节的引用用的是 `##` 节名（如「PMC 全文取回：metadataPrefix 修正」），该节未重命名，引用仍有效 |
+| 其它文档 | `docs/test-plan.md` 13/13、`docs/semantic-report.md` 11/11、`README.md` 7/7、`AGENTS.md` 7/7，均无重名 |
+| `git diff --check` | 无空白错误 |
+
+### 标题去重：未覆盖与已确认的边界
+
+- 本次只重命名**重名**标题，未改写本来唯一但未带节名前缀的子标题（如 `### 已知限制`、`### 一条方法学提醒`）。规则对新增内容要求带节名前缀，存量唯一标题保持原样，因此文档内标题风格尚未完全统一。
+- 未用 Markdown 渲染器核对锚点跳转（本机无该检查器）；判定依据是全仓没有任何地方引用本文件的标题锚点。
+- 新标题由「原节名 + 原小节名」拼成，未调整任何小节的归属或内容顺序；本次改动不改变各节记载的结论。
+
+## README 归属规范补充（2026-10-13）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #33 第 2 条（#30 评审的后续三条之一）；本条先由测试侧在 issue 中给建议措辞，作者确认后落地 |
+| 改动 | `AGENTS.md`「验证与交付」补一行：`README.md` 中下结论式的状态描述（`## 当前状态` 一节，以及「尚未验证」这类能力判定）与 `docs/verification.md` 同属测试侧结论，须由测试负责人提交或明确复核；`README.md` 的`环境要求`、`快速开始`、`开发检查`、`持续集成`、`文档`等说明性内容不受此限 |
+| 定价依据 | `README.md` 的`## 当前状态` 在 PR #25 里已由测试侧改写，现状已倾向测试侧，只是规范未写明；原规范只覆盖 `docs/verification.md` 与 `docs/semantic-report.md`。Issue #33 中我给出措辞与依据并请作者确认，作者回复「README『当前状态』这类下结论式的表述交给测试侧维护」 |
+
+### README 归属补充：实际检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `README.md` 的节标题 | `## 当前状态`、`## 环境要求`、`## 快速开始`、`## 开发检查`、`## 持续集成`、`## 文档`；措辞点名 `## 当前状态`，其余按节名逐一列举，未用「文档索引」这类 README 中不存在的叫法 |
+| `git diff --numstat`（`AGENTS.md`） | 1 增 0 删，仅插入一行 |
+| 行尾与编码 | `AGENTS.md` 与本节均为 CRLF、UTF-8 无 BOM，与原文一致 |
+| 标题唯一性 | 本节三个标题经抽取（跳过围栏代码块）后与全文比对，无重名 |
+
+### README 归属补充：未覆盖与已确认的边界
+
+- 本行只规定**归属**（由谁提交或明确复核），不改变 README 的内容口径；README 的措辞是否准确仍按一般评审流程判断。
+- 未回溯已合并历史：本行生效前 README 的历史改动不受影响，与 `AGENTS.md` 既有的不回溯条款一致。
+- 未在本次改动中修改 `README.md` 本身：该文件当前的内容仍取自 main，归属变更只影响后续改动由谁提交。
 
 ## 性能维度落地（tests/performance，2026-10-13）
 
