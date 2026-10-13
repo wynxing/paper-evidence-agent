@@ -32,8 +32,11 @@ class SingleTaskWorker:
         task = await asyncio.to_thread(self._store.claim_next, time.time() + task_seconds)
         if task is None:
             return False
-        workflow = self._workflow_factory(task)
         try:
+            # The factory is inside the guard as well: a workflow that cannot even
+            # be constructed still has to settle the task it already claimed,
+            # otherwise the row stays RUNNING until the next startup sweep.
+            workflow = self._workflow_factory(task)
             await workflow.run(task, deadline)
         except Exception:  # unclassified execution failure keeps a null error code
             logger.exception("Workflow raised for task %s", task.id)
@@ -75,10 +78,21 @@ async def drain_forever(worker: SingleTaskWorker, interval: float) -> int:
     drained back to back. Cancellation propagates out of ``asyncio.sleep``; how a
     console interrupt reaches the process differs by platform, so the entry point
     reports it instead of assuming a signal number.
+
+    A failure that escapes ``run_once`` — a store read, or settling a task that
+    already failed — must not end the process: without this guard the worker
+    exits, and every later task stays QUEUED while the client keeps polling a
+    service that will never run it. Such a task is left for the next startup
+    sweep rather than reported as failed here, because this frame cannot tell
+    which stage it reached. ``CancelledError`` inherits from ``BaseException``,
+    so it still unwinds instead of being absorbed as a task failure.
     """
 
     count = 0
     while True:
-        while await worker.run_once():
-            count += 1
+        try:
+            while await worker.run_once():
+                count += 1
+        except Exception:  # one task must not take the whole worker down with it
+            logger.exception("Worker loop iteration failed; continuing")
         await asyncio.sleep(interval)

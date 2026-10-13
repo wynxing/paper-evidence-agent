@@ -27,10 +27,12 @@ from paper_evidence.domain.contracts import (
     CheckCreated,
     CheckDeleted,
     CheckDetail,
+    CheckInput,
     CheckSummary,
     ConflictResponse,
     DiagnosticExportRequest,
     DiagnosticPacket,
+    EvidenceContext,
     FeedbackRequest,
     FeedbackSaved,
     HealthResponse,
@@ -255,6 +257,41 @@ def get_check(id: str, services: Annotated[Services, Depends(get_services)]) -> 
     if detail is None:
         return _fail(404, None, "任务不存在")
     return detail
+
+
+@app.get("/api/checks/{id}/input", response_model=CheckInput, responses=_error_responses(404))
+def get_check_input(id: str, services: Annotated[Services, Depends(get_services)]) -> CheckInput | JSONResponse:
+    """The submission itself, read per task rather than from the history list.
+
+    ``CheckDetail.source`` is null until source identity resolves, so the detail
+    view alone has no readable DOI in that window. That is the narrow gap — not
+    the only path to the submitted DOI: ``CheckSummary`` carries it too, and the
+    workbench already prefills 「修改原句」「拆分论断」 from that row. What this
+    route adds is a direct per-task read plus the values frozen at creation
+    (``config_digest``, ``authorized_recipients``), which are not the current
+    effective digest that ``POST /api/checks`` validates. No frontend caller yet.
+    """
+
+    payload = services.store.check_input(id)
+    if payload is None:
+        return _fail(404, None, "任务不存在")
+    return payload
+
+
+@app.get("/api/checks/{id}/evidence-context", response_model=EvidenceContext, responses=_error_responses(404))
+def get_evidence_context(id: str, services: Annotated[Services, Depends(get_services)]) -> EvidenceContext | JSONResponse:
+    """Read-only view of the frozen paragraphs around the checked evidence.
+
+    This is the local counterpart to the redacted packet, which replaces every
+    quote with a placeholder: here the frozen text stays readable so a reader can
+    check a quote in its surroundings. It never leaves this process, only reads
+    this task's frozen source, and does not change a task.
+    """
+
+    context = services.store.evidence_context(id)
+    if context is None:
+        return _fail(404, None, "任务不存在")
+    return context
 
 
 @app.get("/api/checks/{id}/diagnostic-packet", response_model=DiagnosticPacket, responses=_error_responses(404))

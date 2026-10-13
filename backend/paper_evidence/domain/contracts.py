@@ -206,6 +206,32 @@ class CheckDetail(Contract):
     finished_at: str | None
 
 
+class CheckInput(Contract):
+    """The input a task was created with, returned as submitted.
+
+    A per-task read that does not depend on the history list being loaded.
+    ``CheckSummary`` also carries ``doi``, and the workbench already prefills
+    「修改原句」「拆分论断」 from that row (``originalDoi`` falls back to it), so this
+    route is **not** the only path to the submitted DOI. What is true is narrower:
+    inside ``CheckDetail`` the DOI exists only under ``source``, which is null
+    until source identity resolves, so the detail view alone has no DOI in that
+    window.
+
+    ``config_digest`` and ``authorized_recipients`` are the values frozen at
+    creation and are **not** what a resubmission should send: ``POST /api/checks``
+    validates the *current* effective digest, so a frozen digest is refused with
+    409 once the effective configuration changes. Read-only and always local, and
+    currently without a frontend caller.
+    """
+
+    id: str
+    claim: str
+    doi: str
+    previous_id: str | None
+    config_digest: str
+    authorized_recipients: list[str]
+
+
 class CancelResponse(Contract):
     id: str
     status: TaskStatus
@@ -258,6 +284,41 @@ class EvidenceCandidate(Contract):
     round: Literal[0, 1]
     rank: int
     entered_context: bool
+
+
+class ContextParagraph(Contract):
+    """One paragraph of the frozen source around the checked evidence.
+
+    ``text`` is the frozen paragraph text, not a published quote: a neighbour is
+    read for context and is not itself claimed as evidence. ``paragraph_hash``
+    and ``source_url`` are the same locators the published evidence uses, so a
+    reader can find the paragraph in the licensed version.
+    """
+
+    paragraph_id: str
+    section: str
+    text: str
+    paragraph_hash: str
+    source_url: str
+    # 该段曾作为候选进入模型上下文（术语表「调用账与版本归属」的 context_paragraph_ids）。
+    entered_context: bool
+    # 该段被最终判断引用为证据。
+    cited: bool
+
+
+class EvidenceContext(Contract):
+    """Read-only view of one task's evidence context.
+
+    It answers 「模型当时看到的是哪些段落」 and 「引文前后是什么」: the frozen
+    paragraphs that entered the model context plus the final decision's cited
+    paragraphs, expanded by their ``ordinal±1`` neighbours. Everything stays
+    scoped to this task's frozen source, so no paragraph crosses sources; an
+    empty list means nothing has been read yet, not that nothing exists.
+    """
+
+    id: str
+    source_id: str | None
+    paragraphs: list[ContextParagraph]
 
 
 class ExecutionRecord(Contract):

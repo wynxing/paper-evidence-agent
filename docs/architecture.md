@@ -276,6 +276,29 @@ flowchart TD
 | `decision` | [最终判断](glossary.md#最终判断) 对象，含多条 evidence、理由、支持部分、范围差异及限制；无有效最终判断时为 null |
 | 约束 | `label` 只使用结果标签的前五种。FAILED/INTERRUPTED/CANCELLED 时 label 与 decision 为 null，分别显示执行失败、运行中断、已取消。`BLOCKED` 时 `label` 为「无法核验来源」。BLOCKED 主文案按具体 error_code 展示；FAILED 按预算耗尽、上游原因、总超时及其他故障分列。criteria/accounting 与诊断包同形，limits 为任务冻结上限；账不完整按术语表展示未知。paper agent 的标签不冒充真值。响应不含第二名 agent 的意见 |
 
+### `GET /api/checks/{id}/input`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `CheckInput` |
+
+| 项 | 内容 |
+| --- | --- |
+| `200` | `id`、`claim`、`doi`、`previous_id`、`config_digest`、`authorized_recipients` |
+| 约束 | 返回提交时的原始输入，不按处理结果改写；这是一条**按任务**的直接读取，不依赖历史列表是否已加载。`CheckSummary` 同样带 `doi`，工作台的「修改原句」「拆分论断」目前就从历史行回退取值，所以本接口**不是**取得提交 DOI 的唯一路径；它额外提供的是不必先列出历史即可按任务取回，以及该任务**冻结**的 `config_digest` 与收窄后的 `authorized_recipients`。这两个冻结值是创建时的快照，**不是**重提时应发送的值：`POST /api/checks` 校验的是**当前**有效摘要，仅当有效配置未变时冻结值才被接受，否则返回 409。`CheckDetail` 只在 `source` 中给出 DOI，而 `source` 在来源身份解析成功前为 null，故详情视图本身在该阶段没有 DOI。`doi` 是提交时的原文，不做标准化。当前**尚无前端调用方**。只读本机记录，不调用来源连接器或模型 |
+
+### `GET /api/checks/{id}/evidence-context`
+
+| HTTP 状态 | 响应类型 |
+| --- | --- |
+| `200` | `EvidenceContext` |
+
+| 项 | 内容 |
+| --- | --- |
+| `200` | `id`、`source_id`、`paragraphs`；每段含 `paragraph_id`、`section`、`text`、`paragraph_hash`、`source_url`、`entered_context`、`cited` |
+| 范围 | 进入模型上下文的候选段落，加最终判断引用的段落，各自按 `ordinal±1` 展开为邻段；按段落序号升序返回 |
+| 约束 | 只读本任务的冻结来源，跨来源段落标识解析为空。`text` 是冻结段落原文，不是已发布的 quote；邻段只是上下文，不作为证据，因此不带 `validation`。`source_id` 与 `paragraphs` 有三种组合：来源未解析出来源且无锚点时两者分别为 null 与空；来源**已冻结但尚无候选或引用**（如任务在 `query_generation` 阶段失败）时 `source_id` 有值而 `paragraphs` 仍为空；有锚点时两者都有值。空数组表示暂时没有内容，不是来源不存在。段落文本取自获许可的本地冻结版本，本接口是本机只读投影，不改变任务，也不放宽脱敏诊断包的对外传约束 |
+
 ### `GET /api/checks/{id}/diagnostic-packet`
 
 | HTTP 状态 | 响应类型 |

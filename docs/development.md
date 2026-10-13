@@ -28,9 +28,11 @@
 
 `GET /health` 返回 `200` 和 `{"status":"ok"}`，仅表示 API 进程可响应请求。
 
-架构文档中的 11 个业务接口均已实现。符合请求类型的调用不再返回占位的 `501`；骨架期的 `501` OpenAPI 声明和带 `scaffold` 标记的断言已随实现移除。任务路由只读写本地存储、在 API 边界做输入与授权校验并映射领域错误，不运行核验图谱；`POST /api/checks` 入队后立即返回 `202`，不等待模型。
+架构文档中的 13 个业务接口均已实现，其中 `GET /api/checks/{id}/input` 与 `GET /api/checks/{id}/evidence-context` 是两个只读投影。符合请求类型的调用不再返回占位的 `501`；骨架期的 `501` OpenAPI 声明和带 `scaffold` 标记的断言已随实现移除。任务路由只读写本地存储、在 API 边界做输入与授权校验并映射领域错误，不运行核验图谱；`POST /api/checks` 入队后立即返回 `202`，不等待模型。
 
 来源预览的 `ContractError` 映射由全局处理器完成，其余路由在各自边界把领域失败映射为 `ApiError` 或 `ConflictResponse`，因此业务 `422` 与请求校验 `422` 可区分。`GET /api/run-config` 返回的 `config_digest` 来自冻结的有效配置快照；`POST /api/checks` 只接受与该摘要（或其收窄后的授权范围）一致的请求，否则返回 `409`。
+
+两个只读投影只读本地记录与该任务的冻结来源，不调用来源连接器或模型，也不改变任务。`GET /api/checks/{id}/input` 返回提交时的原始输入，是一条**按任务**的直接读取、不依赖历史列表是否已加载；它另外给出该任务**冻结**的 `config_digest` 与 `authorized_recipients`——这两个是冻结值，**不是**重提时应发送的摘要：`POST /api/checks` 校验的是**当前**有效摘要，只有有效配置未变时冻结值才被接受，否则返回 409。任务详情只在 `source` 中给 DOI，而来源身份解析成功前 `source` 为 null，所以详情视图本身在该阶段没有 DOI；但 `CheckSummary` 也带 `doi`，工作台目前就是从历史行回退取值，本接口不是取得该 DOI 的唯一路径。`GET /api/checks/{id}/evidence-context` 返回进入模型上下文的候选段落与最终判断引用的段落，各自按 `ordinal±1` 展开为邻段并按段落序号升序返回；`text` 是冻结段落原文而不是已发布的 quote，邻段只作上下文、不作为证据，所以不带 `validation`。段落取自获许可的本地冻结版本：脱敏诊断包把 quote 换成占位符，本接口保留原文供作者在本机核对引用。来源未冻结时 `source_id` 为 null、`paragraphs` 为空；来源已冻结但尚无候选或引用（如任务在 `query_generation` 阶段失败）时 `source_id` 有值而 `paragraphs` 为空。真实 PMC 来源经 `pmc_fm` 取回的内容目前不含正文（`<body>` 计数为 0，见 #28），此时 `ordinal±1` 的邻段展开为空，本接口只能返回锚点自身。
 
 请求缺字段或不符合请求模型时返回 `422`，响应体为 `ApiError`：error_code=null，message 形如「请求不合法：body.claim: missing」。只公开已声明字段的路径、数组/JSON 位置和错误类型，不回显输入值、未知字段名或原始校验上下文。未知路径和不允许的方法也使用同一形状及中文固定文案；405 保留框架提供的 Allow 等响应头。
 
@@ -57,19 +59,30 @@ backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续�
 
 `--loop`（等价环境变量 `PAPER_EVIDENCE_WORKER_LOOP=1`）改为常驻：先把队列排空，再按间隔轮询新任务，直到进程收到中断信号。轮询间隔用 `--interval <秒>` 或 `PAPER_EVIDENCE_WORKER_POLL_SECONDS` 设置，默认 `1.0` 秒，下限 `0.05` 秒（更小的值按 `0.05` 处理）。前端始终以 1.5 秒轮询任务详情，因此需要 API 与常驻 worker 同时运行，排队任务才会进入 `RUNNING`；只跑一次性 worker 时，任务入队后会一直停在 `QUEUED`。API 进程本身不执行任务。
 
+常驻循环对单个任务的失败是隔离的。`run_once` 先领取并记账，构造工作流和运行工作流都在同一个兜底里：工作流抛出的异常落为该任务的 `FAILED`（error_code 为 null，worker 的未分类分支），而不是让循环中断。工厂或存储层抛出的异常由循环自身捕获、记录后继续下一轮；这类任务留给下次启动的遗留 `RUNNING` 结算，不由这一层冒充终态。`asyncio.CancelledError` 继承自 `BaseException`，不被这条兜底吞掉，停止路径照常退出。
+
 已受理的取消优先于完成或失败结果：工作流在写入终态前复查取消标记，`SqliteStore.finish` 也在同一事务内拒绝非 `CANCELLED` 的终态写入到 `cancel_requested = 1` 的任务，随后由取消路径落 `CANCELLED`。取消检查点与终态写入之间的窗口因此不跨进程内竞争：取消已受理时任务最终显示为「已取消」，而不是「已完成」。
 
-任务详情返回 `created_at`、`started_at`、`finished_at` 三个时刻：入队时写 `created_at`，worker 领取并转 `RUNNING` 时写 `started_at`，终态（含取消、超时与遗留任务结算）落定写入 `finished_at`。仍在 `QUEUED` 的任务没有 `started_at`，未终结的任务没有 `finished_at`；前端把缺失的一端显示为未知，不估算用时。历史列表按 `created_at` 倒序返回，前端按服务端顺序渲染。
+任务详情返回 `created_at`、`started_at`、`finished_at` 三个时刻：入队时写 `created_at`，worker 领取并转 `RUNNING` 时写 `started_at`，终态（含取消、超时与遗留任务结算）落定写入 `finished_at`。`updated_at` 与 `finished_at` 在同一次写入里取同一个时刻，因此「最后更新」不会晚于「结束」。仍在 `QUEUED` 的任务没有 `started_at`，未终结的任务没有 `finished_at`；前端把缺失的一端显示为未知，不估算用时。历史列表按 `created_at` 倒序返回，前端按服务端顺序渲染。
 
 数据目录由 `PAPER_EVIDENCE_DATA_DIR` 指定，默认是当前工作目录下的 `.paper-evidence/`；已授权的观测/诊断接收方由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 配置，默认没有，未配置时无法导出 `consented` 诊断包。
 
 模型传输由 `PAPER_EVIDENCE_MODEL_TRANSPORT` 选择，默认 `sdk`：LiteLLM 以库的形式在 API/worker 进程内运行，上游凭据从 `PAPER_EVIDENCE_MODEL_API_KEY` 读取，上游地址可用 `PAPER_EVIDENCE_MODEL_API_BASE` 覆盖，要调用的模型由 `PAPER_EVIDENCE_PROVIDER_MODEL` 指定（默认 `openai/agnes-2.5-flash`），业务代码仍只用别名 `paper-default`。取值为 `gateway` 时改走 OpenAI 兼容客户端连接 `PAPER_EVIDENCE_MODEL_BASE_URL` 指定的本机 Proxy，凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，上游地址与密钥留在 Proxy 一侧。未知取值回落到默认；生效的传输方式与端点类别写入冻结配置快照并计入 `config_digest`，因此预览显示的形态与实际调用一致。两种形态都不把密钥写入配置摘要或日志。
 
+要真的跑一次核验，最小模型配置只有一项：在**运行 worker 的那个进程**里提供 `PAPER_EVIDENCE_MODEL_API_KEY`。应用不读取 `.env` 文件，配置只来自进程环境，所以要在启动命令的环境里给出（或在服务管理器里配置）：
+
+```bash
+# 最小集：一个密钥即可；API 进程（uvicorn）不调用模型，不需要这一项
+PAPER_EVIDENCE_MODEL_API_KEY=sk-... backend/.venv/bin/python -m paper_evidence.worker --loop
+```
+
+需要换模型时加 `PAPER_EVIDENCE_PROVIDER_MODEL`（LiteLLM 的「供应商/模型」写法，如 `openai/gpt-4o-mini`）；只有上游不是该供应商的默认端点时才需要 `PAPER_EVIDENCE_MODEL_API_BASE`（如 `https://your-endpoint/v1`）。凭据缺失或端点不可达时，任务在 `query_generation` 阶段以映射后的 `UPSTREAM_*` 错误码结束，不会回落到任何内置模型、本地替身或模拟数据。诊断导出另需 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`，与模型凭据无关。
+
 `litellm` 是运行时必需依赖，导入时默认会下载远程价目表；本项目把费用记为未知，因此在导入 LiteLLM 之前设 `LITELLM_LOCAL_MODEL_COST_MAP=True`，跳过这次网络请求。
 
 ## 检查范围
 
-检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败。
+检查环境需安装后端锁定依赖，并先运行 `npm --prefix frontend ci`；pytest 的前后端契约检查通过 Node.js 调用已有 TypeScript 编译器，未安装 Node.js 或前端依赖时会明确失败——具体表现为 `tests/boundary/test_frontend_shapes.py` 的用例整组失败（检查器 `inspect-contracts.mjs` 找不到 `typescript` 模块），与业务改动无关，先补前端依赖即可。
 
 README 中的检查验证接口表面、领域枚举及默认配置与文档的一致性、摘要与文本契约、检索与切分、有界工作流的预算与出口、来源与模型传输的错误映射、模块导入和前端构建。响应状态表从架构文档解析并与 OpenAPI 双向比较（不再放宽 `501`）；前端命名接口与所有 OpenAPI 对象模型比对字段、必填性和可空性（含继承及 Omit）。客户端方法接口不属于 JSON 对象契约。HTTP 与任务测试使用临时数据目录和合成请求；上游连接器与 Proxy 形态的模型传输用 `httpx.MockTransport` 覆盖状态映射，不访问真实网络；SDK 形态的传输用注入的完成函数覆盖错误映射与恢复，另有两条用例经真实 `litellm.acompletion` 加 `mock_response` 走通 SDK 入口。
 

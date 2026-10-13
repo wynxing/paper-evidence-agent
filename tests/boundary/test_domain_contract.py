@@ -4,6 +4,8 @@ import importlib
 import re
 import sys
 import tomllib
+
+import pytest
 from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
 
@@ -113,6 +115,79 @@ def test_drain_forever_keeps_polling_and_stops_on_cancellation():
     assert processed == 2
     # 队列空后仍继续轮询（而不是退出），这正是让 QUEUED 任务被执行的前提。
     assert calls > processed
+
+
+def test_drain_forever_survives_a_failing_iteration():
+    """#16 第 1 条：一个任务失败不能让 worker 退出。
+
+    没有这条兜底时，异常穿过循环结束进程，此后每个任务都停在 QUEUED，而客户端
+    还在轮询一个永远不会执行它的服务。
+    """
+
+    import asyncio
+
+    from paper_evidence.worker.runner import drain_forever
+
+    class FlakyWorker:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run_once(self) -> bool:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("claim or settle blew up")
+            return self.calls < 4
+
+    async def scenario() -> int:
+        worker = FlakyWorker()
+        task = asyncio.create_task(drain_forever(worker, 0.01))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return worker.calls
+
+    # 第一轮抛错后循环还在继续领取，而不是随异常一起结束。
+    assert asyncio.run(scenario()) > 3
+
+
+def test_run_once_settles_a_task_whose_workflow_cannot_be_built(tmp_path):
+    """构造工作流也会抛异常；已领取的那笔任务必须落成失败而不是留在 RUNNING。"""
+
+    import asyncio
+    from dataclasses import replace
+
+    from paper_evidence.config import Settings
+    from paper_evidence.domain.contracts import RunConfigSnapshot
+    from paper_evidence.domain.records import TaskInput
+    from paper_evidence.domain.rules import criteria_reference
+    from paper_evidence.storage.sqlite import SqliteStore
+    from paper_evidence.worker.runner import SingleTaskWorker
+
+    settings = replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
+    store = SqliteStore(tmp_path / "runner.sqlite3")
+    try:
+        store.create(
+            TaskInput(id="t1", claim="The treatment reduced mortality.", doi="10.1000/xyz",
+                      config_digest="d", authorized_recipients=("Agnes",)),
+            RunConfigSnapshot(profile="daily", config_digest="d", snapshot_ref="r",
+                              authorized_recipients=["Agnes"], limits=settings.limits,
+                              timeouts=settings.timeouts, observability=settings.observability),
+            criteria_reference("rev"),
+        )
+
+        def exploding_factory(_task):
+            raise RuntimeError("cannot build the workflow")
+
+        assert asyncio.run(SingleTaskWorker(store, exploding_factory, settings).run_once()) is True
+        stored = store.get("t1")
+        assert stored.status is TaskStatus.FAILED
+        assert stored.error_code is None      # 未分类失败保持 null 错误码
+        assert stored.finished_at is not None
+        # 已领取的任务不再回到队列，避免同一笔被执行两次。
+        assert asyncio.run(SingleTaskWorker(store, exploding_factory, settings).run_once()) is False
+    finally:
+        store.close()
 
 
 def test_frontend_literals_match_python_contracts():
