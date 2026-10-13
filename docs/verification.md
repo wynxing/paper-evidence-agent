@@ -839,3 +839,51 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 - 本行只规定**归属**（由谁提交或明确复核），不改变 README 的内容口径；README 的措辞是否准确仍按一般评审流程判断。
 - 未回溯已合并历史：本行生效前 README 的历史改动不受影响，与 `AGENTS.md` 既有的不回溯条款一致。
 - 未在本次改动中修改 `README.md` 本身：该文件当前的内容仍取自 main，归属变更只影响后续改动由谁提交。
+
+## 性能维度落地（tests/performance，2026-10-13）
+
+| 项目 | 记录 |
+| --- | --- |
+| 关联 | Issue #26（补齐「性能」与「端到端」两个缺失维度）的性能一半；过程中发现并另开 Issue #31 |
+| 环境 | Windows、Python 3.12.13（`backend/.venv`，uv 创建）、Node 22.22.2 / npm 10.9.7 |
+| 对象 | 新增 `tests/performance/`（`fixtures.py`、`harness.py`、`measure.py` 与三个用例文件，共 21 条用例）。**不改** `backend/paper_evidence/` 与 `frontend/src/` 的任何行为 |
+| 基线 | 从 `origin/main` = `a919d5b` 新建分支 `test/performance-dimension`；“基线 255 passed”指未加本目录时的全量结果 |
+
+### 性能维度覆盖的判定
+
+| 测试方案条目 | 落地方式 |
+| --- | --- |
+| 单进程、一次一个任务 | 一条 `run_once` 只领取一条；`drain` 顺序处理，并发峰值恒为 1 |
+| 再提交任务时后来的停在 `QUEUED`、不另起执行器 | 在途任务被闸门挡住时提交第二条：仍是 `QUEUED`，工作流实例数不增加；放开后由同一条常驻循环接着处理 |
+| 总时限自 RUNNING 起算、不含队列 | 队列里停放 600 秒后再领取，断言工作流收到的到期时刻 = 领取时刻 + 180，落库的挂钟到期时刻同源 |
+| 45 / 15 / 180 秒三档与「剩余时间截短单次超时」 | 虚拟时钟：`timeout_for` 取 `min(45, 剩余)`；来源请求取 `min(15, 剩余)`；时钟走完直接 `TASK_TIMEOUT`，不发上游请求 |
+| `Retry-After` 大于剩余时间不再重试 | 来源侧实测：只发 1 次请求、报 `UPSTREAM_TIMEOUT`，且不真的等待；反面用例覆盖「未超过剩余时间」照常退避重试 |
+| 取消中断退避 | 退避等待期间取消任务，`CancelledError` 原样抛出、只发出 1 次请求 |
+| 记录单任务延迟、逻辑请求数、上游尝试数及 token（缺失标为未知） | `measure.py` 从 store 已落库的行读数；缺失的 token 记为未知而非 0，并保留 `attempts_reporting/attempts_total` 作为分母 |
+
+虚拟时钟只替换 `worker/runner.py`、`graph/workflow.py`、`models/recording.py`、`sources/http.py` 这四个模块命名空间里的 `time` 引用，业务代码未改动，也没有为可测性加注入口。`models/sdk.py` 与 `models/gateway.py` 故意不在替换集合内：导入 sdk 会连带加载 LiteLLM，为每个用例加十几秒；这两条传输的时钟用法由 `tests/tools/` 在真实时钟下覆盖。
+
+### 性能维度实际检查
+
+| 命令 | 结果 |
+| --- | --- |
+| `pytest -c backend/pyproject.toml -q tests/performance` | **21 passed**（5.23s） |
+| `pytest -c backend/pyproject.toml -q`（全量，本分支） | **276 passed，2 warnings**（47.57s）＝ 基线 255 + 本维度 21 |
+| 变异测试：`AttemptRecorder.timeout_for` 去掉 `min(..., remaining)` | 对应用例失败（1 failed） |
+| 变异测试：`Fetcher` 去掉 `min(self._request_seconds, remaining)` | 对应用例失败（1 failed） |
+| 变异测试：`runner.run_once` 的 deadline 改成领取后多给 600 秒 | 对应用例失败（1 failed） |
+| 变异测试：`_accounting` 在缺少尝试记录时也写 `upstream_attempts_used` | 对应用例失败（1 failed） |
+| 前端 | 本 PR 未改前端；未运行前端检查 |
+
+### 性能维度未执行与未覆盖
+
+- **四条本机集成验收未执行**：取消接口 1 秒内响应、受理后 2 秒内收尾释放 worker、deadline 后 2 秒内收尾，以及无负载前提本身。它们需要 API 与 `--loop` worker 双进程同时运行、且任务在途足够久——无密钥时任务在 `query_generation` 立即以 `UPSTREAM_UNAVAILABLE` 收口，测不到释放路径。**未跑，不记为通过。**
+- **真实上游下的性能数字未测**：单任务延迟、逻辑请求数、上游尝试数、token 的口径已被用例钉住，但本次喂给它们的是构造记录，不是真实模型。测试方案要求性能数字在真实上游下测量才有意义，因此本记录不含任何性能结论。
+- **多 worker 并发未覆盖**：`SqliteStore.claim_next` 只按 `QUEUED` 取队首，**不检查是否已有 `RUNNING`**。「一次一个任务」由单进程 worker 的顺序循环保证，属于运行约定而非存储层约束；两个 worker 进程会各领一条并行执行。本维度按测试方案的「保持单进程」前提，不做该场景的判定。
+- **模型侧 `Retry-After` 规则未在本维度重复**：已由 `tests/tools/test_sdk_gateway.py` 在真实时钟下覆盖，本维度只补来源侧同一规则与确切边界。
+- **本机无负载前提未验证**：所有耗时断言都刻意宽松（或因虚拟时钟而确定），没有测量机器背景负载。
+- **端到端维度（`tests/e2e/`）仍缺**：属 Issue #26 的另一半，需先定 Playwright 归属与浏览器环境。
+
+### 性能维度过程缺陷
+
+新增 `tests/performance/conftest.py` 会让 `tests/functional` 的 8 条用例 ImportError（裸 `from conftest import ...` 解析到别的目录）。已按「新增维度不放 conftest」落地，根因与三种修法见 Issue #31。
