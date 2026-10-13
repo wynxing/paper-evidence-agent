@@ -899,6 +899,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 - 上游全部换成替身（`tests/e2e/support/upstreams.py`，stdlib `ThreadingHTTPServer`）：Crossref 元数据与 agency、DOI 解析探针（302）、PMC idconv、PMC OAI-PMH 的 GetRecord（含真 JATS 的 `<article>`）、OpenAlex 线索，外加一个 OpenAI 兼容的 `/v1/chat/completions`。`POST /_stub/delay`、`POST /_stub/mode` 让用例按需制造「任务在途」与「上游不可用」，不必重启进程。
 - 两个 Python 进程必须拿到**完全一致**的 `Settings`：提交时 API 用提交的 `config_digest` 与自己的快照比对（`api/app.py:403`），所以来源地址与 `timeouts` 共用一份构造（`support/runtime.py`）。单次模型尝试上限调到 8 秒，只为让「上游超时」用例不必真等 45 秒；两个进程同值，快照仍自洽。
 - 任务库的「空」起点由**每轮新建数据目录**保证，不在启动脚本里删上一轮的库：四个 `webServer` 并发启动，worker 可能先一步打开 SQLite，后启动的进程再 `unlink` 就撞上文件锁（实测 `PermissionError: [WinError 32]`）。轨迹与报告同样按轮次分目录，避免 Playwright 启动时去清上一轮的成百个轨迹文件。
+- 按 Issue #26 定下的口径（2026-10-13）：Playwright 依赖由 `tests/e2e/` 自持，**不并入** `frontend/package.json`；`.github/workflows/ci.yml` 增加独立的 **`e2e` 检查项**，该作业装后端依赖与前端依赖（用例要起真前端 dev server）、`cd tests/e2e && npm ci`、`npx playwright install --with-deps chromium` 后跑 `npm test`，失败时上传 `tests/e2e/.run/results-*` 供定位；`PAPER_EVIDENCE_E2E_PYTHON` 在该作业里指向 setup-python 装到 PATH 上的解释器。**本节只到「作业已写入工作流」为止**：该作业在 CI 上的实际结果此刻尚未取得，本轮能确证的只有本机 Windows 上 13 条用例通过（见上表）。
 
 ### 端到端维度的前置
 
@@ -931,7 +932,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 ### 端到端维度未覆盖与已知限制
 
 - **界面主路径的判定不构成论文语义结论。** 替身回的是构造数据（固定题名、固定摘录、固定「支持」标签），语义真值仍在 `tests/functional/` 的冻结样本与语义报告口径里。本维度的 13 条不能拿来当准确率或性能数字。
-- **没有接进 CI。** `.github/workflows/` 未增加端到端步骤，可见 Issue #26 中待定的「是否接 CI」。CI 跑这套还需要在 runner 上装 Chromium 并接受比后端全量更长的墙钟时间，属团队决定。
+- **CI 上是独立检查项，暂不是合并必须通过。** 这是 Issue #26 定下的口径（先跑稳一段时间再考虑转为必需），所以本维度即使在 CI 变红也不阻断合并，需要靠评审看结果。CI 的墙钟时间也比后端全量长：本机约 40s 花在四个进程的启动与就绪探测上，再加上在 runner 上装 Chromium 的时间。该作业在 `ubuntu-latest` 上的实际结果**尚未取得**：本机只跑通过 Windows 上的 13 条用例，`ubuntu-latest` 上的首次结果要等推送后的运行。
 - **只覆盖 Chromium，且 headless。** 未覆盖其他浏览器、移动视口与有头模式；界面没有 `data-testid`，定位全靠可见文案与元素 `id`，文案改动会同时改动用例。
 - **没有真实模型调用。** 因此「界面显示真实模型的判断」只验证到渲染与流转；`verified_model_version` 在这套用例里必然显示「未知」，与 `docs/verification.md:391` 的结论一致。顺带记录一个观察：`models/recording.py:134` 的 `attempt_record` 根本不接受可验证版本这个入参，而同样来自上游声明的 `response_model` 是被记录下来的——也就是说这个字段当前**没有任何写入路径**，界面上也无从区分「上游没给」与「给了但不可验证」。这与术语表「不能验证版本则为 null」并不冲突，所以本次只记为观察，未开 Issue；是否要补一条写入路径或把 `response_model` 一并呈现，属产品口径。
 - **脱敏/语义导出只验证到下载由本机浏览器发起。** 没有真实外发给接收方，也没有校验外发侧的接收方一致性。
