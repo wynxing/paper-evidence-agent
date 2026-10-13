@@ -64,6 +64,19 @@ export function createDemoClient(): ApiClient & { selectScenario: (value: DemoSc
     getCheck: async id => { const e = find(id); if (e.result.cancel_requested && !isTerminal(e.result.status)) e.result.status = 'CANCELLED'
       else if (e.fresh && !isTerminal(e.result.status)) { e.tick++; if (e.tick > 1 && e.target !== '排队中') e.result = detail(id, e.tick > 2 ? e.target : '执行中', e.doi, e.claim, e.result.created_at, e.result.previous_id) }
       return copy(e.result) },
+    getCheckInput: async id => { const e = find(id); return { id, claim: e.claim, doi: e.doi, previous_id: e.result.previous_id, config_digest: config.config_digest, authorized_recipients: [config.primary_recipient] } },
+    getEvidenceContext: async id => {
+      const e = find(id)
+      // Queued tasks have no frozen source. A frozen source with no anchors returns an id and an empty list.
+      if (e.result.status === 'QUEUED') return { id, source_id: null, paragraphs: [] }
+      const evidence = e.result.decision?.evidence ?? []
+      if (!evidence.length) return { id, source_id: 'demo-source', paragraphs: [] }
+      return { id, source_id: 'demo-source', paragraphs: [
+        { paragraph_id: 'demo:p:0', section: '构造章节 · Methods', text: '构造邻段：观察仅限指定样本与条件。', paragraph_hash: 'demo-paragraph-0', source_url: '', entered_context: false, cited: false },
+        ...evidence.map(item => ({ paragraph_id: item.paragraph_id, section: item.section, text: item.quote, paragraph_hash: item.paragraph_hash, source_url: item.source_url, entered_context: true, cited: true })),
+        { paragraph_id: 'demo:p:3', section: '构造章节 · Discussion', text: '构造邻段：未经研究的人群不在本次结论范围内。', paragraph_hash: 'demo-paragraph-3', source_url: '', entered_context: false, cited: false },
+      ] }
+    },
     getDiagnosticPacket: async id => copy(packet(id, 'redacted', null)), exportDiagnosticPacket: async (id, body) => { if (!body.semantic_export_consent || !body.recipient.trim()) throw new ClientError('business', '请确认接收方及导出授权。', 400); return copy(packet(id, 'consented', body.recipient)) },
     saveFeedback: async (id, body) => { find(id).feedback.push(body.comment); return { id, saved: true } },
     retryCheck: async (id, body) => { const e = find(id); if (!isTerminal(e.result.status)) throw new ClientError('business', '任务尚未结束。', 409); const next = create({ ...body, claim: e.claim, doi: e.doi, previous_id: id }); return { ...next, previous_id: id } },

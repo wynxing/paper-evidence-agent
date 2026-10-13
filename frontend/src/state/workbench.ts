@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import type { ApiClient, CheckDetail, CheckSummary, DiagnosticPacket } from '../api/contracts.ts'
+import type { ApiClient, CheckDetail, CheckInput, CheckSummary, DiagnosticPacket, EvidenceContext } from '../api/contracts.ts'
 import { createHttpClient, ClientError, pollingShouldStop } from '../api/http.ts'
 import { createDemoClient, type DemoScenario } from '../api/demo.ts'
 import { canSubmit, createDraft, diagnosticExportRequest, invalidateDraft, isTerminal, normalizeDoi, originalClaim, originalDoi, parseRoute, validDoi, type SubmissionContext } from './model.ts'
@@ -45,13 +45,18 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   const pollInterval = options.pollIntervalMs ?? POLL_INTERVAL_MS
   const route = ref(parseRoute(location.hash)); const draft = reactive(createDraft())
   const history = ref<CheckSummary[]>([]); const detail = ref<CheckDetail | null>(null); const packet = ref<DiagnosticPacket | null>(null)
+  const submittedInput = ref<CheckInput | null>(null); const evidenceContext = ref<EvidenceContext | null>(null)
   const contexts = reactive(new Map<string, SubmissionContext>())
   const scenario = ref<DemoScenario>('部分支持')
   const loading = ref(false); const resolving = ref(false); const busy = ref(false)
+  const submittedInputLoading = ref(false); const evidenceContextLoading = ref(false)
   const message = ref(''); const historyError = ref(''); const connectionError = ref('')
+  const submittedInputError = ref(''); const evidenceContextError = ref('')
   const context = computed(() => route.value.id ? contexts.get(route.value.id) ?? null : null)
   let reads: AbortController | null = null; let previewReads: AbortController | null = null; let historyReads: AbortController | null = null; let packetReads: AbortController | null = null
+  let submittedReads: AbortController | null = null; let contextReads: AbortController | null = null
   let routeVersion = 0; let previewVersion = 0; let historyVersion = 0
+  let activeId: string | null = null; let contextWatched = false
   let poll: ReturnType<typeof createPoller<CheckDetail>> | null = null
   function client(signal: AbortSignal): ApiClient {
     if (simulation) return simulation
@@ -79,9 +84,22 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
     } catch (error) { if (version === previewVersion) message.value = describe(error) }
     finally { if (version === previewVersion) resolving.value = false }
   }
+  function releaseProjectionReads() {
+    submittedReads?.abort(); contextReads?.abort(); submittedInputLoading.value = false; evidenceContextLoading.value = false
+  }
+  /** Input and context belong to one task. A visibility reload of that same task keeps what was already read. */
+  function adoptRoute() {
+    const nextId = route.value.invalid ? null : route.value.id
+    releaseProjectionReads()
+    if (nextId === activeId) return
+    activeId = nextId; contextWatched = false
+    submittedInput.value = null; submittedInputError.value = ''
+    evidenceContext.value = null; evidenceContextError.value = ''
+  }
   async function loadRoute() {
     const version = ++routeVersion; reads?.abort(); packetReads?.abort(); abortPreview(); poll?.stop(); poll = null
     detail.value = null; packet.value = null; message.value = ''; connectionError.value = ''; loading.value = false
+    adoptRoute()
     if (route.value.invalid) { message.value = '链接中的任务标识无法识别，已打开新的核验。'; return }
     const { id, view } = route.value; if (!id) return
     reads = new AbortController(); const signal = reads.signal; loading.value = true
@@ -93,7 +111,9 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
       if (!isTerminal(result.status)) {
         poll = startPoller(s => client(s).getCheck(id), value => {
           if (version !== routeVersion) return
+          const previous = detail.value
           detail.value = value; connectionError.value = ''
+          if (contextWatched && previous && (previous.status !== value.status || previous.stage !== value.stage)) void loadEvidenceContext(true)
           if (isTerminal(value.status)) {
             void refreshHistory()
             if (view === 'diagnostic') void refreshPacket(id, version)
@@ -107,6 +127,40 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
       }
     } catch (error) { if (version === routeVersion && !signal.aborted) message.value = describe(error) }
     finally { if (version === routeVersion) loading.value = false }
+  }
+  /** The frozen digest is only for display. Retry and revise keep using the current preview. */
+  async function loadSubmittedInput(force = false) {
+    const id = route.value.id
+    if (!id) return
+    if (!force && (submittedInputLoading.value || (submittedInput.value?.id === id && !submittedInputError.value))) return
+    const version = routeVersion; submittedReads?.abort(); const controller = new AbortController(); submittedReads = controller
+    submittedInputLoading.value = true; submittedInputError.value = ''
+    if (submittedInput.value?.id !== id) submittedInput.value = null
+    try {
+      const value = await client(controller.signal).getCheckInput(id)
+      if (version !== routeVersion || controller.signal.aborted) return
+      submittedInput.value = value
+    } catch (error) {
+      if (version !== routeVersion || controller.signal.aborted) return
+      submittedInput.value = null; submittedInputError.value = describe(error)
+    } finally { if (version === routeVersion && submittedReads === controller) submittedInputLoading.value = false }
+  }
+  async function loadEvidenceContext(force = false) {
+    const id = route.value.id
+    if (!id) return
+    contextWatched = true
+    if (!force && (evidenceContextLoading.value || (evidenceContext.value?.id === id && !evidenceContextError.value))) return
+    const version = routeVersion; contextReads?.abort(); const controller = new AbortController(); contextReads = controller
+    evidenceContextLoading.value = true; evidenceContextError.value = ''
+    if (evidenceContext.value?.id !== id) evidenceContext.value = null
+    try {
+      const value = await client(controller.signal).getEvidenceContext(id)
+      if (version !== routeVersion || controller.signal.aborted) return
+      evidenceContext.value = value
+    } catch (error) {
+      if (version !== routeVersion || controller.signal.aborted) return
+      evidenceContext.value = null; evidenceContextError.value = describe(error)
+    } finally { if (version === routeVersion && contextReads === controller) evidenceContextLoading.value = false }
   }
   async function refreshPacket(id = route.value.id, version = routeVersion) {
     if (!id) return
@@ -192,7 +246,7 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   function hashChanged() { route.value = parseRoute(location.hash); void loadRoute() }
   function visibilityChanged() { if (document.hidden) { poll?.stop(); reads?.abort(); packetReads?.abort() } else { void loadRoute(); void refreshHistory() } }
   onMounted(() => { window.addEventListener('hashchange', hashChanged); document.addEventListener('visibilitychange', visibilityChanged); void refreshHistory(); void loadRoute() })
-  onUnmounted(() => { routeVersion++; historyVersion++; reads?.abort(); historyReads?.abort(); packetReads?.abort(); abortPreview(); poll?.stop(); window.removeEventListener('hashchange', hashChanged); document.removeEventListener('visibilitychange', visibilityChanged) })
-  return { demo, scenario, route, draft, history, detail, packet, context, loading, resolving, busy, message, historyError, connectionError, changeClaim, changeDoi, resolve, submit, navigate, startNew, prepareEdit, cancel, remove, feedback, semanticExport, selectScenario, refreshHistory, refreshPacket, reload: loadRoute }
+  onUnmounted(() => { routeVersion++; historyVersion++; reads?.abort(); historyReads?.abort(); packetReads?.abort(); submittedReads?.abort(); contextReads?.abort(); abortPreview(); poll?.stop(); window.removeEventListener('hashchange', hashChanged); document.removeEventListener('visibilitychange', visibilityChanged) })
+  return { demo, scenario, route, draft, history, detail, packet, submittedInput, evidenceContext, context, loading, resolving, busy, submittedInputLoading, evidenceContextLoading, message, historyError, connectionError, submittedInputError, evidenceContextError, changeClaim, changeDoi, resolve, submit, navigate, startNew, prepareEdit, cancel, remove, feedback, semanticExport, selectScenario, refreshHistory, refreshPacket, loadSubmittedInput, loadEvidenceContext, reload: loadRoute }
 }
 export type Workbench = ReturnType<typeof useWorkbench>

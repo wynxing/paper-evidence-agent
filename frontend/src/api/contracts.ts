@@ -113,7 +113,7 @@ export interface CheckDetail {
   /** Set when a terminal status commits; null while the task is not finished. */
   finished_at: string | null
 }
-/** Declared from the backend contract; no API client method calls it yet. */
+/** Submitted text plus the config frozen with the task. The digest is not a resubmission credential. */
 export interface CheckInput {
   id: string
   /** The submitted claim, verbatim; readable whatever the processing state. */
@@ -159,7 +159,7 @@ export interface ContextParagraph {
   /** Is quoted by the final decision. */
   cited: boolean
 }
-/** Declared from the backend contract; no API client method calls it yet. */
+/** Frozen paragraphs around the evidence anchors. Neighbours may be absent. */
 export interface EvidenceContext {
   id: string
   /** Frozen source these paragraphs belong to; null before source identity resolves. */
@@ -232,6 +232,8 @@ export interface ApiClient {
   createCheck(body: CheckCreateRequest): Promise<CheckCreated>
   listChecks(status?: TaskStatus): Promise<CheckSummary[]>
   getCheck(id: string): Promise<CheckDetail>
+  getCheckInput(id: string): Promise<CheckInput>
+  getEvidenceContext(id: string): Promise<EvidenceContext>
   getDiagnosticPacket(id: string): Promise<DiagnosticPacket>
   exportDiagnosticPacket(id: string, body: DiagnosticExportRequest): Promise<DiagnosticPacket>
   saveFeedback(id: string, body: FeedbackRequest): Promise<FeedbackSaved>

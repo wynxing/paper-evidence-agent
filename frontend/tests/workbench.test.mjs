@@ -4,7 +4,7 @@ import { createHttpClient, ClientError, pollingShouldStop } from '../src/api/htt
 import { createDemoClient } from '../src/api/demo.ts'
 import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute, originalClaim, originalDoi, elapsedText, stampText } from '../src/state/model.ts'
 import { createPoller, POLL_INTERVAL_MS } from '../src/state/poller.ts'
-import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel } from '../src/api/validation.ts'
+import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel, validateCheckInput, validateEvidenceContext } from '../src/api/validation.ts'
 import { projectPacket } from '../src/api/export.ts'
 
 test('invalid successful responses and transport failures remain distinct', async () => {
@@ -65,6 +65,8 @@ test('all constructed scenarios satisfy published types without claiming real ev
   for (const row of await c.listChecks()) {
     const d = await c.getCheck(row.id); const p = await c.getDiagnosticPacket(row.id)
     assert.equal(validateDetail(d), true, row.id); assert.equal(validatePacket(p), true, row.id)
+    assert.equal(validateCheckInput(await c.getCheckInput(row.id)), true, row.id)
+    assert.equal(validateEvidenceContext(await c.getEvidenceContext(row.id)), true, row.id)
     if (d.status !== 'COMPLETED') assert.equal(d.decision, null)
     if (d.decision) assert.match(d.decision.rationale, /构造/)
   }
