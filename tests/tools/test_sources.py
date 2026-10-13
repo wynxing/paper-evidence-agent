@@ -32,6 +32,29 @@ JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
 </article>
 """
 
+#: The shape PMC actually returns for ``metadataPrefix=pmc_fm``: front matter
+#: (title, permissions, abstract) and **no ``<body>``**. Measured against live
+#: PMC on 2026-10-12 — three of three records had a ``<body>`` count of 0.
+FRONT_MATTER_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en">
+ <front><article-meta>
+   <article-id pub-id-type="doi">10.1000/xyz</article-id>
+   <title-group><article-title>Demo study</article-title></title-group>
+   <abstract><p>The treatment reduced mortality.</p></abstract>
+   <permissions><license license-type="cc-by">CC BY 4.0</license></permissions>
+ </article-meta></front>
+</article>
+"""
+
+#: The GetRecord error PMC answers for a record outside the Open Access subset.
+CANNOT_DISSEMINATE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+ <GetRecord>
+  <error code="cannotDisseminateFormat">No full text available</error>
+ </GetRecord>
+</OAI-PMH>
+"""
+
 
 def build(handler) -> SourceService:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -270,14 +293,19 @@ def test_default_pmc_oai_endpoint_is_the_canonical_api_path():
     assert Settings.from_env().pmc_oai_url == "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/"
 
 
-def test_pmc_oai_request_uses_the_full_text_metadata_prefix():
-    """``pmc`` is rejected as cannotDisseminateFormat; the body needs ``pmc_fm``."""
+def test_pmc_oai_request_prefers_the_full_text_metadata_prefix():
+    """正文必须用 ``pmc`` 取。
 
-    seen = {}
+    此前这里断言的是 ``pmc_fm``，理由是「``pmc`` 会被 cannotDisseminateFormat
+    拒绝」——与实测相反：``pmc_fm`` 只返回题录+摘要（``<body>`` 计数为 0），
+    ``pmc`` 才带正文（3/3 样例）。
+    """
+
+    seen = []
 
     def handler(request):
         if request.url.host == "pmc.test" and request.url.path == "/oai":
-            seen.update(dict(request.url.params))
+            seen.append(dict(request.url.params))
             return httpx.Response(200, content=JATS)
         if request.url.host == "pmc.test" and request.url.path == "/idconv":
             return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
@@ -287,9 +315,64 @@ def test_pmc_oai_request_uses_the_full_text_metadata_prefix():
     pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
     asyncio.run(pmc.fetch_record("PMC123", None))
 
-    assert seen["verb"] == "GetRecord"
-    assert seen["metadataPrefix"] == "pmc_fm"
-    assert seen["identifier"] == "oai:pubmedcentral.nih.gov:123"
+    assert [call["metadataPrefix"] for call in seen] == ["pmc"], "不得用只含摘要的 pmc_fm 取正文"
+    assert seen[0]["verb"] == "GetRecord"
+    assert seen[0]["identifier"] == "oai:pubmedcentral.nih.gov:123"
+
+
+def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
+    """只有 PMC 明确回 ``cannotDisseminateFormat`` 时才退到只含题录+摘要的 ``pmc_fm``。"""
+
+    seen = []
+
+    def handler(request):
+        if request.url.host == "pmc.test" and request.url.path == "/oai":
+            prefix = dict(request.url.params)["metadataPrefix"]
+            seen.append(prefix)
+            return httpx.Response(
+                200, content=CANNOT_DISSEMINATE if prefix == "pmc" else FRONT_MATTER_JATS
+            )
+        if request.url.host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
+        return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
+    record = asyncio.run(pmc.fetch_record("PMC123", None))
+
+    assert seen == ["pmc", "pmc_fm"], "先取正文，被拒后才回落"
+    assert record.pmcid == "PMC123"
+    assert record.license == "CC BY"
+    assert b"<body" not in record.jats_bytes, "回落拿到的只有题录+摘要，不含正文"
+
+
+@pytest.mark.parametrize("code", ["idDoesNotExist", "badArgument"])
+def test_pmc_oai_errors_other_than_cannot_disseminate_are_not_retried(code):
+    """其它 OAI 错误照旧映射为 SOURCE_UNAVAILABLE，不做第二次请求。"""
+
+    seen = []
+
+    def handler(request):
+        if request.url.host == "pmc.test" and request.url.path == "/oai":
+            seen.append(dict(request.url.params)["metadataPrefix"])
+            error = (
+                b'<?xml version="1.0" encoding="UTF-8"?>'
+                b'<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><GetRecord>'
+                b'<error code="' + code.encode() + b'">nope</error>'
+                b"</GetRecord></OAI-PMH>"
+            )
+            return httpx.Response(200, content=error)
+        if request.url.host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
+        return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(pmc.fetch_record("PMC123", None))
+
+    assert raised.value.error_code is ErrorCode.SOURCE_UNAVAILABLE
+    assert seen == ["pmc"], "非 cannotDisseminateFormat 的错误不重试"
 
 
 def test_pmc_oai_call_follows_redirects():
