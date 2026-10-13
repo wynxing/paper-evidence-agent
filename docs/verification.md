@@ -587,3 +587,54 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 - 三个样例都是 CC BY 开放获取，**没有抽样非 OA 记录的真实 `cannotDisseminateFormat` 响应体**（该分支由 mock 用例覆盖，不是实测）。
 - `parse_jats` 的摘要回落行为本身未改；`evidence-context` 的邻段能力是否恢复，需在 #28 修复合并后按 #20 清单复测（本次只验证到「来源冻结后含 `<body>`」）。
 - 前端与文档的 `13 个业务接口` 等口径不受影响（本 PR 不改接口）。
+
+## 端到端维度：界面主路径（2026-10-13）
+
+`docs/test-plan.md` 第 120 行把界面主路径放在 `tests/e2e/`，用 Playwright 覆盖确认来源、同意整次任务的接收方/数据范围/预算、查看 paper agent 的判断与原文位置，以及澄清重提、取消排队与运行中的任务、显示超时与书目导出预览、删除本地记录。这一节记录该维度的落地方式与实测结果；它是**补齐一个整维度缺失**，不替代其他各维的判定。
+
+### 端到端维度的落地
+
+- 依赖自持：`tests/e2e/package.json` 固定 `@playwright/test` 1.64.0，**不改** `frontend/package.json` / `package-lock.json`，避免把测试依赖塞进产品依赖。引入 Playwright 的归属协调见 Issue #26。
+- `playwright.config.ts` 的 `webServer` 一次起四个进程：本机上游替身（8765）→ 真 API（8000）→ 常驻 worker（就绪信标 8001）→ 前端 dev server（5173）。端口是硬约束而不是自由参数：`frontend/vite.config.ts:6` 把 `/api`、`/health` 固定代理到 8000，前端 dev server 固定 5173。`reuseExistingServer` 刻意关掉——复用可能是使用者自己的真实后端，那会让用例打到真实上游，而避免这一点正是本维度的目的。
+- 上游全部换成替身（`tests/e2e/support/upstreams.py`，stdlib `ThreadingHTTPServer`）：Crossref 元数据与 agency、DOI 解析探针（302）、PMC idconv、PMC OAI-PMH 的 GetRecord（含真 JATS 的 `<article>`）、OpenAlex 线索，外加一个 OpenAI 兼容的 `/v1/chat/completions`。`POST /_stub/delay`、`POST /_stub/mode` 让用例按需制造「任务在途」与「上游不可用」，不必重启进程。
+- 两个 Python 进程必须拿到**完全一致**的 `Settings`：提交时 API 用提交的 `config_digest` 与自己的快照比对（`api/app.py:403`），所以来源地址与 `timeouts` 共用一份构造（`support/runtime.py`）。单次模型尝试上限调到 8 秒，只为让「上游超时」用例不必真等 45 秒；两个进程同值，快照仍自洽。
+- 任务库的「空」起点由**每轮新建数据目录**保证，不在启动脚本里删上一轮的库：四个 `webServer` 并发启动，worker 可能先一步打开 SQLite，后启动的进程再 `unlink` 就撞上文件锁（实测 `PermissionError: [WinError 32]`）。轨迹与报告同样按轮次分目录，避免 Playwright 启动时去清上一轮的成百个轨迹文件。
+
+### 端到端维度的前置
+
+- Node 侧：`cd tests/e2e && npm ci && npx playwright install chromium`。工作树里还需要 `frontend/node_modules`（前端 dev server 要用），它不在 git 里。
+- `PAPER_EVIDENCE_E2E_PYTHON` 指向后端解释器。默认按 `backend/.venv` 找；本机复现时后端 venv 只在主工作树，所以显式指定。
+- **不需要模型密钥**：模型网关同样由替身充当，用例不访问网络。这是本维度与 `tests/functional/` 真值判定的分界。
+- 运行前 8000 / 5173 / 8765 / 8001 必须空闲。回环地址必须排除在代理之外，理由见下面的过程缺陷第 1 条。
+- 本机跑后端全量时要显式给 `--basetemp=<新建目录>`：pytest 收尾清理旧的编号临时目录时会在一次调用里删掉上百个文件，被这台机器的批量删除保护拦下，导致退出码为 1（用例本身全绿）。属于本机环境处置，不改仓库配置。
+
+### 端到端维度实际检查
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `npx playwright test`（chromium，串行，13 条） | **13 passed（1.6m）**；连续两次运行结果一致，且输出中没有替身侧异常堆栈 |
+| 用例分布 | `01-shell` 2 条（空态与真实接口模式、无效链接回落）、`02-main-path` 4 条（提交前必看项、跑完渲染判断与原文位置、刷新读回、运行诊断）、`03-cancel` 1 条（RUNNING 与 QUEUED 两个取消分支）、`04-upstream-timeout` 1 条、`05-diagnostics` 2 条（脱敏包明示书目未遮盖与语义导出单独授权、诊断页深链）、`06-revise-and-delete` 3 条 |
+| 本机浏览器 | Playwright 1.64.0 自带的 Chromium（HeadlessChrome 156.0.8078.4）实测可用，**推翻了 Issue #26 里「本机浏览器不可用」的旧结论**（该结论来自 `agent-browser` 返回 empty page 的尝试） |
+| 判定对象 | 界面行为与状态流转：状态的可见文案、按钮可用性、路由、渲染出的摘录与段落标识、调用账数字 |
+| 两条按设计真等时间的用例 | `03-cancel` 约 21.7s、`04-upstream-timeout` 约 10.9s；其余 11 条各在 0.7–5.4s 之间 |
+| 既有的一侧未被破坏 | 后端全量 `pytest -c backend/pyproject.toml -q --basetemp=<新建目录>` → **255 passed，2 warnings**（110.68s，退出码 0）；前端 `npm test` → **41 passed**。本 PR 不动后端与前端代码，这两项只证明新目录没有影响既有用例的收集 |
+
+### 端到端维度的过程缺陷
+
+1. **回环地址被环境代理劫持，四个 `webServer` 一个都起不来（已修）。** 现象是 `Error: Timed out waiting 60000ms from config.webServer`。`DEBUG=pw:webserver` 显示 `127.0.0.1:8000/health` 在进程起来后持续返回 **404**，而同一时刻用 `curl --noproxy` 拿到的却是 `200 {"status":"ok"}`。根因是两条路径都读代理环境变量：Playwright 的就绪检查经 `WebServerPlugin` → `isURLAvailable` → `httpRequest` → `proxy-from-env` 把请求发给 `HTTP_PROXY`（本机为 `http://127.0.0.1:62800`），而该透明代理对回环端口的应答并不等于目标进程的应答；后端用的 `httpx.AsyncClient()`（`api/deps.py:47`）默认 `trust_env=True`，同样会把查来源的请求交给代理。修法是在配置层把回环摘出代理（`NO_PROXY` 管探活 + 四个代理变量置空后传给子进程），并已在配置里写明原因。对照实测：同一请求带代理 404、不带代理 200。
+2. **首次运行有三条用例失败，全部是用例自己的问题，不是产品缺陷（已修）。** 记录在此以免被误读成实现缺陷：
+   - `02-main-path`「跑完」一条断言 `details.disclosure dl.facts` 里没有「未知」，但详情页的**费用**一栏按口径固定显示「未知」（`CheckDetail.vue:37`，因为调用次数不是费用上限、本机替身也不提供计费）。改为按 `dt` 精确取值，逐个断言创建/开始/结束三个时刻已落定，并把「费用=未知」转成正面断言。
+   - `02-main-path`「运行诊断」一条断言尝试行不出现「未知」，但该表第 4 列是**模型版本**，而 `verified_model_version` 在无法验证版本时按口径就是 `null`（`docs/glossary.md:230`、`docs/verification.md:391`），界面显示「未知」是正确行为。改为列级断言：Tokens 列是替身声明的 `33`，模型版本列是「未知」。
+   - `06-revise-and-delete`「修改原句」一条漏了「重新读取来源并重新授权」这一步：`workbench.ts` 的 `prepareEdit` 只把 DOI 与原句带进新草稿，`source`/`config` 被清空，`canSubmit` 因此不成立，提交按钮保持禁用。用例补上 `readSource` + `authorize`，并把「草稿里没有来源预览」写成正面断言。
+3. **替身按预期吞掉落线，但仍会把断开打成完整 traceback，刷掉用例输出（已修）。** 应用在超时或取消时主动断开上游连接是**被覆盖的行为**（`04-upstream-timeout`、`03-cancel` 正是靠它成立），`BaseHTTPRequestHandler` 却把它当异常记录。替身改为吞掉 `ConnectionError`，并在代码里注明这不是替身故障。
+
+### 端到端维度未覆盖与已知限制
+
+- **界面主路径的判定不构成论文语义结论。** 替身回的是构造数据（固定题名、固定摘录、固定「支持」标签），语义真值仍在 `tests/functional/` 的冻结样本与语义报告口径里。本维度的 13 条不能拿来当准确率或性能数字。
+- **没有接进 CI。** `.github/workflows/` 未增加端到端步骤，可见 Issue #26 中待定的「是否接 CI」。CI 跑这套还需要在 runner 上装 Chromium 并接受比后端全量更长的墙钟时间，属团队决定。
+- **只覆盖 Chromium，且 headless。** 未覆盖其他浏览器、移动视口与有头模式；界面没有 `data-testid`，定位全靠可见文案与元素 `id`，文案改动会同时改动用例。
+- **没有真实模型调用。** 因此「界面显示真实模型的判断」只验证到渲染与流转；`verified_model_version` 在这套用例里必然显示「未知」，与 `docs/verification.md:391` 的结论一致。顺带记录一个观察：`models/recording.py:134` 的 `attempt_record` 根本不接受可验证版本这个入参，而同样来自上游声明的 `response_model` 是被记录下来的——也就是说这个字段当前**没有任何写入路径**，界面上也无从区分「上游没给」与「给了但不可验证」。这与术语表「不能验证版本则为 null」并不冲突，所以本次只记为观察，未开 Issue；是否要补一条写入路径或把 `response_model` 一并呈现，属产品口径。
+- **脱敏/语义导出只验证到下载由本机浏览器发起。** 没有真实外发给接收方，也没有校验外发侧的接收方一致性。
+- **未覆盖「上游返回 503/模型不可用」的界面终态。** 替身已提供 `/_stub/mode=unavailable`，但没有对应用例；`UPSTREAM_UNAVAILABLE` 的界面呈现目前只有后端用例覆盖。
+- **未覆盖队列积压的界面表现**（超过一条排队的任务如何在历史列表里排序）、多标签页/多窗口并发操作同一任务。
+- 本维度**只支持仓库的默认端口**；端口被占用时用例会直接失败而不是换端口，这是刻意选择（避免在前端代理链路上出现第二个真相）。

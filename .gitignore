@@ -29,6 +29,9 @@ __pycache__/
 node_modules/
 dist/
 
+# End-to-end scratch space (task store, traces, reports)
+/tests/e2e/.run/
+
 # Python packaging artifacts
 build/
 *.egg-info/
