@@ -606,7 +606,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 检查 | 结果 |
 | --- | --- |
 | 后端基线 `pytest -c backend/pyproject.toml -q` | **239 passed，2 warnings（66.02s）**，在本 PR head（`ee79e53` = `origin/main` + 本节文档改动）实测。**此前记的 248 取自 `6a2ea8f`，它含尚未合并的 PR #24 的 9 条报告口径用例（239 + 9 = 248），不是本分支或 main 的现值**，本行已按复核意见更正 |
-| 合并 `origin/main` 后定稿复测（`pytest -c backend/pyproject.toml -q`） | **255 passed，2 warnings（42.29s）**；= 合并后 main 现值（含 PR #24 的 13 条与 PR #29 的 3 条），本节为纯文档改动，无回归 |
+| 合并 `origin/main` 后定稿复测（`pytest -c backend/pyproject.toml -q`） | **255 passed，2 warnings**（合并提交 `68ff1dc` 实测 42.29s；定稿复测 39.18s，同一代码树、仅文档差异）；= 合并后 main 现值（含 PR #24 的 13 条与 PR #29 的 3 条），本节为纯文档改动，无回归 |
 | 前端基线 `npm --prefix frontend test` | **41 passed / 0 fail**。较 2026-10-11 记录的 42 少 1 条，来源已定位：#21（`373c0ca`）删除了 `frontend/tests/workbench.test.mjs` 中 `501 is explicit and never falls back to demo`（对应实现已随该 PR 移除），属用例随实现下线，非静默削弱断言 |
 | `npm --prefix frontend run build` | 通过（`vue-tsc --noEmit` + vite build，29 模块；`dist/` 已在 `.gitignore` 中） |
 | `python -m pip check` | No broken requirements found |
