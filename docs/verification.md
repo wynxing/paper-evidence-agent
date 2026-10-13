@@ -814,12 +814,12 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 
 | 检查 | 实际结果 |
 | --- | --- |
-| `npx playwright test`（chromium，串行，13 条） | **13 passed（1.6m）**；连续两次运行结果一致，且输出中没有替身侧异常堆栈 |
+| `npx playwright test`（chromium，串行，13 条） | **13 passed（1.6m）**；连续三次运行结果一致，且输出中没有替身侧异常堆栈。第三次是在**合并 main（含 #25/#27/#30）之后**跑的，所以这一维度在 main 当前状态下同样成立 |
 | 用例分布 | `01-shell` 2 条（空态与真实接口模式、无效链接回落）、`02-main-path` 4 条（提交前必看项、跑完渲染判断与原文位置、刷新读回、运行诊断）、`03-cancel` 1 条（RUNNING 与 QUEUED 两个取消分支）、`04-upstream-timeout` 1 条、`05-diagnostics` 2 条（脱敏包明示书目未遮盖与语义导出单独授权、诊断页深链）、`06-revise-and-delete` 3 条 |
 | 本机浏览器 | Playwright 1.64.0 自带的 Chromium（HeadlessChrome 156.0.8078.4）实测可用，**推翻了 Issue #26 里「本机浏览器不可用」的旧结论**（该结论来自 `agent-browser` 返回 empty page 的尝试） |
 | 判定对象 | 界面行为与状态流转：状态的可见文案、按钮可用性、路由、渲染出的摘录与段落标识、调用账数字 |
 | 两条按设计真等时间的用例 | `03-cancel` 约 21.7s、`04-upstream-timeout` 约 10.9s；其余 11 条各在 0.7–5.4s 之间 |
-| 既有的一侧未被破坏 | 后端全量 `pytest -c backend/pyproject.toml -q --basetemp=<新建目录>` → **255 passed，2 warnings**（110.68s，退出码 0）；前端 `npm test` → **41 passed**。本 PR 不动后端与前端代码，这两项只证明新目录没有影响既有用例的收集 |
+| 既有的一侧未被破坏 | 合并 main（含 #25/#27/#30）后：后端全量 `pytest -c backend/pyproject.toml -q --basetemp=<新建目录>` → **264 passed，2 warnings**（97.40s，退出码 0）；前端 `npm test` → **41 passed**、`npm run build` 通过。本 PR 不动后端与前端代码，这两项只证明新目录没有影响既有用例的收集与运行 |
 
 ### 端到端维度的过程缺陷
 
