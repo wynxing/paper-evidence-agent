@@ -354,7 +354,19 @@ class SqliteStore:
         ]
 
     def claim_next(self, deadline_at: float | None = None) -> TaskInput | None:
-        """Atomically claim one queued task.
+        """Atomically claim one queued task, unless another task is already running.
+
+        「同一时刻只执行一个任务」是存储层不变量，不只是一条运行约定：只要还有一行
+        处于 ``RUNNING``，这里就返回 ``None``。没有这层守卫时，误起的第二个 worker
+        会领走下一条任务与在途任务并行执行；而且它的启动结算会把在途任务翻成
+        ``INTERRUPTED``，此后 ``finish`` 的条件写入拒绝真实终态，任务不可恢复
+        （Issue #34）。
+
+        调用方只有在本次事务真正把一行 ``QUEUED`` 改成 ``RUNNING`` 之后才拿得到
+        ``TaskInput``：条件更新的 ``rowcount`` 必须为 1，否则返回 ``None``。这条检查
+        在本事务内不会失败（``BEGIN IMMEDIATE`` 已串行化写入者），保留它是为了让
+        「返回的任务确实被本次调用领取了」成为存储层自己的保证，而不是依赖事务边界的
+        隐含前提。
 
         ``deadline_at`` is a wall-clock epoch second kept for the API's expiry
         check; the worker's own run deadline stays a monotonic timestamp.
@@ -363,6 +375,12 @@ class SqliteStore:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                running = self._conn.execute(
+                    "SELECT 1 FROM tasks WHERE status = ? LIMIT 1", (TaskStatus.RUNNING.value,)
+                ).fetchone()
+                if running is not None:
+                    self._conn.execute("COMMIT")
+                    return None
                 rows = self._conn.execute(
                     "SELECT * FROM tasks WHERE status = ? ORDER BY created_at, id LIMIT 1",
                     (TaskStatus.QUEUED.value,),
@@ -371,11 +389,14 @@ class SqliteStore:
                     self._conn.execute("COMMIT")
                     return None
                 row = rows[0]
-                self._conn.execute(
+                cursor = self._conn.execute(
                     """UPDATE tasks SET status = ?, stage = 'source_identity', claimed_at = ?,
                            deadline_at = ?, updated_at = ? WHERE id = ? AND status = ?""",
                     (TaskStatus.RUNNING.value, _epoch(), deadline_at, _now(), row["id"], TaskStatus.QUEUED.value),
                 )
+                if cursor.rowcount != 1:
+                    self._conn.execute("ROLLBACK")
+                    return None
                 self._conn.execute("COMMIT")
             except BaseException:
                 self._conn.execute("ROLLBACK")
@@ -470,19 +491,44 @@ class SqliteStore:
         return bool(row and row["cancel_requested"])
 
     def settle_orphaned_running(self) -> int:
-        rows = self._query("SELECT id, cancel_requested FROM tasks WHERE status = ?", (TaskStatus.RUNNING.value,))
-        # One stamp for the whole startup sweep: every row here terminates in the
-        # same pass, so updated_at and finished_at must not differ per row by the
+        """Settle the leftover ``RUNNING`` rows that cannot still be alive.
+
+        A row is an orphan only when the task's own time limit says it cannot
+        still be executing: its wall-clock ``deadline_at`` has already passed. A
+        row with no deadline counts as an orphan too — the claim path always
+        records one, so a ``RUNNING`` row without a deadline cannot belong to a
+        live claim, and leaving it alone would block the queue for good now that
+        ``claim_next`` refuses to claim while a row stays ``RUNNING``.
+
+        以前的实现结算**所有** ``RUNNING`` 行。那只在一个 worker 时成立：第二个
+        worker 一启动，它的结算就会把第一个 worker 正在跑的任务翻成 ``INTERRUPTED``，
+        而 ``finish`` 的条件写入随后会拒绝真实终态，任务不可恢复（Issue #34）。
+
+        结算按「可证已死」进行，因此调用方不能只在进程启动时结算一次：崩溃留下的行
+        在重启那一刻通常还没到 deadline，只靠启动结算会把它一直挂着。``run_once``
+        每轮领取前都会调用本方法，队列因此在 deadline 到点后的一个轮询间隔内恢复。
+        """
+
+        rows = self._query(
+            "SELECT id, cancel_requested FROM tasks WHERE status = ? AND (deadline_at IS NULL OR deadline_at <= ?)",
+            (TaskStatus.RUNNING.value, _epoch()),
+        )
+        # One stamp for the whole sweep: every row here terminates in the same
+        # pass, so updated_at and finished_at must not differ per row by the
         # microseconds between two clock reads.
         stamp = _now()
         changed = 0
         for row in rows:
             target = TaskStatus.CANCELLED if row["cancel_requested"] else TaskStatus.INTERRUPTED
-            self._write(
+            cursor = self._write(
                 "UPDATE tasks SET status = ?, updated_at = ?, finished_at = ? WHERE id = ? AND status = ?",
                 (target.value, stamp, stamp, row["id"], TaskStatus.RUNNING.value),
             )
-            changed += 1
+            # Count only rows this sweep actually moved: between the SELECT and
+            # here the worker may have committed a real terminal state, and a
+            # settled count that includes such a row would misreport the sweep.
+            if cursor.rowcount > 0:
+                changed += 1
         return changed
 
     def finish(

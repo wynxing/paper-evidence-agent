@@ -41,7 +41,7 @@ BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案�
 | `BLOCKED` | 来源、许可、正文语言或完整性阻断 | 是 |
 | `FAILED` | 执行失败；`label` 为 `null` | 是 |
 | `CANCELLED` | 作者取消；保留已有诊断，`label` 和 `decision` 为 `null` | 是 |
-| `INTERRUPTED` | 进程启动时发现未带取消标记的遗留 RUNNING；`label` 为 `null` | 是 |
+| `INTERRUPTED` | 遗留且已过 `deadline_at`（或没有 `deadline_at`）的 RUNNING，未带取消标记；`label` 为 `null` | 是 |
 
 用户重试创建新的 QUEUED 任务并保留原记录；工作流内部恢复不新建任务。只有终态任务可删除或由用户重试。重试须重新确认当前运行配置及云调用范围。
 

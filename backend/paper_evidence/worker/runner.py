@@ -23,8 +23,19 @@ class SingleTaskWorker:
         self._settings = settings
 
     async def run_once(self) -> bool:
-        """Claim and process at most one task; return whether one was processed."""
+        """Claim and process at most one task; return whether one was processed.
 
+        领取前先结算「可证已死」的遗留 ``RUNNING``（见 ``settle_orphaned_running``）。
+        ``claim_next`` 现在只要看到一行 ``RUNNING`` 就拒绝领取，所以一条再也跑不完的
+        遗留行会把队列永久卡住；而它在启动那一刻通常还没到 deadline，只在进程启动时
+        结算一次不够。每轮领取前结算，恢复就只比 deadline 晚一个轮询间隔（Issue #34）。
+
+        返回 ``False`` 现在有两种含义：队列已空，或另一个 worker 正在执行任务。
+        两者都表示「本次没有可领的任务」，常驻循环会继续等待，一次性 ``drain`` 则退出
+        ——后者本来就约定不与第二个 worker 并行。
+        """
+
+        await asyncio.to_thread(self._store.settle_orphaned_running)
         task_seconds = self._settings.timeouts.task_seconds
         # The run itself is bounded by a monotonic clock; the value persisted for
         # the API's expiry check is a wall-clock epoch (same clock, same duration).

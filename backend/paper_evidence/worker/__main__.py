@@ -1,8 +1,11 @@
 """Worker entry point.
 
 Drains queued tasks with one claim at a time. Leftover RUNNING tasks are settled
-on startup: a persisted cancel flag becomes CANCELLED, anything else becomes
-INTERRUPTED and waits for an explicit retry.
+when they cannot still be alive — their deadline has passed, or they carry no
+deadline at all: a persisted cancel flag becomes CANCELLED, anything else becomes
+INTERRUPTED and waits for an explicit retry. Only ``RUNNING`` rows that can still
+belong to a live claim are left alone, so starting a second worker does not
+interrupt the first one's task (Issue #34).
 
 Two modes:
 
@@ -64,6 +67,9 @@ def parse_options(argv: list[str], env: dict[str, str]) -> tuple[bool, float]:
 
 async def _run(services: Services, loop: bool, interval: float) -> int:
     try:
+        # 启动先扫一次并报告结果。`run_once` 每轮也会结算（遗留行在启动这一刻通常还没到
+        # deadline，只靠这一次扫尾留不住队列），但那里无法把「上个进程留下了几条」讲给
+        # 启动这个进程的人听。
         settled = services.store.settle_orphaned_running()
         if settled:
             print(f"已结算 {settled} 个遗留 RUNNING 任务。", file=sys.stderr)

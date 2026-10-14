@@ -55,11 +55,17 @@ backend/.venv/bin/python -m paper_evidence.worker            # 处理完当前�
 backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续领取新任务
 ```
 
-默认一次性模式先结算遗留 `RUNNING`（有取消标记的转为 `CANCELLED`，其余转为 `INTERRUPTED`），再逐个领取并执行已排队任务，队列为空时退出，退出码 `0`。单条任务的执行时限从领取并转为 `RUNNING` 起算。
+默认一次性模式先结算遗留 `RUNNING`，再逐个领取并执行已排队任务，队列为空时退出，退出码 `0`。单条任务的执行时限从领取并转为 `RUNNING` 起算。
+
+结算只处理**可证已死**的遗留行：该行的 `deadline_at` 已过，或没有 `deadline_at`（领取路径一定会写入，缺它就不可能是活着的领取）。有取消标记的转为 `CANCELLED`，其余转为 `INTERRUPTED`。仍在时限内的 `RUNNING` 行不是孤儿，其所属进程可能正在执行，结算不动它。
+
+**同一时刻只执行一个任务**有两层保证。第一层是运行约定：只启动一个 worker。第二层是存储层不变量：只要有任务处于 `RUNNING`，`SqliteStore.claim_next` 就拒绝领取（返回 `None`），第二个 worker 因此拿不到下一条任务，也不会与在途任务并行执行。约定仍然有效，但误起第二个 worker 已不再是「无防护」：它抢不走任务，启动结算也不会把在途任务翻成 `INTERRUPTED`（Issue #34）。
+
+结算不只在进程启动时做一次：崩溃遗留的行在重启那一刻通常还没到 `deadline_at`，只结算一次会让队列一直卡住。`run_once` 每轮领取前都会结算，队列在 deadline 到点后的一个轮询间隔内恢复。
 
 `--loop`（等价环境变量 `PAPER_EVIDENCE_WORKER_LOOP=1`）改为常驻：先把队列排空，再按间隔轮询新任务，直到进程收到中断信号。轮询间隔用 `--interval <秒>` 或 `PAPER_EVIDENCE_WORKER_POLL_SECONDS` 设置，默认 `1.0` 秒，下限 `0.05` 秒（更小的值按 `0.05` 处理）。前端始终以 1.5 秒轮询任务详情，因此需要 API 与常驻 worker 同时运行，排队任务才会进入 `RUNNING`；只跑一次性 worker 时，任务入队后会一直停在 `QUEUED`。API 进程本身不执行任务。
 
-常驻循环对单个任务的失败是隔离的。`run_once` 先领取并记账，构造工作流和运行工作流都在同一个兜底里：工作流抛出的异常落为该任务的 `FAILED`（error_code 为 null，worker 的未分类分支），而不是让循环中断。工厂或存储层抛出的异常由循环自身捕获、记录后继续下一轮；这类任务留给下次启动的遗留 `RUNNING` 结算，不由这一层冒充终态。`asyncio.CancelledError` 继承自 `BaseException`，不被这条兜底吞掉，停止路径照常退出。
+常驻循环对单个任务的失败是隔离的。`run_once` 先结算可证已死的遗留行，再领取并记账；构造工作流和运行工作流都在同一个兜底里：工作流抛出的异常落为该任务的 `FAILED`（error_code 为 null，worker 的未分类分支），而不是让循环中断。工厂或存储层抛出的异常由循环自身捕获、记录后继续下一轮；这类任务留给遗留 `RUNNING` 结算（其 deadline 到点后的下一轮，或下次进程启动），不由这一层冒充终态。`asyncio.CancelledError` 继承自 `BaseException`，不被这条兜底吞掉，停止路径照常退出。
 
 已受理的取消优先于完成或失败结果：工作流在写入终态前复查取消标记，`SqliteStore.finish` 也在同一事务内拒绝非 `CANCELLED` 的终态写入到 `cancel_requested = 1` 的任务，随后由取消路径落 `CANCELLED`。取消检查点与终态写入之间的窗口因此不跨进程内竞争：取消已受理时任务最终显示为「已取消」，而不是「已完成」。
 

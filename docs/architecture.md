@@ -105,7 +105,7 @@ stateDiagram-v2
     RUNNING --> COMPLETED
     RUNNING --> BLOCKED
     RUNNING --> FAILED
-    RUNNING --> INTERRUPTED: 进程重启时遗留的 RUNNING
+    RUNNING --> INTERRUPTED: 遗留且已过 deadline 的 RUNNING
     COMPLETED --> [*]
     BLOCKED --> [*]
     FAILED --> [*]
@@ -113,7 +113,9 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-**规则**：进程启动时，遗留 RUNNING 若已持久化 cancel_requested，则标为 CANCELLED；其余标为 INTERRUPTED，由作者明确重试。重试不沿上图把终态改回 `QUEUED`。它新建一条 `QUEUED` 任务，并保留原记录，避免静默重复外部调用。
+**规则**：遗留 `RUNNING` 只在**可证已死**时结算——该行的 `deadline_at` 已过，或没有 `deadline_at`（领取路径一定写入，缺它就不可能是活着的领取）。已持久化 cancel_requested 的标为 CANCELLED；其余标为 INTERRUPTED，由作者明确重试。仍在时限内的 `RUNNING` 行不结算：它可能正被另一个进程执行，翻成终态会让它写不出真实结果。重试不沿上图把终态改回 `QUEUED`。它新建一条 `QUEUED` 任务，并保留原记录，避免静默重复外部调用。
+
+**规则**：「同一时刻只执行一个任务」是存储层不变量：只要有任务处于 `RUNNING`，`claim_next` 就拒绝领取。运行约定（只启动一个 worker）仍是第一道防线；存储层守卫是第二道，误起第二个 worker 时它既领不到下一条任务，启动结算也不会碰在途任务。结算因此不能只在进程启动时做一次——崩溃遗留的行在重启那一刻通常还没到 deadline，只结算一次会让队列一直卡住；worker 每轮领取前先结算，队列在 deadline 到点后的一个轮询间隔内恢复。
 
 ```mermaid
 flowchart TD
