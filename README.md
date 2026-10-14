@@ -48,7 +48,7 @@ npm run dev
 
 ```bash
 cd backend
-export PAPER_EVIDENCE_MODEL_API_KEY=sk-...     # 唯一必需的配置；uvicorn 进程不调用模型，不需要它
+export PAPER_EVIDENCE_MODEL_API_KEY=sk-...     # 默认上游下唯一必需的配置；换供应商还要设 PAPER_EVIDENCE_PROVIDER_MODEL。uvicorn 进程不调用模型，不需要它
 .venv/bin/python -m paper_evidence.worker --loop
 ```
 
