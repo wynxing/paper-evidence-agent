@@ -269,7 +269,8 @@ def get_check_input(id: str, services: Annotated[Services, Depends(get_services)
     workbench already prefills 「修改原句」「拆分论断」 from that row. What this
     route adds is a direct per-task read plus the values frozen at creation
     (``config_digest``, ``authorized_recipients``), which are not the current
-    effective digest that ``POST /api/checks`` validates. No frontend caller yet.
+    effective digest that ``POST /api/checks`` validates. The task detail UI
+    calls this read-only projection.
     """
 
     payload = services.store.check_input(id)

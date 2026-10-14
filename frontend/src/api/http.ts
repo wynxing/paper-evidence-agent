@@ -1,5 +1,5 @@
 import type { ApiClient } from './contracts.ts'
-import { record, text, validateCancel, validateConfig, validateCreated, validateDeleted, validateDetail, validateHistory, validatePacket, validateRetry, validateSaved, validateSource } from './validation.ts'
+import { record, text, validateCancel, validateCheckInput, validateConfig, validateCreated, validateDeleted, validateDetail, validateEvidenceContext, validateHistory, validatePacket, validateRetry, validateSaved, validateSource } from './validation.ts'
 
 export class ClientError extends Error {
   kind: 'network' | 'invalid' | 'business'; status: number | null; code: string | null
@@ -37,6 +37,8 @@ export function createHttpClient(fetcher: typeof fetch = fetch, signal?: AbortSi
     createCheck: body => request('/api/checks', validateCreated, 'POST', body),
     listChecks: status => request(`/api/checks${status ? `?status=${encodeURIComponent(status)}` : ''}`, validateHistory),
     getCheck: id => request(path(id), sameId(id, validateDetail)),
+    getCheckInput: id => request(`${path(id)}/input`, sameId(id, validateCheckInput)),
+    getEvidenceContext: id => request(`${path(id)}/evidence-context`, sameId(id, validateEvidenceContext)),
     getDiagnosticPacket: id => request(`${path(id)}/diagnostic-packet`, packetMode(id, 'redacted')),
     exportDiagnosticPacket: (id, body) => request(`${path(id)}/diagnostic-export`, packetMode(id, 'consented', body.recipient), 'POST', body),
     saveFeedback: (id, body) => request(`${path(id)}/feedback`, sameId(id, validateSaved), 'POST', body),

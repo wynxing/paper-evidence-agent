@@ -42,6 +42,9 @@ export function coherentOutcome(value: unknown): boolean {
   return true
 }
 export const validateDetail: Validator = value => shape(detailFields)(value) && coherentOutcome(value)
+export const validateCheckInput = shape({ id: text, claim: text, doi: text, previous_id: nullable(text), config_digest: text, authorized_recipients: strings })
+const contextParagraph = shape({ paragraph_id: text, section: text, text: text, paragraph_hash: text, source_url: text, entered_context: bool, cited: bool })
+export const validateEvidenceContext = shape({ id: text, source_id: nullable(text), paragraphs: array(contextParagraph) })
 export const validateCreated = shape({ id: text, status: oneOf('QUEUED') })
 export const validateSource = shape({ doi: text, title: text, authors: strings, year: nullable(number) })
 export const validateConfig = shape({ profile: oneOf('daily', 'evaluation'), config_digest: text, primary_recipient: text, fallback_recipients: strings, model_alias: text, data_scope: strings, limits, timeouts, observability, criteria })

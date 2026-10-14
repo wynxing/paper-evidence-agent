@@ -8,6 +8,7 @@ installMountDom()
 process.env.NODE_ENV ??= 'production'
 const { createApp, h } = await import('vue')
 const { useWorkbench } = await import('../src/state/workbench.ts')
+const { anchorWindow, evidenceContextNotice, evidenceContextSummary } = await import('../src/state/model.ts')
 
 const limits = { main_requests: 3, repair_requests: 1, attempts_per_request: 2, supplemental_rounds: 1 }
 const criteria = { version: 'criteria', digest: 'digest', snapshot_ref: 'snap', implementation_revision: 'rev' }
@@ -66,6 +67,19 @@ function createScriptedClient() {
       const task = tasks.get(id)
       if (!task) throw new ClientError('business', '任务不存在。', 404)
       return structuredClone(task.detail)
+    },
+    async getCheckInput(id) {
+      calls.push(['getCheckInput', id])
+      if (overrides.getCheckInput) return overrides.getCheckInput(id)
+      const task = tasks.get(id)
+      if (!task) throw new ClientError('business', '任务不存在。', 404)
+      return { id, claim: task.claim, doi: task.doi, previous_id: task.detail.previous_id ?? null, config_digest: 'frozen-digest', authorized_recipients: ['冻结接收方'] }
+    },
+    async getEvidenceContext(id) {
+      calls.push(['getEvidenceContext', id])
+      if (overrides.getEvidenceContext) return overrides.getEvidenceContext(id)
+      if (!tasks.has(id)) throw new ClientError('business', '任务不存在。', 404)
+      return { id, source_id: null, paragraphs: [] }
     },
     async getDiagnosticPacket() { throw new ClientError('business', '未准备诊断包。', 404) },
     async exportDiagnosticPacket(id, body) {
@@ -493,6 +507,184 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
       demo.work.selectScenario('执行中')
       assert.equal(demo.work.scenario.value, '执行中')
     } finally { demo.unmount() }
+  })
+
+  test('submitted input is a separate read and does not replace the history DOI or current config', async () => {
+    const s = session('#/checks/done')
+    const { api } = s
+    api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    api.overrides.getCheckInput = async () => ({ id: 'done', claim: '  原论断  ', doi: '10.1000/RAW', previous_id: 'older', config_digest: 'frozen-digest', authorized_recipients: ['冻结接收方'] })
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done' && work.history.value.some(row => row.id === 'done'), 'loaded')
+      assert.equal(named(api, 'getCheckInput').length, 0)
+      await work.loadSubmittedInput()
+      await work.loadSubmittedInput()
+      assert.equal(named(api, 'getCheckInput').length, 1)
+      assert.equal(work.submittedInput.value.claim, '  原论断  ')
+      assert.equal(work.submittedInput.value.doi, '10.1000/RAW')
+      assert.equal(work.submittedInput.value.previous_id, 'older')
+      assert.equal(work.submittedInputError.value, '')
+      await work.reload()
+      await until(() => work.detail.value?.id === 'done' && !work.loading.value, 'reloaded')
+      assert.equal(work.submittedInput.value.doi, '10.1000/RAW')
+      assert.equal(named(api, 'getCheckInput').length, 1)
+      work.prepareEdit(false, true)
+      assert.equal(work.draft.doi, '10.1000/done')
+      assert.equal(work.draft.claim, '')
+      assert.equal(work.draft.config, null)
+      await work.resolve()
+      work.draft.sourceConfirmed = true
+      work.draft.cloudConsent = true
+      await work.submit()
+      const body = named(api, 'retryCheck')[0][2]
+      assert.equal(body.config_digest, 'digest-1')
+      assert.deepEqual(body.authorized_recipients, ['本地接收方'])
+    } finally { s.unmount() }
+  })
+
+  test('a failed input read is visible, and a late response does not attach to the next task', async () => {
+    const failed = session('#/checks/done')
+    failed.api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    failed.api.overrides.getCheckInput = () => { throw new ClientError('business', '任务不存在。', 404) }
+    const failedWork = failed.mount()
+    try {
+      await until(() => failedWork.work.detail.value?.id === 'done', 'loaded')
+      await failedWork.work.loadSubmittedInput()
+      assert.equal(failedWork.work.submittedInput.value, null)
+      assert.equal(failedWork.work.submittedInputError.value, '任务不存在。')
+      assert.equal(failedWork.work.submittedInputLoading.value, false)
+    } finally { failed.unmount() }
+
+    const s = session('#/checks/a')
+    const waiters = []
+    s.api.tasks.set('a', { doi: '10.1000/a', claim: '甲', detail: taskDetail('a', 'COMPLETED', { claim: '甲' }) })
+    s.api.tasks.set('b', { doi: '10.1000/b', claim: '乙', detail: taskDetail('b', 'COMPLETED', { claim: '乙' }) })
+    s.api.overrides.getCheckInput = id => new Promise(resolve => waiters.push({ id, resolve }))
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'a', 'task a')
+      const pending = work.loadSubmittedInput()
+      await until(() => waiters.some(item => item.id === 'a'), 'input a')
+      s.host.location.hash = '#/checks/b'
+      await until(() => work.detail.value?.id === 'b', 'task b')
+      waiters.find(item => item.id === 'a').resolve({ id: 'a', claim: '甲', doi: '10.1000/RAW', previous_id: null, config_digest: 'frozen-a', authorized_recipients: [] })
+      await pending
+      assert.equal(work.submittedInput.value, null)
+      assert.equal(work.submittedInputError.value, '')
+      assert.equal(work.submittedInputLoading.value, false)
+      const next = work.loadSubmittedInput()
+      await until(() => waiters.some(item => item.id === 'b'), 'input b')
+      waiters.find(item => item.id === 'b').resolve({ id: 'b', claim: '  乙  ', doi: '10.1000/b', previous_id: null, config_digest: 'frozen-b', authorized_recipients: ['冻结接收方'] })
+      await next
+      assert.equal(work.submittedInput.value.id, 'b')
+      assert.equal(work.submittedInput.value.claim, '  乙  ')
+      assert.equal(work.submittedInput.value.doi, '10.1000/b')
+    } finally { s.unmount() }
+  })
+
+  test('a visibility reload retries an in-flight projection read that has not landed', async () => {
+    const s = session('#/checks/done')
+    const waiters = []
+    s.api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    s.api.overrides.getCheckInput = id => new Promise(resolve => waiters.push({ kind: 'input', id, resolve }))
+    s.api.overrides.getEvidenceContext = id => new Promise(resolve => waiters.push({ kind: 'context', id, resolve }))
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done', 'loaded')
+      const pendingInput = work.loadSubmittedInput()
+      const pendingContext = work.loadEvidenceContext()
+      await until(() => waiters.some(item => item.kind === 'input') && waiters.some(item => item.kind === 'context'), 'reads started')
+      assert.equal(work.submittedInput.value, null)
+      assert.equal(work.evidenceContext.value, null)
+      s.host.document.setHidden(true)
+      s.host.document.setHidden(false)
+      await until(() => waiters.filter(item => item.kind === 'input').length >= 2 && waiters.filter(item => item.kind === 'context').length >= 2, 'projection reads retried')
+      assert.equal(work.submittedInputLoading.value, true)
+      assert.equal(work.evidenceContextLoading.value, true)
+      waiters.find(item => item.kind === 'input').resolve({ id: 'done', claim: '旧', doi: '10.1000/OLD', previous_id: null, config_digest: 'old', authorized_recipients: [] })
+      waiters.find(item => item.kind === 'context').resolve({ id: 'done', source_id: 'old', paragraphs: [] })
+      await pendingInput
+      await pendingContext
+      assert.equal(work.submittedInput.value, null)
+      assert.equal(work.evidenceContext.value, null)
+      assert.equal(work.submittedInputError.value, '')
+      assert.equal(work.evidenceContextError.value, '')
+      const retriedInput = waiters.filter(item => item.kind === 'input').at(-1)
+      const retriedContext = waiters.filter(item => item.kind === 'context').at(-1)
+      retriedInput.resolve({ id: 'done', claim: '  原论断  ', doi: '10.1000/RAW', previous_id: null, config_digest: 'frozen', authorized_recipients: [] })
+      retriedContext.resolve({ id: 'done', source_id: 'src', paragraphs: [] })
+      await until(() => work.submittedInput.value?.doi === '10.1000/RAW' && work.evidenceContext.value?.source_id === 'src', 'retried reads landed')
+      assert.equal(work.submittedInputLoading.value, false)
+      assert.equal(work.evidenceContextLoading.value, false)
+      const inputCalls = named(s.api, 'getCheckInput').length
+      const contextCalls = named(s.api, 'getEvidenceContext').length
+      s.host.document.setHidden(true)
+      s.host.document.setHidden(false)
+      await until(() => work.detail.value?.id === 'done' && !work.loading.value, 'visible again')
+      assert.equal(named(s.api, 'getCheckInput').length, inputCalls)
+      assert.equal(named(s.api, 'getEvidenceContext').length, contextCalls)
+      assert.equal(work.submittedInput.value.doi, '10.1000/RAW')
+      assert.equal(work.evidenceContext.value.source_id, 'src')
+    } finally { s.unmount() }
+  })
+
+  test('evidence context is read on demand and refreshed when the task moves on', async () => {
+    const s = session('#/checks/run')
+    const { api } = s
+    let done = false
+    api.tasks.set('run', { doi: '10.1000/run', claim: '论断', detail: taskDetail('run', 'RUNNING') })
+    api.overrides.getCheck = () => taskDetail('run', done ? 'COMPLETED' : 'RUNNING')
+    api.overrides.getEvidenceContext = async () => ({ id: 'run', source_id: done ? 'src' : null, paragraphs: [] })
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.status === 'RUNNING', 'running')
+      assert.equal(named(api, 'getEvidenceContext').length, 0)
+      await work.loadEvidenceContext()
+      assert.equal(work.evidenceContext.value.source_id, null)
+      assert.deepEqual(work.evidenceContext.value.paragraphs, [])
+      assert.equal(evidenceContextSummary(work.evidenceContext.value), '来源尚未冻结，没有可读取的段落。')
+      assert.equal(named(api, 'getEvidenceContext').length, 1)
+      done = true
+      await until(() => work.detail.value?.status === 'COMPLETED', 'completed')
+      await until(() => named(api, 'getEvidenceContext').length >= 2, 'context refreshed')
+      assert.equal(work.evidenceContext.value.source_id, 'src')
+      assert.equal(evidenceContextSummary(work.evidenceContext.value), '来源已冻结，但还没有进入上下文或被引用的段落。')
+    } finally { s.unmount() }
+  })
+
+  test('evidence context keeps an anchor alone, its neighbours, and a failed read apart', async () => {
+    const s = session('#/checks/done')
+    const { api } = s
+    api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
+    const anchor = { paragraph_id: 'p1', section: 'Results', text: '冻结原文', paragraph_hash: 'h', source_url: '', entered_context: true, cited: true }
+    const before = { paragraph_id: 'p0', section: 'Intro', text: '前一段', paragraph_hash: 'h0', source_url: '', entered_context: false, cited: false }
+    let mode = 'anchor'
+    api.overrides.getEvidenceContext = async () => {
+      if (mode === 'fail') throw new ClientError('network', '连接失败，请检查服务后重新读取。', null)
+      if (mode === 'neighbours') return { id: 'done', source_id: 'src', paragraphs: [before, anchor] }
+      return { id: 'done', source_id: 'src', paragraphs: [anchor] }
+    }
+    const { work } = s.mount()
+    try {
+      await until(() => work.detail.value?.id === 'done', 'loaded')
+      await work.loadEvidenceContext()
+      assert.equal(evidenceContextNotice(work.evidenceContext.value, 'p1'), '当前只返回了该摘录所在段落，没有相邻段落。')
+      assert.equal(anchorWindow(work.evidenceContext.value.paragraphs, 'p1').anchor.text, '冻结原文')
+      assert.equal(anchorWindow(work.evidenceContext.value.paragraphs, 'p1').before, null)
+      mode = 'neighbours'
+      await work.loadEvidenceContext(true)
+      const window = anchorWindow(work.evidenceContext.value.paragraphs, 'p1')
+      assert.equal(window.before.text, '前一段')
+      assert.equal(window.after, null)
+      assert.equal(evidenceContextNotice(work.evidenceContext.value, 'p1'), null)
+      assert.equal(evidenceContextNotice(work.evidenceContext.value, 'missing'), '这段摘录不在当前返回的证据上下文中。')
+      mode = 'fail'
+      await work.loadEvidenceContext(true)
+      assert.equal(work.evidenceContext.value, null)
+      assert.match(work.evidenceContextError.value, /连接失败/)
+      assert.equal(work.evidenceContextLoading.value, false)
+    } finally { s.unmount() }
   })
 
   test('semantic export requires the consent flag before it calls the client', async () => {

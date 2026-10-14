@@ -1,4 +1,4 @@
-import type { Accounting, CheckDetail, DiagnosticExportRequest, DiagnosticPacket, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
+import type { Accounting, CheckDetail, ContextParagraph, DiagnosticExportRequest, DiagnosticPacket, EvidenceContext, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
 
 export interface Draft {
   claim: string; doi: string; source: SourcePreview | null; config: RunConfigPreview | null
@@ -56,6 +56,39 @@ export const errors: Record<string, string> = {
 }
 export function attemptText(a: Accounting) { return a.verification === 'verified' && a.upstream_attempts_used !== null ? `${a.upstream_attempts_used} 次` : `至少 ${a.observed_upstream_attempts} 次，实际次数未知` }
 export function safeSourceUrl(value: string): string | null { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
+export interface AnchorWindow { anchor: ContextParagraph | null; before: ContextParagraph | null; after: ContextParagraph | null }
+/**
+ * The evidence-context list is ordered by paragraph ordinal.
+ * Entries beside an anchor are its original neighbours only when the server has fully expanded each anchor by ordinal±1.
+ * A list that contains only the anchor has none. Known cases still awaiting retest are tracked in issue #20.
+ */
+export function anchorWindow(paragraphs: readonly ContextParagraph[], paragraphId: string): AnchorWindow {
+  const index = paragraphs.findIndex(item => item.paragraph_id === paragraphId)
+  if (index < 0) return { anchor: null, before: null, after: null }
+  return { anchor: paragraphs[index] ?? null, before: paragraphs[index - 1] ?? null, after: paragraphs[index + 1] ?? null }
+}
+/** Why a frozen context has no paragraphs yet. A non-empty list is not an empty state. */
+export function evidenceContextSummary(context: EvidenceContext): string | null {
+  if (context.paragraphs.length) return null
+  return context.source_id ? '来源已冻结，但还没有进入上下文或被引用的段落。' : '来源尚未冻结，没有可读取的段落。'
+}
+/** What to say about one quote's surroundings. The anchor text stays visible when the notice is only about missing neighbours. */
+export function evidenceContextNotice(context: EvidenceContext, paragraphId: string): string | null {
+  const summary = evidenceContextSummary(context)
+  if (summary) return summary
+  const window = anchorWindow(context.paragraphs, paragraphId)
+  if (!window.anchor) return '这段摘录不在当前返回的证据上下文中。'
+  if (!window.before && !window.after) return '当前只返回了该摘录所在段落，没有相邻段落。'
+  return null
+}
+/** Cited and entered-context paragraphs are anchors. A paragraph with neither flag is a neighbour, not evidence. */
+export function paragraphRole(paragraph: ContextParagraph): string {
+  const parts: string[] = []
+  if (paragraph.cited) parts.push('被引用')
+  if (paragraph.entered_context) parts.push('进入模型上下文')
+  if (!parts.length) parts.push('邻段')
+  return parts.join(' · ')
+}
 export function parseRoute(hash: string): { view: 'new' | 'check' | 'diagnostic'; id: string | null; invalid: boolean } {
   const path = hash.startsWith('#') ? hash.slice(1) : hash
   if (path === '' || path === '/' || path === '/new') return { view: 'new', id: null, invalid: false }

@@ -220,8 +220,8 @@ class CheckInput(Contract):
     ``config_digest`` and ``authorized_recipients`` are the values frozen at
     creation and are **not** what a resubmission should send: ``POST /api/checks``
     validates the *current* effective digest, so a frozen digest is refused with
-    409 once the effective configuration changes. Read-only and always local, and
-    currently without a frontend caller.
+    409 once the effective configuration changes. Read-only and always local.
+    The task detail UI calls this projection.
     """
 
     id: str
