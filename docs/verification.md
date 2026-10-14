@@ -538,7 +538,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 ### 端到端联调后端缺口：未覆盖
 
-- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型；**前端已有调用方**（自 PR #37 合入 `add34f8` 起）：`frontend/src/api/contracts.ts:235` / `:236` 的 `getCheckInput` / `getEvidenceContext` 已由 `frontend/src/api/http.ts:40` / `:41` 实现（对应 `/input`、`/evidence-context`），任务详情页 `CheckDetail.vue` 在「原始提交」与「查看冻结上下文」两个披露面板展开时按需读取。本节原文记「目前无前端调用方……全仓也搜不到 `evidence-context` 的调用点」，那是 PR #37 合并前的状态，订正依据见下方「只读投影前端调用方订正（2026-10-14）」一节。
+- 两个只读投影都只对**本机记录**做投影，未接入真实来源或模型；**前端已有调用方**（自 PR #37 合入 `add34f8` 起）：`frontend/src/api/contracts.ts:235` / `:236` 的 `getCheckInput` / `getEvidenceContext` 已由 `frontend/src/api/http.ts:40` / `:41` 实现（对应 `/input`、`/evidence-context`），任务详情页 `CheckDetail.vue` 的调用点有三处：「原始提交」（`:40`）与「查看冻结上下文」（`:61`）两个披露面板，以及每条证据下的「查看邻段」（`:69`），都在展开时按需读取。本节原文记「目前无前端调用方……全仓也搜不到 `evidence-context` 的调用点」，那是 PR #37 合并前的状态，订正依据见下方「只读投影前端调用方订正（2026-10-14）」一节。
 - **`evidence-context` 在真实来源上目前只能返回锚点自身**：真实 PMC 经 `metadataPrefix=pmc_fm` 取回的「全文」实际只含题录与摘要（`jats_bytes` 的 `<body>` 计数为 0，见 #28），该来源段落表仅 0~1 段，因此 `ordinal±1` 的邻段展开恒为空，「引文前后是什么」在当前冻结内容下无法兑现。此前写作「冻结样本仅 3 段」会让人误以为换成真实来源即可，属措辞不准；该项在 #20 中记为**阻塞**，随 #28 修复。
   > ⚠️ **2026-10-12 更新**：#28 已修复并合入 main（PR #29：PMC 取回先请求 `pmc`、仅在 `cannotDisseminateFormat` 时回落 `pmc_fm`，见下方「PMC 全文取回：metadataPrefix 修正」一节），本分支随本次合并已包含该修复。故上面「只能返回锚点自身」描述的是**修复前**的状态；邻段能力在真实来源上**是否恢复尚未复测**（本节用例仍只覆盖冻结样本），按 #20 清单复测前不声明为已验证能力。
 - `evidence-context` 只按 `ordinal±1` 展开，不解析文内交叉引用（如「见第 2 节」），跨小节引用不在本次范围。
@@ -990,10 +990,10 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 | 契约已声明、客户端已实现 | `git grep -n -e getCheckInput -e getEvidenceContext origin/main -- frontend/src/api/contracts.ts frontend/src/api/http.ts` | `contracts.ts:235` / `:236` 是接口声明，`http.ts:40` / `:41` 分别是 `/input` 与 `/evidence-context` 的实现 |
 | 详情页确有调用 | `git grep -n -e loadSubmittedInput -e loadEvidenceContext origin/main -- frontend/src/views/CheckDetail.vue` | `:40`「原始提交」与 `:61`「查看冻结上下文」两个 `details.disclosure` 在 `@toggle` 时按需读取（`:19` / `:20` 取 `work.submittedInput` / `work.evidenceContext`） |
 | 该表述在 main 上的残留 | `git grep -n -e 无前端调用方 -e 没有前端调用方 -e "no frontend caller" origin/main` | 只剩 `docs/verification.md:541`（本次订正）与 `:552`（历史记述，见下节） |
-| 按行号的交叉引用未被打断 | `git grep -n -e "verification.md:391" origin/main` | 引用共 3 处（本文 `:929`、`:941` 与 `tests/e2e/specs/02-main-path.spec.ts:110`）。本次是**单行替换 + 文末追加**，总行数不变，`:391` 仍指向「`verified_model_version` 仍只能是 null」 |
+| 按行号的交叉引用未被打断 | `git grep -n -e "verification.md:391" origin/main` | 引用共 3 处（本文 `:929`、`:941` 与 `tests/e2e/specs/02-main-path.spec.ts:110`）。本次是**单行替换 + 文末追加**，`:541` **之前**的行号不受影响，`:391` 仍是同一条记录（「没有真实模型调用。……`verified_model_version` 仍只能是 null」）；总行数由 980 增至 1003，追加内容都在 `:541` 之后 |
 
 - 订正只改**调用方**这一半。两个投影「只对本机记录做投影、未接入真实来源或模型」这半句在本次改动后仍然属实，保留原文。
-- 同一批表述在 `backend/paper_evidence/api/app.py:272`、`backend/paper_evidence/domain/contracts.py:224`、`docs/architecture.md:288` 与前端注释处已由前端侧在 PR #37 内一并订正；文档侧的这一处按分工留在测试侧，故成本次改动。
+- 同一批表述在 `backend/paper_evidence/api/app.py:272`、`backend/paper_evidence/domain/contracts.py:224`、`docs/architecture.md:288` 与前端注释处已由前端侧在 PR #37 内一并订正；文档侧的这一处按分工留在测试侧，故为本次改动。
 
 ### 调用方订正：未覆盖与边界
 
