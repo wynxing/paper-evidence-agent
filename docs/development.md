@@ -42,7 +42,7 @@
 
 OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应。诊断包类型声明遵循 schema `2.2`；`redacted` 与 `consented` 投影在 `diagnosis/projector.py` 中实现，配置摘要和判据快照分别由 `config.py` 与 `domain/rules.py` 生成。脱敏包保留公开书目字段并在预览中明确该边界。
 
-前端只定义 API 客户端类型，没有 HTTP 客户端实现；静态页面不会提交任务或生成模拟结果。
+前端在 `frontend/src/api/contracts.ts` 声明 API 类型，并由 `frontend/src/api/http.ts` 的 `createHttpClient`（基于 `fetch`，对每个响应按 `validation.ts` 校验契约）实现真实调用；工作台据此提交任务、轮询进度，并按需读取原始输入与证据上下文。另有一条 `--mode demo`（`npm run dev:demo`）的构造数据客户端 `frontend/src/api/demo.ts`，仅供离线演示，界面明确标注「模拟数据 · 仅本页内存」，不与真实接口混用。
 
 `POST /api/checks` 与 `POST /api/checks/{id}/retry` 的 `authorized_recipients` 必须是已配置接收方（主接收方加 `PAPER_EVIDENCE_FALLBACK_RECIPIENTS`）的子集，越界返回 `400`；范围内的名单只能收窄，收窄后的授权随其摘要写入任务快照，不会扩大预览范围。诊断导出不复用模型接收方：`recipient` 必须等于运行配置里的已授权观测/诊断接收方，否则返回 `400`；该标识由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`（兼容旧名 `PAPER_EVIDENCE_LANGFUSE_RECIPIENT`）配置，未配置时不产生 `consented` 导出。来源使用范围不允许时仍返回 `409`。
 
@@ -65,7 +65,7 @@ backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续�
 
 `--loop`（等价环境变量 `PAPER_EVIDENCE_WORKER_LOOP=1`）改为常驻：先把队列排空，再按间隔轮询新任务，直到进程收到中断信号。轮询间隔用 `--interval <秒>` 或 `PAPER_EVIDENCE_WORKER_POLL_SECONDS` 设置，默认 `1.0` 秒，下限 `0.05` 秒（更小的值按 `0.05` 处理）。前端始终以 1.5 秒轮询任务详情，因此需要 API 与常驻 worker 同时运行，排队任务才会进入 `RUNNING`；只跑一次性 worker 时，任务入队后会一直停在 `QUEUED`。API 进程本身不执行任务。
 
-常驻循环对单个任务的失败是隔离的。`run_once` 先结算可证已死的遗留行，再领取并记账；构造工作流和运行工作流都在同一个兜底里：工作流抛出的异常落为该任务的 `FAILED`（error_code 为 null，worker 的未分类分支），而不是让循环中断。工厂或存储层抛出的异常由循环自身捕获、记录后继续下一轮；这类任务留给遗留 `RUNNING` 结算（其 deadline 到点后的下一轮，或下次进程启动），不由这一层冒充终态。`asyncio.CancelledError` 继承自 `BaseException`，不被这条兜底吞掉，停止路径照常退出。
+常驻循环对单个任务的失败是隔离的。`run_once` 先结算自己时限已过的遗留行，再领取并记账；构造工作流和运行工作流都在同一个兜底里：工作流抛出的异常落为该任务的 `FAILED`（error_code 为 null，worker 的未分类分支），而不是让循环中断。工厂或存储层抛出的异常由循环自身捕获、记录后继续下一轮；这类任务留给遗留 `RUNNING` 结算（其 deadline 到点后的下一轮，或下次进程启动），不由这一层冒充终态。`asyncio.CancelledError` 继承自 `BaseException`，不被这条兜底吞掉，停止路径照常退出。
 
 已受理的取消优先于完成或失败结果：工作流在写入终态前复查取消标记，`SqliteStore.finish` 也在同一事务内拒绝非 `CANCELLED` 的终态写入到 `cancel_requested = 1` 的任务，随后由取消路径落 `CANCELLED`。取消检查点与终态写入之间的窗口因此不跨进程内竞争：取消已受理时任务最终显示为「已取消」，而不是「已完成」。
 
