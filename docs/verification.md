@@ -1032,7 +1032,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 ### 多 worker 订正：未覆盖与边界
 
 - **本维度仍未判定该场景**：`tests/performance/` 的 21 条仍按测试方案「保持单进程」的前提跑，判定改由边界维度的 `tests/boundary/test_worker_exclusivity.py` 承担。本节只订正表述，未改动任何用例。
-- **没有测试对本文档的内容作断言**：`tests/` 下唯一读 `docs/` 的是 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
+- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的有两处——`tests/tools/test_api_contract.py` 读 `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`（本节原先是只写了前者，后补上后者；只是补事实清单，当次的手段与结论未变）。本文档 `verification.md` 不在其中，所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
 - **残留窗口仍在，第 3.1 条已由 PR #46 按「订正措辞」处置**：任务的运行时限走单调钟，落库的 `deadline_at` 走墙上钟（「总时限自 RUNNING 起算、不含队列」一栏说的「同源」指两者由同一次领取算出、落库值本身算得对，不是说它们是同一只钟）。阶段边界之外不再比钟，所以任务在 `deadline_at` 过后仍可能合法地处于 `RUNNING`，此时另一个 worker 的结算会先把它记成 `INTERRUPTED`，而原 worker 超时要写的 `TASK_TIMEOUT` 会被条件写入拒绝。窗口本身**没有**消除：能盖住它的小宽限必须大于一次在途的上游尝试（默认 45 秒），而结算判据在存储层拿不到任务侧的超时配置，所以 PR #46（合并为 `958ac17`）只把「可证已死」换成能证明的表述（该行自己的时限已过），并把触发条件与取舍写进 `storage/ports.py`、`docs/development.md`、`docs/architecture.md` 与 `docs/tech-stack.md`。依据见本文「#46 覆盖残留的结论订正」一节。
 - **第 3.2 / 3.3 条已由 PR #46 处置，「本 PR 未改」自 #46 起不再成立**：一次性 `drain` 被在途 `RUNNING` 挡住时不再打印「队列已空」，改由 `worker/__main__.py` 的 `closing_message(count, stall)` 报出挡路的那一行（空队列那一句一字未改）；`storage/ports.py` 的 `claim_next` 契约已补第三种来源（条件 `UPDATE` 的 `rowcount` 不为 1），并新增 `running_task()` 供调用方区分「队列为空」与「已有任务在 `RUNNING`」。依据见本文「#46 覆盖残留的结论订正」一节。
 
@@ -1063,9 +1063,9 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
 ### 覆盖残留订正：未覆盖与边界
 
 - **本次是纯文档订正，不涉及运行行为**：没有代码路径被改动，本节不声明任何新的功能验证结果。
-- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的只有 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性、行尾自检，**不是**测试套件。
+- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的有两处——`tests/tools/test_api_contract.py` 读 `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`（本节原先是只写了前者，现补上后者）。本文档 `verification.md` 不在其中，所以本次的验证手段是上表的 grep 与标题唯一性、行尾自检，**不是**测试套件。
 - **残留窗口仍在，不等于已修**：3.1 走的是「订正措辞」这条路，`deadline_at` 过后持有者仍可能合法地处于 `RUNNING`、被第二个 worker 抢先记成 `INTERRUPTED`，只是文档与实现不再声称「可证已死」。这条取舍由 Issue #44 记录，本次不重开。
-- **4 处测试注释与 `docs/development.md:68` 的同族表述未改**：后者的归属与处置属另一个改动，本节不覆盖；测试注释属可选项，本次未做。
+- **`docs/development.md:68` 那处已由 PR #50 订正；剩 4 处测试注释未改**：记这一栏的时候 `:68` 还是待处理，PR #50（`0e9b98f`）随后把同族表述改写为「自己时限已过」，所以此处改为**已处理**；4 处测试注释属可选项，本次未做。
 
 ## evidence-context 的 `ordinal` 契约复测（2026-10-14）
 
@@ -1132,5 +1132,6 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
   临时应用到本分支工作树（只加用例、不碰实现）后跑 `npm --prefix frontend test`，得 **51 条 / 50 passed / 1 failed**，
   失败点即 `an entry counts as the next paragraph only when the server placed it there by ordinal`；跑完已还原，工作区无残留。
   配合上一条的 `git diff` 为空，可以排除「实现已经修好只是用例过时」这种可能。
-- `docs/verification.md` 没有测试对其内容作断言（`tests/` 下唯一读 `docs/` 的是 `tests/tools/test_api_contract.py`，
-  它读的是 `docs/architecture.md`），所以本次的验证手段是脚本断言与 grep，**不是**测试套件。
+- `docs/verification.md` 没有测试对其内容作断言（`tests/` 下读 `docs/` 的有两处：`tests/tools/test_api_contract.py` 读
+  `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`），所以本次的验证手段是
+  脚本断言与 grep，**不是**测试套件。
