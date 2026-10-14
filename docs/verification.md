@@ -879,7 +879,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 
 - **四条本机集成验收未执行**：取消接口 1 秒内响应、受理后 2 秒内收尾释放 worker、deadline 后 2 秒内收尾，以及无负载前提本身。它们需要 API 与 `--loop` worker 双进程同时运行、且任务在途足够久——无密钥时任务在 `query_generation` 立即以 `UPSTREAM_UNAVAILABLE` 收口，测不到释放路径。**未跑，不记为通过。**
 - **真实上游下的性能数字未测**：单任务延迟、逻辑请求数、上游尝试数、token 的口径已被用例钉住，但本次喂给它们的是构造记录，不是真实模型。测试方案要求性能数字在真实上游下测量才有意义，因此本记录不含任何性能结论。
-- **多 worker 并发：判定已移交边界维度**：`SqliteStore.claim_next` 原先只按 `QUEUED` 取队首、**不检查是否已有 `RUNNING`**，所以「一次一个任务」当时由单进程 worker 的顺序循环保证，属于运行约定而非存储层约束，两个 worker 进程会各领一条并行执行。PR #43（合并为 `f051ce0`）把它改成了**存储层不变量**：只要有一行处于 `RUNNING`，领取就返回 `None`，遗留 `RUNNING` 也只在「可证已死」时结算，第二个 worker 的启动不再会杀掉在途任务。本维度按测试方案的「保持单进程」前提仍不做该场景的判定，判定改由 `tests/boundary/test_worker_exclusivity.py`（8 条）承担，依据见本文「多 worker 不变量落地后的文档订正」一节。
+- **多 worker 并发：判定已移交边界维度**：`SqliteStore.claim_next` 原先只按 `QUEUED` 取队首、**不检查是否已有 `RUNNING`**，所以「一次一个任务」当时由单进程 worker 的顺序循环保证，属于运行约定而非存储层约束，两个 worker 进程会各领一条并行执行。PR #43（合并为 `f051ce0`）把它改成了**存储层不变量**：只要有一行处于 `RUNNING`，领取就返回 `None`，遗留 `RUNNING` 也只在**自己时限已过**时结算，第二个 worker 的启动不再会杀掉在途任务。本维度按测试方案的「保持单进程」前提仍不做该场景的判定，判定改由 `tests/boundary/test_worker_exclusivity.py`（10 条；本文记这一栏时是 8 条，PR #46 新增 2 条）承担，依据见本文「多 worker 不变量落地后的文档订正」与「#46 覆盖残留的结论订正」两节。
 - **模型侧 `Retry-After` 规则未在本维度重复**：已由 `tests/tools/test_sdk_gateway.py` 在真实时钟下覆盖，本维度只补来源侧同一规则与确切边界。
 - **本机无负载前提未验证**：所有耗时断言都刻意宽松（或因虚拟时钟而确定），没有测量机器背景负载。
 - **端到端维度（`tests/e2e/`）仍缺**：属 Issue #26 的另一半，需先定 Playwright 归属与浏览器环境。
@@ -1012,8 +1012,8 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 | --- | --- | --- |
 | 领取前先看有没有 `RUNNING` | `git grep -n -A 30 "def claim_next" origin/main -- backend/paper_evidence/storage/sqlite.py` | 同一事务内先 `SELECT 1 FROM tasks WHERE status = 'RUNNING' LIMIT 1`，命中即 `COMMIT` 并返回 `None` |
 | 条件 `UPDATE` 的 `rowcount` 已检查 | `git grep -n "rowcount" origin/main -- backend/paper_evidence/storage/sqlite.py` | 不为 1 则 `ROLLBACK` 并返回 `None`；文档字符串写明这是「返回的任务确实被本次调用领取了」的存储层保证 |
-| 遗留 `RUNNING` 只在「可证已死」时结算 | `git grep -n "deadline_at IS NULL OR deadline_at" origin/main -- backend/paper_evidence/storage/sqlite.py` | 只结算 `deadline_at` 已过、或没有 `deadline_at` 的行，不再无条件结算全部 `RUNNING` |
-| 该场景已有用例 | `git ls-tree -r --name-only origin/main -- tests/boundary/` | `test_worker_exclusivity.py`（8 条）：另一个进程领不到任务、并发领取恰一个成功、第二个 worker 启动不打断在途任务、可证已死的遗留仍结算、结算后队列不永久卡住 |
+| 遗留 `RUNNING` 只在**自己时限已过**时结算 | `git grep -n "deadline_at IS NULL OR deadline_at" origin/main -- backend/paper_evidence/storage/sqlite.py` | 只结算 `deadline_at` 已过、或没有 `deadline_at` 的行，不再无条件结算全部 `RUNNING` |
+| 该场景已有用例 | `git ls-tree -r --name-only origin/main -- tests/boundary/` | `test_worker_exclusivity.py`（10 条；本节记这一栏时是 8 条）：另一个进程领不到任务、并发领取恰一个成功、第二个 worker 启动不打断在途任务、自己时限已过的遗留仍结算、结算后队列不永久卡住 |
 | 架构文档的表述已同步 | `git grep -n "存储层不变量" origin/main -- docs/architecture.md` | 「**规则**：「同一时刻只执行一个任务」是存储层不变量：只要有任务处于 `RUNNING`，`claim_next` 就拒绝领取」 |
 
 改动形态是**两处单行替换 + 文末追加**：`:856` 与 `:882` 各替换一行、行数不变，因此 `:541` **之前**的行号（含被三处引用的 `:391`）不受影响。
@@ -1033,5 +1033,36 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 
 - **本维度仍未判定该场景**：`tests/performance/` 的 21 条仍按测试方案「保持单进程」的前提跑，判定改由边界维度的 `tests/boundary/test_worker_exclusivity.py` 承担。本节只订正表述，未改动任何用例。
 - **没有测试对本文档的内容作断言**：`tests/` 下唯一读 `docs/` 的是 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
-- **「可证已死」仍比 `deadline_at` 能证明的更强**：任务的运行时限走单调钟，落库的 `deadline_at` 走墙上钟（「总时限自 RUNNING 起算、不含队列」一栏说的「同源」指两者由同一次领取算出、落库值本身算得对，不是说它们是同一只钟）。阶段边界之外不再比钟，所以任务在 `deadline_at` 过后仍可能合法地处于 `RUNNING`，此时另一个 worker 的结算会先把它记成 `INTERRUPTED`，而原 worker 超时要写的 `TASK_TIMEOUT` 会被条件写入拒绝。这条已由 Issue #44 跟踪，**本 PR 不修，也不在本次结论范围内**。
-- **同样由 #44 跟踪、本 PR 未改**：`claim_next` 返回 `None` 时一次性 `drain` 会退出并打印「队列已空」，被 `RUNNING` 挡住时队列里可能仍有 `QUEUED`；`storage/ports.py` 的契约只列了「队列为空」与「已有 `RUNNING`」两种来源，少了 `rowcount` 不通过这一种。
+- **残留窗口仍在，第 3.1 条已由 PR #46 按「订正措辞」处置**：任务的运行时限走单调钟，落库的 `deadline_at` 走墙上钟（「总时限自 RUNNING 起算、不含队列」一栏说的「同源」指两者由同一次领取算出、落库值本身算得对，不是说它们是同一只钟）。阶段边界之外不再比钟，所以任务在 `deadline_at` 过后仍可能合法地处于 `RUNNING`，此时另一个 worker 的结算会先把它记成 `INTERRUPTED`，而原 worker 超时要写的 `TASK_TIMEOUT` 会被条件写入拒绝。窗口本身**没有**消除：能盖住它的小宽限必须大于一次在途的上游尝试（默认 45 秒），而结算判据在存储层拿不到任务侧的超时配置，所以 PR #46（合并为 `958ac17`）只把「可证已死」换成能证明的表述（该行自己的时限已过），并把触发条件与取舍写进 `storage/ports.py`、`docs/development.md`、`docs/architecture.md` 与 `docs/tech-stack.md`。依据见本文「#46 覆盖残留的结论订正」一节。
+- **第 3.2 / 3.3 条已由 PR #46 处置，「本 PR 未改」自 #46 起不再成立**：一次性 `drain` 被在途 `RUNNING` 挡住时不再打印「队列已空」，改由 `worker/__main__.py` 的 `closing_message(count, stall)` 报出挡路的那一行（空队列那一句一字未改）；`storage/ports.py` 的 `claim_next` 契约已补第三种来源（条件 `UPDATE` 的 `rowcount` 不为 1），并新增 `running_task()` 供调用方区分「队列为空」与「已有任务在 `RUNNING`」。依据见本文「#46 覆盖残留的结论订正」一节。
+
+## #46 覆盖残留的结论订正（2026-10-14）
+
+PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 处置完毕：3.1 选「订正措辞」而不是给 `deadline_at` 加宽限期，3.2 让一次性 `drain` 如实报出挡路的 `RUNNING` 行，3.3 给 `storage/ports.py` 的 `claim_next` 补第三种来源。本文因此失效的结论共五处：`:882`（性能维度未覆盖一栏里的「可证已死」与「8 条」）、`:1015` / `:1016`（多 worker 订正的检查表）、`:1036`（残留窗口的处置状态）、`:1037`（`drain` 误报与 `ports` 两种来源）。本节记录订正依据；`:118` / `:169` / `:223` / `:277` 的空队列文案未变，不动。
+
+### 覆盖残留订正：实际检查
+
+| 检查项 | 命令（`origin/main` = `958ac17`） | 结果 |
+| --- | --- | --- |
+| 结算只认「自己时限已过」 | `git grep -n "deadline_at IS NULL OR deadline_at" origin/main -- backend/paper_evidence/storage/sqlite.py` | 判据仍是 `deadline_at IS NULL OR deadline_at <= _epoch()`，**未加宽限期**；`settle_orphaned_running` 的 docstring 写明「超过时限不等于持有进程已死」 |
+| 措辞已换成能证明的表述 | `git grep -n "可证已死" origin/main` | 实现、架构与技术选型文档已无此表述；全仓只剩 `docs/development.md:68` 与 4 处测试注释（`test_worker_exclusivity.py:5` / `:173` / `:225`、`test_storage_lifecycle.py:305`），前者的同族表述不在本次范围内、单独处理 |
+| 一次性 `drain` 不再误报队列为空 | `git grep -n "def closing_message" -A 16 origin/main -- backend/paper_evidence/worker/__main__.py` | 空队列返回「worker 本次处理了 N 个任务，队列已空。」（一字未改）；被挡住时改为「worker 本次处理了 N 个任务；有 1 个任务仍在 RUNNING（id，阶段 stage，时限 …），本次未处理。」，且不对队列其余部分下结论 |
+| 挡路行在拒绝领取的那一刻读 | `git grep -n -e "running_task" -e "stall" origin/main -- backend/paper_evidence/worker/runner.py` | `SingleTaskWorker.stall` 在 `claim_next` 返回 `None` 的那一刻记录，不是在 `drain` 返回后再读一次 |
+| `ports.py` 已补第三种来源 | `git grep -n -A 10 "def claim_next" origin/main -- backend/paper_evidence/storage/ports.py` | docstring 列为三种：队列为空、已有任务 `RUNNING`、条件 `UPDATE` 未移动行；并新增 `running_task()` 契约供调用方区分前两种 |
+| 该场景用例数由 8 增到 10 | `grep -c "^def test_" tests/boundary/test_worker_exclusivity.py` | **10** |
+
+### 覆盖残留订正：本机结果
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端全量 | `pytest -c backend/pyproject.toml -q` | **296 passed, 2 warnings**（66.88s，退出码 0） |
+| 前端单测 | `npm --prefix frontend test` | **50 passed / 0 failed** |
+| 标题唯一性 | 跳过围栏代码块后统计 `^#{1,6}\s+` | 100 → 104 个标题，无重名 |
+| 行尾与行号 | 统计 `\n` 与 `\r\n`；核对被引用的 `:391` / `:541` | 全 CRLF 未混入 LF；总行数由 1037 增至 1068，五处订正均为**不增行数的单行替换**，`:541` **之前**的行号一处未移 |
+
+### 覆盖残留订正：未覆盖与边界
+
+- **本次是纯文档订正，不涉及运行行为**：没有代码路径被改动，本节不声明任何新的功能验证结果。
+- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的只有 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性、行尾自检，**不是**测试套件。
+- **残留窗口仍在，不等于已修**：3.1 走的是「订正措辞」这条路，`deadline_at` 过后持有者仍可能合法地处于 `RUNNING`、被第二个 worker 抢先记成 `INTERRUPTED`，只是文档与实现不再声称「可证已死」。这条取舍由 Issue #44 记录，本次不重开。
+- **4 处测试注释与 `docs/development.md:68` 的同族表述未改**：后者的归属与处置属另一个改动，本节不覆盖；测试注释属可选项，本次未做。
