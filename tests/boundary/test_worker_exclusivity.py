@@ -121,6 +121,47 @@ def test_concurrent_claims_produce_exactly_one_winner(tmp_path):
         second.close()
 
 
+def test_a_refused_run_once_leaves_the_live_task_and_the_queue_alone(store, settings, tmp_path):
+    """B 跑一轮 ``run_once()``：领不到任务，A 的任务仍 RUNNING，第二条仍 QUEUED。
+
+    直接调 ``settle_orphaned_running`` 只能证明结算本身，证不了 ``run_once`` 会先结算
+    再领取、且不碰在途任务——「每轮领取前结算」是 #34 改动里唯一没被正面钉住的一点
+    （Issue #44 第 3.4 条）。
+    """
+
+    make_task(store, "t1")
+    make_task(store, "t2")
+    assert store.claim_next(time.time() + 180) is not None  # A：t1 -> RUNNING，时限未到
+
+    other = SqliteStore(tmp_path / "exclusivity.sqlite3")
+    try:
+        worker = SingleTaskWorker(other, lambda task: _InstantWorkflow(other), settings)
+        assert asyncio.run(worker.run_once()) is False
+        assert store.get("t1").status is TaskStatus.RUNNING
+        assert store.get("t2").status is TaskStatus.QUEUED
+    finally:
+        other.close()
+
+
+def test_a_refused_claim_reports_the_blocking_running_task(store, settings):
+    """``stall`` 指出挡住领取的那一行，队列空时为 ``None``（Issue #44 第 3.2 条）。
+
+    一次性 ``drain`` 的结尾一行靠它区分「队列已空」与「被在途任务挡住」——后者队列里
+    可能还有 ``QUEUED`` 任务没被处理，报成队列已空会让操作者停止重跑。
+    """
+
+    worker = SingleTaskWorker(store, lambda task: _InstantWorkflow(store), settings)
+    assert asyncio.run(worker.run_once()) is False
+    assert worker.stall is None
+
+    make_task(store, "t1")
+    make_task(store, "t2")
+    assert store.claim_next(time.time() + 180) is not None
+    assert asyncio.run(worker.run_once()) is False
+    assert worker.stall["id"] == "t1"
+    assert store.get("t2").status is TaskStatus.QUEUED
+
+
 # ------------------------------------------------------------- 遗留行的判定依据
 
 

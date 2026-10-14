@@ -42,6 +42,48 @@ def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "paper-evidence.sqlite3").exists()
 
 
+def test_worker_entry_reports_a_blocked_queue_instead_of_an_empty_one(tmp_path, monkeypatch, capsys):
+    """队列里还有任务时不能说「队列已空」：在途任务挡住了这次领取。
+
+    #44 第 3.2 条：``run_once`` 返回 ``False`` 既可能是队列已空，也可能是别的进程正
+    在跑任务；一次性 ``drain`` 一律当结束，于是「队列已空」会被打到一次明明还有
+    ``QUEUED`` 任务的运行上，让操作者以为没有活可干。
+    """
+
+    import time
+    from dataclasses import replace
+
+    from paper_evidence.config import Settings
+    from paper_evidence.domain.contracts import RunConfigSnapshot
+    from paper_evidence.domain.records import TaskInput
+    from paper_evidence.domain.rules import criteria_reference
+    from paper_evidence.storage.sqlite import SqliteStore
+    from paper_evidence.worker.__main__ import main
+
+    monkeypatch.setenv("PAPER_EVIDENCE_DATA_DIR", str(tmp_path))
+    settings = replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
+    store = SqliteStore(tmp_path / "paper-evidence.sqlite3")
+    try:
+        for task_id in ("t1", "t2"):
+            store.create(
+                TaskInput(id=task_id, claim="The treatment reduced mortality.", doi="10.1000/xyz",
+                          config_digest="d", authorized_recipients=("Agnes",)),
+                RunConfigSnapshot(profile="daily", config_digest="d", snapshot_ref="r",
+                                  authorized_recipients=["Agnes"], limits=settings.limits,
+                                  timeouts=settings.timeouts, observability=settings.observability),
+                criteria_reference("rev"),
+            )
+        assert store.claim_next(time.time() + 180) is not None  # t1 在途，时限未到
+
+        assert main() == 0
+        err = capsys.readouterr().err
+        assert "队列已空" not in err
+        assert "t1" in err and "RUNNING" in err
+        assert store.get("t2").status is TaskStatus.QUEUED
+    finally:
+        store.close()
+
+
 def test_worker_reports_an_interrupt_and_exits_zero(tmp_path, monkeypatch, capsys):
     """常驻模式只能靠中断结束，入口把它当作正常停止而不是失败。
 
