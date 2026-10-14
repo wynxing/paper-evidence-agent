@@ -309,6 +309,9 @@ class SqliteStore:
         decision cites (what the result rests on). Expansion goes through
         ``read_neighbors``, which is source-scoped, so a task without a frozen
         source yields no paragraphs and no id can leak across sources.
+
+        每段带自己的 ``ordinal``：同一来源有多个锚点时，列表里紧挨在锚点后面的条目
+        可能是另一个锚点而不是它的邻段，调用方要用序号判断原文是否相邻（Issue #47）。
         """
 
         detail = self.get(task_id)
@@ -323,8 +326,8 @@ class SqliteStore:
             id=task_id, source_id=source_id,
             paragraphs=[
                 ContextParagraph(
-                    paragraph_id=item.paragraph_id, section=item.section, text=item.text,
-                    paragraph_hash=item.paragraph_hash, source_url=item.source_url,
+                    paragraph_id=item.paragraph_id, section=item.section, ordinal=item.ordinal,
+                    text=item.text, paragraph_hash=item.paragraph_hash, source_url=item.source_url,
                     entered_context=item.paragraph_id in entered, cited=item.paragraph_id in cited,
                 )
                 for item in self.read_neighbors(source_id, sorted(entered | cited))
@@ -726,7 +729,7 @@ class SqliteStore:
                                paragraph_hash, source_url, native_jats_id)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                         (paragraph.paragraph_id, source_id, paragraph.section,
-                         _ordinal(paragraph.paragraph_id), paragraph.text, paragraph.paragraph_hash,
+                         paragraph.ordinal, paragraph.text, paragraph.paragraph_hash,
                          paragraph.source_url, paragraph.native_jats_id),
                     )
                     self._conn.execute(
@@ -813,8 +816,8 @@ class SqliteStore:
 def _paragraph(row: sqlite3.Row) -> Paragraph:
     return Paragraph(
         paragraph_id=row["paragraph_id"], source_id=row["source_id"], section=row["section"],
-        text=row["text"], paragraph_hash=row["paragraph_hash"], source_url=row["source_url"],
-        native_jats_id=row["native_jats_id"],
+        ordinal=row["ordinal"], text=row["text"], paragraph_hash=row["paragraph_hash"],
+        source_url=row["source_url"], native_jats_id=row["native_jats_id"],
     )
 
 
@@ -836,13 +839,6 @@ def _iso_from_epoch(value: float | None) -> str | None:
     if value is None:
         return None
     return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
-
-
-def _ordinal(paragraph_id: str) -> int:
-    try:
-        return int(paragraph_id.rsplit(":", 1)[1])
-    except (IndexError, ValueError):
-        return 0
 
 
 def _epoch() -> float:

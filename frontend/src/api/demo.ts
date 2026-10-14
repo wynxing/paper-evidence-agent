@@ -71,10 +71,12 @@ export function createDemoClient(): ApiClient & { selectScenario: (value: DemoSc
       if (e.result.status === 'QUEUED') return { id, source_id: null, paragraphs: [] }
       const evidence = e.result.decision?.evidence ?? []
       if (!evidence.length) return { id, source_id: 'demo-source', paragraphs: [] }
+      // 构造数据里邻段真实存在、序号也连续，所以「列表相邻」在这里恰好等于「原文相邻」；
+      // 多锚点的错位只在服务端展开出现缺口时才会发生（Issue #47）。
       return { id, source_id: 'demo-source', paragraphs: [
-        { paragraph_id: 'demo:p:0', section: '构造章节 · Methods', text: '构造邻段：观察仅限指定样本与条件。', paragraph_hash: 'demo-paragraph-0', source_url: '', entered_context: false, cited: false },
-        ...evidence.map(item => ({ paragraph_id: item.paragraph_id, section: item.section, text: item.quote, paragraph_hash: item.paragraph_hash, source_url: item.source_url, entered_context: true, cited: true })),
-        { paragraph_id: 'demo:p:3', section: '构造章节 · Discussion', text: '构造邻段：未经研究的人群不在本次结论范围内。', paragraph_hash: 'demo-paragraph-3', source_url: '', entered_context: false, cited: false },
+        { paragraph_id: 'demo:p:0', section: '构造章节 · Methods', text: '构造邻段：观察仅限指定样本与条件。', ordinal: 1, paragraph_hash: 'demo-paragraph-0', source_url: '', entered_context: false, cited: false },
+        ...evidence.map((item, index) => ({ paragraph_id: item.paragraph_id, section: item.section, text: item.quote, ordinal: 2 + index, paragraph_hash: item.paragraph_hash, source_url: item.source_url, entered_context: true, cited: true })),
+        { paragraph_id: 'demo:p:3', section: '构造章节 · Discussion', text: '构造邻段：未经研究的人群不在本次结论范围内。', ordinal: 2 + evidence.length, paragraph_hash: 'demo-paragraph-3', source_url: '', entered_context: false, cited: false },
       ] }
     },
     getDiagnosticPacket: async id => copy(packet(id, 'redacted', null)), exportDiagnosticPacket: async (id, body) => { if (!body.semantic_export_consent || !body.recipient.trim()) throw new ClientError('business', '请确认接收方及导出授权。', 400); return copy(packet(id, 'consented', body.recipient)) },

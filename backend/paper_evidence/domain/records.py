@@ -30,6 +30,11 @@ class Paragraph:
     paragraph_id: str
     source_id: str
     section: str
+    # 该段在冻结解析里的正文序号，从 1 开始（术语表「文本与定位契约」）。它与
+    # ``paragraph_id`` 尾段的数字是同一个值：id 由本字段拼出，存储列也按它写入。
+    # 邻段展开按它做 ±1，读取方（如 evidence-context 的调用者）靠它判断两段是否
+    # 原文相邻，不能用列表先后代替。
+    ordinal: int
     text: str
     paragraph_hash: str
     source_url: str

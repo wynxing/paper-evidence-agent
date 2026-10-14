@@ -293,10 +293,18 @@ class ContextParagraph(Contract):
     read for context and is not itself claimed as evidence. ``paragraph_hash``
     and ``source_url`` are the same locators the published evidence uses, so a
     reader can find the paragraph in the licensed version.
+
+    ``ordinal`` is the paragraph's own position in the frozen source, from 1 in
+    body document order (glossary「文本与定位契约」). ``paragraphs`` is sorted by
+    it, but 列表相邻不等于原文相邻：同一来源有两个锚点、其中一个的邻段没被展开
+    时，紧挨在它后面的条目是另一个锚点。调用方只能用 ``ordinal`` 判断两段是否
+    原文相邻——``after.ordinal == anchor.ordinal + 1``（Issue #47）。
     """
 
     paragraph_id: str
     section: str
+    # 冻结来源内的正文序号，从 1 开始；与邻段展开用的 ``ordinal±1`` 同一个值。
+    ordinal: int
     text: str
     paragraph_hash: str
     source_url: str
