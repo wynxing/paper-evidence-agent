@@ -297,9 +297,9 @@ flowchart TD
 
 | 项 | 内容 |
 | --- | --- |
-| `200` | `id`、`source_id`、`paragraphs`；每段含 `paragraph_id`、`section`、`text`、`paragraph_hash`、`source_url`、`entered_context`、`cited` |
+| `200` | `id`、`source_id`、`paragraphs`；每段含 `paragraph_id`、`section`、`ordinal`、`text`、`paragraph_hash`、`source_url`、`entered_context`、`cited` |
 | 范围 | 进入模型上下文的候选段落，加最终判断引用的段落，各自按 `ordinal±1` 展开为邻段；按段落序号升序返回 |
-| 约束 | 只读本任务的冻结来源，跨来源段落标识解析为空。`text` 是冻结段落原文，不是已发布的 quote；邻段只是上下文，不作为证据，因此不带 `validation`。`source_id` 与 `paragraphs` 有三种组合：来源未解析出来源且无锚点时两者分别为 null 与空；来源**已冻结但尚无候选或引用**（如任务在 `query_generation` 阶段失败）时 `source_id` 有值而 `paragraphs` 仍为空；有锚点时两者都有值。空数组表示暂时没有内容，不是来源不存在。段落文本取自获许可的本地冻结版本，本接口是本机只读投影，不改变任务，也不放宽脱敏诊断包的对外传约束 |
+| 约束 | 只读本任务的冻结来源，跨来源段落标识解析为空。`text` 是冻结段落原文，不是已发布的 quote；邻段只是上下文，不作为证据，因此不带 `validation`。`source_id` 与 `paragraphs` 有三种组合：来源未解析出来源且无锚点时两者分别为 null 与空；来源**已冻结但尚无候选或引用**（如任务在 `query_generation` 阶段失败）时 `source_id` 有值而 `paragraphs` 仍为空；有锚点时两者都有值。空数组表示暂时没有内容，不是来源不存在。段落文本取自获许可的本地冻结版本，本接口是本机只读投影，不改变任务，也不放宽脱敏诊断包的对外传约束。每段的 `ordinal` 是它在冻结来源里的正文序号（从 1 开始），与展开邻段用的是同一个值；列表按它升序，但**列表相邻不等于原文相邻**——同一来源有多个锚点、某个锚点的邻段没有展开（或另一个锚点就在原文里相隔很远）时，紧挨在锚点后面的条目是另一个锚点。调用方判断「是否原文相邻」只能用 `ordinal`（`after.ordinal === anchor.ordinal + 1`），无法判定时不得回退到列表先后（Issue #47） |
 
 ### `GET /api/checks/{id}/diagnostic-packet`
 

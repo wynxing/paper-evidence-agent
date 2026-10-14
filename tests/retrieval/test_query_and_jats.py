@@ -24,6 +24,20 @@ JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
 </article>
 """
 
+# 中间那段只有空白，冻结后会被跳过，但它已经占用了序号 2。
+GAPPED_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en">
+  <front><article-meta><title-group><article-title>Demo</article-title></title-group></article-meta></front>
+  <body>
+    <sec id="s1"><title>Results</title>
+      <p id="a">The treatment reduced mortality by 20 percent.</p>
+      <p id="empty">   </p>
+      <p id="b">No effect was observed in the control group.</p>
+    </sec>
+  </body>
+</article>
+"""
+
 
 def snapshot(jats: bytes = JATS) -> SourceSnapshot:
     record = SourceRecord(
@@ -69,6 +83,20 @@ def test_parse_jats_is_deterministic_and_freezes_text():
     assert first[0].section == "Results"
     assert first[0].native_jats_id == "n1"
     assert first[0].source_url == "https://example.org/article"
+
+
+def test_parse_jats_keeps_the_ordinal_it_counted_in_the_paragraph_id():
+    """序号按正文文档顺序给，从 1 开始；空段落也占一个号，所以段落表的序号可以有缺口。
+
+    段落的 ``ordinal`` 与 ``paragraph_id`` 尾段的数字是同一个值，邻段展开按它做
+    ±1。跳过空段落会让某个序号没有对应的行，展开时也就读不到那个「+1 邻段」——
+    调用方只有拿到序号才能判断两段是否原文相邻（Issue #47）。
+    """
+
+    paragraphs = parse_jats(snapshot(GAPPED_JATS))
+    assert [p.ordinal for p in paragraphs] == [1, 3]
+    assert [p.paragraph_id.rsplit(":", 1)[1] for p in paragraphs] == ["1", "3"]
+    assert [p.native_jats_id for p in paragraphs] == ["a", "b"]
 
 
 def test_parse_jats_rejects_unparsable_content():

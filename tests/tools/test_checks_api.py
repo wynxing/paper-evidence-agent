@@ -17,6 +17,13 @@ CONTEXT_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
 </body></article>
 """
 
+# 中间那段只有空白：冻结时被跳过、不进索引，序号 2 却已被它占掉。
+GAPPED_CONTEXT_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en"><front><article-meta/></front><body>
+<sec><title>Results</title><p id="r1">The treatment reduced mortality.</p><p id="gap">   </p><p id="r2">No effect was observed.</p></sec>
+</body></article>
+"""
+
 
 def body(services, **overrides):
     payload = {
@@ -47,8 +54,8 @@ def record_source(services, task_id):
     ))
 
 
-def index_context_source(services, task_id, version_hash="a" * 64):
-    """Freeze a three-paragraph source so a quoted one has real neighbours."""
+def index_context_source(services, task_id, version_hash="a" * 64, jats=CONTEXT_JATS):
+    """Freeze a source so a quoted paragraph has real neighbours."""
 
     source_id = f"PMC123:{version_hash}"
     record = SourceRecord(
@@ -57,10 +64,10 @@ def index_context_source(services, task_id, version_hash="a" * 64):
         access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash=version_hash,
     )
-    snapshot = SourceSnapshot(source_id=source_id, metadata=record, jats_bytes=CONTEXT_JATS)
+    snapshot = SourceSnapshot(source_id=source_id, metadata=record, jats_bytes=jats)
     paragraphs = parse_jats(snapshot)
     services.store.link_task_source(task_id, source_id)
-    services.store.index_source(source_id, record, CONTEXT_JATS)
+    services.store.index_source(source_id, record, jats)
     services.store.index_paragraphs(source_id, paragraphs)
     return source_id, paragraphs
 
@@ -379,6 +386,8 @@ def test_evidence_context_reads_the_frozen_paragraphs_and_their_neighbours(clien
     assert [item["paragraph_id"] for item in payload["paragraphs"]] == [
         paragraph.paragraph_id for paragraph in paragraphs
     ]
+    # 每段带自己的正文序号，纯邻段也不例外——调用方靠它判断原文是否相邻。
+    assert [item["ordinal"] for item in payload["paragraphs"]] == [1, 2, 3]
 
     flags = {item["paragraph_id"]: (item["entered_context"], item["cited"])
              for item in payload["paragraphs"]}
@@ -387,6 +396,7 @@ def test_evidence_context_reads_the_frozen_paragraphs_and_their_neighbours(clien
     assert flags[paragraphs[2].paragraph_id] == (False, True)
 
     quoted = payload["paragraphs"][2]
+    assert quoted["ordinal"] == 3
     assert quoted["text"] == paragraphs[2].text                  # 冻结原文，不是脱敏占位
     assert quoted["section"] == "Results"
     assert quoted["paragraph_hash"] == paragraphs[2].paragraph_hash
@@ -396,6 +406,30 @@ def test_evidence_context_reads_the_frozen_paragraphs_and_their_neighbours(clien
     # 只读投影：读过之后任务状态与结束时刻都不变。
     after = client.get(f"/api/checks/{task_id}").json()
     assert after["status"] == "COMPLETED" and after["finished_at"] == finished_at
+
+
+def test_evidence_context_ordinals_tell_a_far_anchor_from_a_neighbour(client, services):
+    """同源多锚点、锚点的 `+1` 邻段不存在时，序号是唯一的「是否原文相邻」依据。
+
+    锚点 1 的 `+1` 邻段（序号 2）是一个只有空白的段落，冻结时被跳过、没有任何行，
+    展开读不到它；于是列表里紧挨锚点 1 的条目落到另一个锚点 3 上。响应把每段自己的
+    序号带出来，调用方据此判定它们并不相邻，而不是把列表先后当成原文相邻（Issue #47）。
+    """
+
+    task_id = create(client, services).json()["id"]
+    _source_id, paragraphs = index_context_source(services, task_id, jats=GAPPED_CONTEXT_JATS)
+    first, second = paragraphs[0], paragraphs[1]
+    services.store.record_candidates(task_id, [retrieved(first)])
+    assert services.store.finish(task_id, status=TaskStatus.COMPLETED, stage="evidence_validation",
+                                 error_code=None, label="支持", decision=citing(second)) is True
+
+    payload = client.get(f"/api/checks/{task_id}/evidence-context").json()
+    assert [(item["paragraph_id"], item["ordinal"]) for item in payload["paragraphs"]] == [
+        (first.paragraph_id, 1), (second.paragraph_id, 3),
+    ]
+    # 列表里紧挨着的两块并不相邻：两段之间还隔着被跳过的序号 2。
+    assert payload["paragraphs"][1]["ordinal"] - payload["paragraphs"][0]["ordinal"] == 2
+    assert payload["paragraphs"][1]["cited"] is True              # 紧邻的是另一个锚点
 
 
 def test_evidence_context_is_empty_until_a_source_is_frozen(client, services):

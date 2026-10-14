@@ -150,6 +150,8 @@ export interface EvidenceCandidate extends Omit<Evidence, 'validation'> { round:
 export interface ContextParagraph {
   paragraph_id: string
   section: string
+  /** Frozen body position, from 1. Two entries are original neighbours only when their ordinals differ by 1. */
+  ordinal: number
   /** Frozen paragraph text; a neighbour is read for context, not claimed as evidence. */
   text: string
   paragraph_hash: string
@@ -159,7 +161,7 @@ export interface ContextParagraph {
   /** Is quoted by the final decision. */
   cited: boolean
 }
-/** Frozen paragraphs around the evidence anchors. Neighbours may be absent. */
+/** Frozen paragraphs around the evidence anchors, ordered by ordinal. Neighbours may be absent. */
 export interface EvidenceContext {
   id: string
   /** Frozen source these paragraphs belong to; null before source identity resolves. */

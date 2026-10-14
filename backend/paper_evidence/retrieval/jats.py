@@ -91,6 +91,7 @@ def parse_jats(snapshot: SourceSnapshot) -> list[Paragraph]:
                     paragraph_id=pid,
                     source_id=source_key,
                     section=section or "body",
+                    ordinal=ordinal,
                     text=text,
                     paragraph_hash=digest,
                     source_url=access_url,
