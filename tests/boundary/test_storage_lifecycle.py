@@ -172,11 +172,20 @@ def test_accepted_cancel_blocks_a_later_completion_and_wins(store):
 
 
 def test_settle_orphaned_running_splits_cancelled_from_interrupted(store):
+    """过期遗留行按是否受理过取消分别结算为 CANCELLED / INTERRUPTED。
+
+    两行同时为 ``RUNNING`` 是 #34 之前的库才可能出现的状态——那时领取不检查是否
+    已有在途任务。这里直接写入复现那种旧库，因为现在的 ``claim_next`` 不会再产生
+    它；结算必须仍能把这两类遗留行分开。
+    """
+
     make_task(store, "t1")
     make_task(store, "t2")
-    store.claim_next(time.time() + 180)
-    store.claim_next(time.time() + 180)
-    store.request_cancel("t2")
+    expired = time.time() - 1
+    store._write("UPDATE tasks SET status = ?, deadline_at = ? WHERE id = ?",
+                 (TaskStatus.RUNNING.value, expired, "t1"))
+    store._write("UPDATE tasks SET status = ?, deadline_at = ?, cancel_requested = 1 WHERE id = ?",
+                 (TaskStatus.RUNNING.value, expired, "t2"))
 
     assert store.settle_orphaned_running() == 2
     assert store.get("t1").status is TaskStatus.INTERRUPTED
@@ -293,7 +302,8 @@ def test_every_terminal_path_stamps_updated_at_and_finished_at_together(store, m
     assert store.request_cancel("t2").status is TaskStatus.CANCELLED   # QUEUED -> CANCELLED
     store.claim_next(time.time() - 1)                        # t3 -> RUNNING, deadline 已过
     assert store.request_cancel("t3").status is TaskStatus.FAILED      # -> TASK_TIMEOUT
-    store.claim_next(time.time() + 180)                      # t4 -> RUNNING, 留给结算
+    # 结算只处理「可证已死」的遗留行（deadline 已过），所以 t4 领取时就用已过的 deadline
+    store.claim_next(time.time() - 1)                        # t4 -> RUNNING，留给结算
     assert store.settle_orphaned_running() == 1
 
     for task_id in ("t1", "t2", "t3", "t4"):
