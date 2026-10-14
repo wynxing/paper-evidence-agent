@@ -58,14 +58,19 @@ export function attemptText(a: Accounting) { return a.verification === 'verified
 export function safeSourceUrl(value: string): string | null { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
 export interface AnchorWindow { anchor: ContextParagraph | null; before: ContextParagraph | null; after: ContextParagraph | null }
 /**
- * The evidence-context list is ordered by paragraph ordinal.
- * Entries beside an anchor are its original neighbours only when the server has fully expanded each anchor by ordinal±1.
- * A list that contains only the anchor has none. Known cases still awaiting retest are tracked in issue #20.
+ * The evidence-context list is ordered by paragraph ordinal, but the next list entry is not the next paragraph.
+ * The entry beside an anchor is an original neighbour only when its ordinal is the anchor's ordinal ± 1.
+ * A missing ordinal, a gap, or another anchor that only happens to sit next in the list yields null.
  */
+function originalNeighbour(anchor: ContextParagraph, candidate: ContextParagraph | undefined, delta: -1 | 1): ContextParagraph | null {
+  if (!candidate || !Number.isInteger(anchor.ordinal) || !Number.isInteger(candidate.ordinal)) return null
+  return candidate.ordinal === anchor.ordinal + delta ? candidate : null
+}
 export function anchorWindow(paragraphs: readonly ContextParagraph[], paragraphId: string): AnchorWindow {
   const index = paragraphs.findIndex(item => item.paragraph_id === paragraphId)
-  if (index < 0) return { anchor: null, before: null, after: null }
-  return { anchor: paragraphs[index] ?? null, before: paragraphs[index - 1] ?? null, after: paragraphs[index + 1] ?? null }
+  const anchor = index < 0 ? undefined : paragraphs[index]
+  if (!anchor) return { anchor: null, before: null, after: null }
+  return { anchor, before: originalNeighbour(anchor, paragraphs[index - 1], -1), after: originalNeighbour(anchor, paragraphs[index + 1], 1) }
 }
 /** Why a frozen context has no paragraphs yet. A non-empty list is not an empty state. */
 export function evidenceContextSummary(context: EvidenceContext): string | null {
