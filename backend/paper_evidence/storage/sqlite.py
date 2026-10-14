@@ -408,6 +408,25 @@ class SqliteStore:
             previous_id=row["previous_id"],
         )
 
+    def running_task(self) -> dict | None:
+        """The ``RUNNING`` row that keeps ``claim_next`` from claiming, if any.
+
+        ``claim_next`` returns ``None`` both when the queue is empty and when a task
+        is still ``RUNNING``, so a caller that has to *report* why it stopped cannot
+        tell the two apart from the ``None`` alone. Reading the blocking row here is
+        what keeps a one-shot ``drain`` from saying「队列已空」while ``QUEUED`` tasks
+        are still waiting (Issue #44 第 3.2 条).
+
+        Returns ``{"id": …, "stage": …, "deadline_at": …}``, or ``None`` when nothing
+        is ``RUNNING``. The invariant keeps at most one such row.
+        """
+
+        rows = self._query(
+            "SELECT id, stage, deadline_at FROM tasks WHERE status = ? ORDER BY claimed_at, id LIMIT 1",
+            (TaskStatus.RUNNING.value,),
+        )
+        return dict(rows[0]) if rows else None
+
     def set_stage(self, task_id: str, stage: str) -> None:
         self._write("UPDATE tasks SET stage = ?, updated_at = ? WHERE id = ? AND status = ?",
                     (stage, _now(), task_id, TaskStatus.RUNNING.value))
@@ -491,22 +510,36 @@ class SqliteStore:
         return bool(row and row["cancel_requested"])
 
     def settle_orphaned_running(self) -> int:
-        """Settle the leftover ``RUNNING`` rows that cannot still be alive.
+        """Settle the leftover ``RUNNING`` rows whose own time limit has passed.
 
-        A row is an orphan only when the task's own time limit says it cannot
-        still be executing: its wall-clock ``deadline_at`` has already passed. A
-        row with no deadline counts as an orphan too — the claim path always
-        records one, so a ``RUNNING`` row without a deadline cannot belong to a
-        live claim, and leaving it alone would block the queue for good now that
-        ``claim_next`` refuses to claim while a row stays ``RUNNING``.
+        The criterion is the task's own time limit, not the holder's liveness: a row
+        is settled once its wall-clock ``deadline_at`` has passed. 「超过时限」不等于
+        「持有进程已死」——工作流只在阶段边界比较单调时钟（协作式停止），一次已发出的
+        请求要等返回才会走到下一个检查点，所以 ``deadline_at`` 过后持有者仍可能合法地
+        处于 ``RUNNING``，上限是一次在途的上游尝试（默认 45 秒，见 ``Timeouts``）。
+        若真有第二个 worker 在这段窗口里扫尾，它会先把这一行记成 ``INTERRUPTED``，
+        持有者随后要写的 ``TASK_TIMEOUT`` 被 ``finish`` 的条件写入拒绝：状态不会被写坏，
+        只是「为什么结束」从超时变成中断。这段窗口只有第二个 worker 才可能触及，而单
+        worker 是唯一受支持的模式（Issue #34）。
+
+        本轮选择订正措辞、不加宽限期：能盖住该窗口的宽限必须大于一次在途的上游尝试，
+        而结算判据在存储层拿不到任务侧的超时配置；几毫秒量级的「小宽限」并不消除窗口，
+        只降低概率。彻底关闭它需要存活信号（owner / 心跳列），已在 Issue #34 取舍掉
+        （Issue #44 第 3.1 条）。
+
+        A row with no deadline counts as settled too — the claim path always records
+        one, so a ``RUNNING`` row without a deadline cannot belong to a live claim,
+        and leaving it alone would block the queue for good now that ``claim_next``
+        refuses to claim while a row stays ``RUNNING``.
 
         以前的实现结算**所有** ``RUNNING`` 行。那只在一个 worker 时成立：第二个
         worker 一启动，它的结算就会把第一个 worker 正在跑的任务翻成 ``INTERRUPTED``，
         而 ``finish`` 的条件写入随后会拒绝真实终态，任务不可恢复（Issue #34）。
 
-        结算按「可证已死」进行，因此调用方不能只在进程启动时结算一次：崩溃留下的行
-        在重启那一刻通常还没到 deadline，只靠启动结算会把它一直挂着。``run_once``
-        每轮领取前都会调用本方法，队列因此在 deadline 到点后的一个轮询间隔内恢复。
+        调用方不能只在进程启动时结算一次：崩溃留下的行在重启那一刻通常还没到 deadline，
+        只靠启动结算会把它一直挂着，``run_once`` 因此每轮领取前都调用本方法。常驻
+        ``--loop`` 模式下队列在 deadline 到点后的一个轮询间隔内恢复；一次性 ``drain``
+        领不到任务就退出，不会再等（`docs/development.md`）。
         """
 
         rows = self._query(

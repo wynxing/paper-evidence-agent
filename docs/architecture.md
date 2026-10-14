@@ -105,7 +105,7 @@ stateDiagram-v2
     RUNNING --> COMPLETED
     RUNNING --> BLOCKED
     RUNNING --> FAILED
-    RUNNING --> INTERRUPTED: 遗留且已过 deadline 的 RUNNING
+    RUNNING --> INTERRUPTED: 已过自己时限的 RUNNING
     COMPLETED --> [*]
     BLOCKED --> [*]
     FAILED --> [*]
@@ -113,9 +113,9 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-**规则**：遗留 `RUNNING` 只在**可证已死**时结算——该行的 `deadline_at` 已过，或没有 `deadline_at`（领取路径一定写入，缺它就不可能是活着的领取）。已持久化 cancel_requested 的标为 CANCELLED；其余标为 INTERRUPTED，由作者明确重试。仍在时限内的 `RUNNING` 行不结算：它可能正被另一个进程执行，翻成终态会让它写不出真实结果。重试不沿上图把终态改回 `QUEUED`。它新建一条 `QUEUED` 任务，并保留原记录，避免静默重复外部调用。
+**规则**：遗留 `RUNNING` 只在它自己的时限**已过**时结算——该行的 `deadline_at` 已过，或没有 `deadline_at`（领取路径一定写入，缺它就不可能是活着的领取）。时限已过不等于持有进程已死：停止检查是协作式的，只在阶段边界比较单调钟，一次已发出的请求要等返回才会走到下一个检查点，所以 `deadline_at` 过后持有者仍可能合法地处于 `RUNNING`，上限是一次在途的上游尝试（默认 45 秒）。若第二个 worker 在这段窗口里扫尾，它会把这一行先记成 `INTERRUPTED`，持有者随后要写的 `TASK_TIMEOUT` 被条件写入拒绝：状态不会被写坏，只是结束原因从超时变成中断。只有误起第二个 worker 才触及这段窗口，本轮选择订正表述而不给 `deadline_at` 加宽限期——能盖住该窗口的宽限必须大于一次在途的上游尝试，而结算判据在存储层拿不到任务侧的超时配置（Issue #44 第 3.1 条）。已持久化 cancel_requested 的标为 CANCELLED；其余标为 INTERRUPTED，由作者明确重试。仍在时限内的 `RUNNING` 行不结算：它可能正被另一个进程执行，翻成终态会让它写不出真实结果。重试不沿上图把终态改回 `QUEUED`。它新建一条 `QUEUED` 任务，并保留原记录，避免静默重复外部调用。
 
-**规则**：「同一时刻只执行一个任务」是存储层不变量：只要有任务处于 `RUNNING`，`claim_next` 就拒绝领取。运行约定（只启动一个 worker）仍是第一道防线；存储层守卫是第二道，误起第二个 worker 时它既领不到下一条任务，启动结算也不会碰在途任务。结算因此不能只在进程启动时做一次——崩溃遗留的行在重启那一刻通常还没到 deadline，只结算一次会让队列一直卡住；worker 每轮领取前先结算，队列在 deadline 到点后的一个轮询间隔内恢复。
+**规则**：「同一时刻只执行一个任务」是存储层不变量：只要有任务处于 `RUNNING`，`claim_next` 就拒绝领取。运行约定（只启动一个 worker）仍是第一道防线；存储层守卫是第二道，误起第二个 worker 时它既领不到下一条任务，启动结算也不会碰在途任务（前提是在途任务还没过自己的时限，见上一条规则）。结算因此不能只在进程启动时做一次——崩溃遗留的行在重启那一刻通常还没到 deadline，只结算一次会让队列一直卡住；worker 每轮领取前先结算，`--loop` 常驻模式下队列在 deadline 到点后的一个轮询间隔内恢复，一次性模式领不到任务就退出、不会再等，要等的人得重跑。领不到任务不等于队列已空，一次性模式结束时必须区分这两种情况并如实报出（Issue #44 第 3.2 条）。
 
 ```mermaid
 flowchart TD

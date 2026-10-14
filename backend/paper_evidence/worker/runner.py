@@ -21,18 +21,33 @@ class SingleTaskWorker:
         self._store = store
         self._workflow_factory = workflow_factory
         self._settings = settings
+        self._stall: dict | None = None
+
+    @property
+    def stall(self) -> dict | None:
+        """Why the last ``run_once`` claimed nothing, or ``None`` if the queue was empty.
+
+        ``run_once`` returns ``False`` for two reasons that callers must not conflate:
+        the queue is empty, or a task is already ``RUNNING`` and this worker may not
+        claim past it. A one-shot ``drain`` that reports「队列已空」in the second case
+        tells its operator to stop re-running while ``QUEUED`` tasks still wait (Issue
+        #44 第 3.2 条). Read straight after the refused claim, so it describes that
+        claim rather than the queue a moment later.
+        """
+        return self._stall
 
     async def run_once(self) -> bool:
         """Claim and process at most one task; return whether one was processed.
 
-        领取前先结算「可证已死」的遗留 ``RUNNING``（见 ``settle_orphaned_running``）。
+        领取前先结算时限已过的遗留 ``RUNNING``（见 ``settle_orphaned_running``）。
         ``claim_next`` 现在只要看到一行 ``RUNNING`` 就拒绝领取，所以一条再也跑不完的
         遗留行会把队列永久卡住；而它在启动那一刻通常还没到 deadline，只在进程启动时
-        结算一次不够。每轮领取前结算，恢复就只比 deadline 晚一个轮询间隔（Issue #34）。
+        结算一次不够。每轮领取前结算，常驻模式下恢复只比 deadline 晚一个轮询间隔
+        （Issue #34）。
 
-        返回 ``False`` 现在有两种含义：队列已空，或另一个 worker 正在执行任务。
-        两者都表示「本次没有可领的任务」，常驻循环会继续等待，一次性 ``drain`` 则退出
-        ——后者本来就约定不与第二个 worker 并行。
+        返回 ``False`` 时 ``stall`` 说明是不是被在途任务挡住的（``claim_next`` 还有
+        第三种 ``None`` 来源——条件 ``UPDATE`` 的 ``rowcount`` 不为 1——它在
+        ``BEGIN IMMEDIATE`` 之下不可达）。
         """
 
         await asyncio.to_thread(self._store.settle_orphaned_running)
@@ -42,7 +57,9 @@ class SingleTaskWorker:
         deadline = time.monotonic() + task_seconds
         task = await asyncio.to_thread(self._store.claim_next, time.time() + task_seconds)
         if task is None:
+            self._stall = await asyncio.to_thread(self._store.running_task)
             return False
+        self._stall = None
         try:
             # The factory is inside the guard as well: a workflow that cannot even
             # be constructed still has to settle the task it already claimed,
@@ -72,7 +89,12 @@ class SingleTaskWorker:
 
 
 async def drain(worker: SingleTaskWorker) -> int:
-    """Process queued tasks until the queue is empty; return how many ran."""
+    """Process queued tasks until none is claimable; return how many ran.
+
+    「领不到任务」不等于「队列已空」：一行仍在时限内的 ``RUNNING`` 就会让循环停下，
+    而队列里可能还有 ``QUEUED``。返回后读 ``worker.stall`` 才能把两者分开，调用方
+    不应假定本函数返回即意味着队列已排空（Issue #44 第 3.2 条）。
+    """
 
     count = 0
     while await worker.run_once():
