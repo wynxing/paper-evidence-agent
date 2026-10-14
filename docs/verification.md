@@ -853,7 +853,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 
 | 测试方案条目 | 落地方式 |
 | --- | --- |
-| 单进程、一次一个任务 | 一条 `run_once` 只领取一条；`drain` 顺序处理，并发峰值恒为 1 |
+| 单进程、一次一个任务 | 一条 `run_once` 只领取一条；`drain` 顺序处理，并发峰值恒为 1；多 worker 下的独占另由存储层守卫兜底（PR #43，见本文「多 worker 不变量落地后的文档订正」一节） |
 | 再提交任务时后来的停在 `QUEUED`、不另起执行器 | 在途任务被闸门挡住时提交第二条：仍是 `QUEUED`，工作流实例数不增加；放开后由同一条常驻循环接着处理 |
 | 总时限自 RUNNING 起算、不含队列 | 队列里停放 600 秒后再领取，断言工作流收到的到期时刻 = 领取时刻 + 180，落库的挂钟到期时刻同源 |
 | 45 / 15 / 180 秒三档与「剩余时间截短单次超时」 | 虚拟时钟：`timeout_for` 取 `min(45, 剩余)`；来源请求取 `min(15, 剩余)`；时钟走完直接 `TASK_TIMEOUT`，不发上游请求 |
@@ -879,7 +879,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 
 - **四条本机集成验收未执行**：取消接口 1 秒内响应、受理后 2 秒内收尾释放 worker、deadline 后 2 秒内收尾，以及无负载前提本身。它们需要 API 与 `--loop` worker 双进程同时运行、且任务在途足够久——无密钥时任务在 `query_generation` 立即以 `UPSTREAM_UNAVAILABLE` 收口，测不到释放路径。**未跑，不记为通过。**
 - **真实上游下的性能数字未测**：单任务延迟、逻辑请求数、上游尝试数、token 的口径已被用例钉住，但本次喂给它们的是构造记录，不是真实模型。测试方案要求性能数字在真实上游下测量才有意义，因此本记录不含任何性能结论。
-- **多 worker 并发未覆盖**：`SqliteStore.claim_next` 只按 `QUEUED` 取队首，**不检查是否已有 `RUNNING`**。「一次一个任务」由单进程 worker 的顺序循环保证，属于运行约定而非存储层约束；两个 worker 进程会各领一条并行执行。本维度按测试方案的「保持单进程」前提，不做该场景的判定。
+- **多 worker 并发：判定已移交边界维度**：`SqliteStore.claim_next` 原先只按 `QUEUED` 取队首、**不检查是否已有 `RUNNING`**，所以「一次一个任务」当时由单进程 worker 的顺序循环保证，属于运行约定而非存储层约束，两个 worker 进程会各领一条并行执行。PR #43（合并为 `f051ce0`）把它改成了**存储层不变量**：只要有一行处于 `RUNNING`，领取就返回 `None`，遗留 `RUNNING` 也只在「可证已死」时结算，第二个 worker 的启动不再会杀掉在途任务。本维度按测试方案的「保持单进程」前提仍不做该场景的判定，判定改由 `tests/boundary/test_worker_exclusivity.py`（8 条）承担，依据见本文「多 worker 不变量落地后的文档订正」一节。
 - **模型侧 `Retry-After` 规则未在本维度重复**：已由 `tests/tools/test_sdk_gateway.py` 在真实时钟下覆盖，本维度只补来源侧同一规则与确切边界。
 - **本机无负载前提未验证**：所有耗时断言都刻意宽松（或因虚拟时钟而确定），没有测量机器背景负载。
 - **端到端维度（`tests/e2e/`）仍缺**：属 Issue #26 的另一半，需先定 Playwright 归属与浏览器环境。
@@ -1001,3 +1001,37 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 - **本次是纯文档订正，不涉及运行行为**：没有代码路径被改动，因此本节不声明任何新的功能验证结果。
 - **没有测试对本文档内容作断言**：全仓对 `docs/verification.md` 的引用只有散文式交叉引用（本文自身与 `tests/e2e/specs/02-main-path.spec.ts:110` 的注释）；`tests/tools/test_api_contract.py` 读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
 - **PR #37 引入的两个面板仍无端到端覆盖**（该 PR 未改动 `tests/e2e/`），现有覆盖在 `frontend/tests/` 的前端单测。是否补端到端用例属测试范围决定，本次未做——与「披露面板定位：未覆盖与边界」记的是同一件事，该结论本次不改动。
+
+## 多 worker 不变量落地后的文档订正（2026-10-14）
+
+「性能维度未执行与未覆盖」原先断言 `SqliteStore.claim_next` **不检查是否已有 `RUNNING`**、「一次一个任务」**属于运行约定而非存储层约束**、两个 worker 进程**会各领一条并行执行**。PR #43（合并为 `f051ce0`）把这条改成存储层不变量，三句同时失效。本节记录订正依据；「性能维度覆盖的判定」的「单进程、一次一个任务」一栏也补了落地方式。
+
+### 多 worker 订正：实际检查
+
+| 检查项 | 命令 | 结果 |
+| --- | --- | --- |
+| 领取前先看有没有 `RUNNING` | `git grep -n -A 30 "def claim_next" origin/main -- backend/paper_evidence/storage/sqlite.py` | 同一事务内先 `SELECT 1 FROM tasks WHERE status = 'RUNNING' LIMIT 1`，命中即 `COMMIT` 并返回 `None` |
+| 条件 `UPDATE` 的 `rowcount` 已检查 | `git grep -n "rowcount" origin/main -- backend/paper_evidence/storage/sqlite.py` | 不为 1 则 `ROLLBACK` 并返回 `None`；文档字符串写明这是「返回的任务确实被本次调用领取了」的存储层保证 |
+| 遗留 `RUNNING` 只在「可证已死」时结算 | `git grep -n "deadline_at IS NULL OR deadline_at" origin/main -- backend/paper_evidence/storage/sqlite.py` | 只结算 `deadline_at` 已过、或没有 `deadline_at` 的行，不再无条件结算全部 `RUNNING` |
+| 该场景已有用例 | `git ls-tree -r --name-only origin/main -- tests/boundary/` | `test_worker_exclusivity.py`（8 条）：另一个进程领不到任务、并发领取恰一个成功、第二个 worker 启动不打断在途任务、可证已死的遗留仍结算、结算后队列不永久卡住 |
+| 架构文档的表述已同步 | `git grep -n "存储层不变量" origin/main -- docs/architecture.md` | 「**规则**：「同一时刻只执行一个任务」是存储层不变量：只要有任务处于 `RUNNING`，`claim_next` 就拒绝领取」 |
+
+改动形态是**两处单行替换 + 文末追加**：`:856` 与 `:882` 各替换一行、行数不变，因此 `:541` **之前**的行号（含被三处引用的 `:391`）不受影响。
+
+### 多 worker 订正：本机结果
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端全量 | `pytest -c backend/pyproject.toml -q` | **293 passed, 2 warnings**（146.45s，退出码 0） |
+| 前端单测 | `npm --prefix frontend test` | **50 passed / 0 failed** |
+| 端到端 | `cd tests/e2e && npm test` | **13 passed**（1.7m） |
+| 标题唯一性 | 跳过围栏代码块后统计 `^#{1,6}\s+` | 96 → 100，无重名 |
+
+本机结果只证明本次文档改动没有连带影响，**不作为功能结论**：本次没有改动任何代码路径或用例。
+
+### 多 worker 订正：未覆盖与边界
+
+- **本维度仍未判定该场景**：`tests/performance/` 的 21 条仍按测试方案「保持单进程」的前提跑，判定改由边界维度的 `tests/boundary/test_worker_exclusivity.py` 承担。本节只订正表述，未改动任何用例。
+- **没有测试对本文档的内容作断言**：`tests/` 下唯一读 `docs/` 的是 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
+- **「可证已死」仍比 `deadline_at` 能证明的更强**：任务的运行时限走单调钟，落库的 `deadline_at` 走墙上钟（「总时限自 RUNNING 起算、不含队列」一栏说的「同源」指两者由同一次领取算出、落库值本身算得对，不是说它们是同一只钟）。阶段边界之外不再比钟，所以任务在 `deadline_at` 过后仍可能合法地处于 `RUNNING`，此时另一个 worker 的结算会先把它记成 `INTERRUPTED`，而原 worker 超时要写的 `TASK_TIMEOUT` 会被条件写入拒绝。这条已由 Issue #44 跟踪，**本 PR 不修，也不在本次结论范围内**。
+- **同样由 #44 跟踪、本 PR 未改**：`claim_next` 返回 `None` 时一次性 `drain` 会退出并打印「队列已空」，被 `RUNNING` 挡住时队列里可能仍有 `QUEUED`；`storage/ports.py` 的契约只列了「队列为空」与「已有 `RUNNING`」两种来源，少了 `rowcount` 不通过这一种。
