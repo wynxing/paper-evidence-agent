@@ -506,7 +506,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 | 待办 | 实现 |
 | --- | --- |
-| 证据邻段上下文读取接口 | 新增 `GET /api/checks/{id}/evidence-context` → `EvidenceContext`。锚点为「进入模型上下文的候选段落」与「最终判断引用的段落」，各自经 source-scoped 的 `read_neighbors` 按 `ordinal±1` 展开，按段落序号升序返回；每段带 `entered_context` / `cited` 两个来源标志 |
+| 证据邻段上下文读取接口 | 新增 `GET /api/checks/{id}/evidence-context` → `EvidenceContext`。锚点为「进入模型上下文的候选段落」与「最终判断引用的段落」，各自经 source-scoped 的 `read_neighbors` 按 `ordinal±1` 展开，按段落序号升序返回；每段带 `entered_context` / `cited` 两个来源标志与自己的 `ordinal`（冻结来源内的正文序号，从 1 起，与展开邻段用的 `ordinal±1` 是同一个值） |
 | 原始输入读取接口 | 新增 `GET /api/checks/{id}/input` → `CheckInput`，返回提交时原文以及该任务冻结的 `config_digest` 与 `authorized_recipients`。这是一条**按任务**的直接读取、不依赖历史列表是否已加载；`CheckSummary` 也带 `doi`，故它**不是**取得提交 DOI 的唯一路径（评审修正，见下） |
 | #16 第 1 条（worker 遇异常退出） | `run_once` 把工厂构造移入 `try`；`drain_forever` 捕获循环级异常后继续 |
 | #16 第 2 条（时间戳一致） | `updated_at` / `finished_at` 由同一处 `_now()` 复用 |
@@ -530,7 +530,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 | 来源未冻结 | `source_id` 为 `null`、`paragraphs` 为空（表示暂无内容，非来源不存在） |
 | 已冻结但无锚点 | 来源已冻结而尚无候选或引用（任务在 `query_generation` 阶段失败即此形态）时，`source_id` 有值而 `paragraphs` 为空——评审补充的第三种组合 |
 | 不越源 | 跨来源的段落标识经 `read_neighbors` 解析为空 |
-| 邻段不是证据 | `ContextParagraph` 不带 `validation` 字段 |
+| 邻段不是证据 | `ContextParagraph` 不带 `validation` 字段；列表按 `ordinal` 升序，但**列表相邻不等于原文相邻**，判定只能用 `after.ordinal == anchor.ordinal + 1`（Issue #47） |
 | 四条终态路径时间戳 | 完成、排队取消、总超时、遗留 `RUNNING` 结算，均满足 `updated_at == finished_at` |
 | worker 循环活下去 | 首轮 `run_once` 抛 `RuntimeError` 后循环仍在领取（`calls > 3`），并记录 `Worker loop iteration failed; continuing` |
 | 工厂抛异常落终态 | 已领取任务落 `FAILED`、`error_code is None`、`finished_at` 非空，且不可重复领取 |
@@ -1032,7 +1032,7 @@ cd backend && PAPER_EVIDENCE_DATA_DIR="${TMPDIR:-/tmp}/pe_e2e_probe" \
 ### 多 worker 订正：未覆盖与边界
 
 - **本维度仍未判定该场景**：`tests/performance/` 的 21 条仍按测试方案「保持单进程」的前提跑，判定改由边界维度的 `tests/boundary/test_worker_exclusivity.py` 承担。本节只订正表述，未改动任何用例。
-- **没有测试对本文档的内容作断言**：`tests/` 下唯一读 `docs/` 的是 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
+- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的有两处——`tests/tools/test_api_contract.py` 读 `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`（本节原先是只写了前者，后补上后者；只是补事实清单，当次的手段与结论未变）。本文档 `verification.md` 不在其中，所以本次的验证手段是上表的 grep 与标题唯一性自检，**不是**测试套件。
 - **残留窗口仍在，第 3.1 条已由 PR #46 按「订正措辞」处置**：任务的运行时限走单调钟，落库的 `deadline_at` 走墙上钟（「总时限自 RUNNING 起算、不含队列」一栏说的「同源」指两者由同一次领取算出、落库值本身算得对，不是说它们是同一只钟）。阶段边界之外不再比钟，所以任务在 `deadline_at` 过后仍可能合法地处于 `RUNNING`，此时另一个 worker 的结算会先把它记成 `INTERRUPTED`，而原 worker 超时要写的 `TASK_TIMEOUT` 会被条件写入拒绝。窗口本身**没有**消除：能盖住它的小宽限必须大于一次在途的上游尝试（默认 45 秒），而结算判据在存储层拿不到任务侧的超时配置，所以 PR #46（合并为 `958ac17`）只把「可证已死」换成能证明的表述（该行自己的时限已过），并把触发条件与取舍写进 `storage/ports.py`、`docs/development.md`、`docs/architecture.md` 与 `docs/tech-stack.md`。依据见本文「#46 覆盖残留的结论订正」一节。
 - **第 3.2 / 3.3 条已由 PR #46 处置，「本 PR 未改」自 #46 起不再成立**：一次性 `drain` 被在途 `RUNNING` 挡住时不再打印「队列已空」，改由 `worker/__main__.py` 的 `closing_message(count, stall)` 报出挡路的那一行（空队列那一句一字未改）；`storage/ports.py` 的 `claim_next` 契约已补第三种来源（条件 `UPDATE` 的 `rowcount` 不为 1），并新增 `running_task()` 供调用方区分「队列为空」与「已有任务在 `RUNNING`」。依据见本文「#46 覆盖残留的结论订正」一节。
 
@@ -1063,6 +1063,75 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
 ### 覆盖残留订正：未覆盖与边界
 
 - **本次是纯文档订正，不涉及运行行为**：没有代码路径被改动，本节不声明任何新的功能验证结果。
-- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的只有 `tests/tools/test_api_contract.py`，它读的是 `docs/architecture.md`。所以本次的验证手段是上表的 grep 与标题唯一性、行尾自检，**不是**测试套件。
+- **没有测试对本文档的内容作断言**：`tests/` 下读 `docs/` 的有两处——`tests/tools/test_api_contract.py` 读 `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`（本节原先是只写了前者，现补上后者）。本文档 `verification.md` 不在其中，所以本次的验证手段是上表的 grep 与标题唯一性、行尾自检，**不是**测试套件。
 - **残留窗口仍在，不等于已修**：3.1 走的是「订正措辞」这条路，`deadline_at` 过后持有者仍可能合法地处于 `RUNNING`、被第二个 worker 抢先记成 `INTERRUPTED`，只是文档与实现不再声称「可证已死」。这条取舍由 Issue #44 记录，本次不重开。
-- **4 处测试注释与 `docs/development.md:68` 的同族表述未改**：后者的归属与处置属另一个改动，本节不覆盖；测试注释属可选项，本次未做。
+- **`docs/development.md:68` 那处已由 PR #50 订正；剩 4 处测试注释未改**：记这一栏的时候 `:68` 还是待处理，PR #50（`0e9b98f`）随后把同族表述改写为「自己时限已过」，所以此处改为**已处理**；4 处测试注释属可选项，本次未做。
+
+## evidence-context 的 `ordinal` 契约复测（2026-10-14）
+
+本节订正本文「端到端联调后端缺口」一栏里两处随 PR #49（squash-merge `25fc2fd`）过时的结论，
+并记录一次**不需要模型密钥**的复测。`AGENTS.md` 把本文档划给测试侧，所以这次改动独立于该功能 PR。
+
+### 订正对象与依据
+
+| 位置 | 原记述 | 现记述 |
+| --- | --- | --- |
+| `:509` | 证据邻段上下文读取接口「每段带 `entered_context` / `cited` 两个来源标志」 | 补上「与自己的 `ordinal`（冻结来源内的正文序号，从 1 起，与展开邻段用的 `ordinal±1` 是同一个值）」 |
+| `:533` | 邻段不是证据「`ContextParagraph` 不带 `validation` 字段」 | 在同一条约束后补上「列表按 `ordinal` 升序，但**列表相邻不等于原文相邻**，判定只能用 `after.ordinal == anchor.ordinal + 1`（Issue #47）」 |
+
+两处都是**单行替换、不增行**，本文总行数不变，`:882` 之后的既有行号一处未移。
+
+### 源层复测：真实冻结来源的序号序列
+
+用产品解析函数（`retrieval/jats.py` 的 `parse_jats`）重新解析库中 `sources.jats_bytes` 的真实全文，
+与 `paragraphs` 表逐项比对。**不需要模型密钥，也不需要联网**——冻结全文就在本地库里。
+
+| 来源 | 冻结全文 | 解析段数 | `ordinal` 序列 | 空段占号造成的缺口 | 与库中段落表比对 |
+| --- | --- | --- | --- | --- | --- |
+| `PMC1182327`（DOI `10.1371/journal.pmed.0020124`），`version_hash` `d8cce55b…` | 74 610 字节 | 32 | `1…32` 连续 | **0 个** | 32 行 `ordinal` **逐项一致** |
+| 同一 `pmcid` 的另一次冻结，`version_hash` `574ad062…` | 74 610 字节 | 32 | `1…32` 连续 | **0 个** | 32 行 `ordinal` **逐项一致** |
+
+也就是说：**这份真实来源里没有一个被跳过的空段落**，序号从 1 到 32 一个不落。
+「空段落继续占号、段落表因此出现缺口」这条机制在代码里成立（`jats.py` 先 `ordinal += 1`、
+后判断文本是否为空），但在本仓库现有的真实来源上**没有实际发生**。
+
+### 投影层复测：真实任务的「列表相邻」差
+
+对库里两条 `COMPLETED` 的真实任务读取 `SqliteStore.evidence_context()`（即 `GET /api/checks/{id}/evidence-context` 的同一个投影），
+逐对检查相邻条目：只有当**前一条是锚点**（`cited` 或 `entered_context`）**且**它与下一条的 `ordinal` 差 **大于 1** 时，
+「列表相邻」才会与「原文相邻」不一致。
+
+| 任务 | 状态 | 返回段数 | 锚点数 | 列表内相邻对的 `ordinal` 差 | 错位处 |
+| --- | --- | --- | --- | --- | --- |
+| `5f0649c43fec4c0283833938863363b0` | `COMPLETED` | 30 | 19 | 除 `11→13`、`17→19` 外恒为 1 | **0 处**（两处间隔的前一条都不是锚点，是段落分组之间的自然空档） |
+| `bc87b0ce166a4c1ca77e39140df2493c` | `COMPLETED` | 25 | 12 | 除 `17→23`、`25→27`、`29→31` 外恒为 1 | **0 处**（同上） |
+
+**结论：本仓库现有的真实来源没有触发错位。** 两条任务的每个锚点，其 `ordinal±1` 都在返回列表里，
+所以「列表相邻」在这份数据上恰好等于「原文相邻」。这与本文在此前记录的口径一致（真实数据未显形），
+区别只是：**现在可以用 `ordinal` 直接判定，不必再靠「列表相邻」这个间接推论**。
+
+### 这一节不能被读成什么
+
+- **不是「真实来源已复现该缺陷」**。复测结果是 0 处错位；错位只在**构造样本**上被覆盖：
+  `tests/retrieval/test_query_and_jats.py` 验「序号与 `paragraph_id` 尾段一致、被跳过的空段落占号造成段落表缺口」，
+  `tests/tools/test_checks_api.py` 构造的正是错位场景——锚点 1 的 `+1` 是空段落、被跳过，列表里紧挨的是另一个锚点 3，
+  响应里的序号把它们分开（`1` 与 `3`）。这两处是**人工构造**的样本，不能当作真实来源的实测。
+- **不是「前端已经正确」**。`frontend/src/state/model.ts` 的 `anchorWindow()` 仍取 `paragraphs[index ± 1]`，
+  `paragraphRole()` 仍只看 `cited` / `entered_context`；`git diff 958ac17 origin/main -- frontend/src/state/model.ts` 为**空**，
+  即从 #46 合并点到 #49 合并后的 main，该文件一字未改。所以 Issue #20 第 17 项在界面上的错误呈现**未被修复**，
+  本次只是让契约层具备了判据。
+- **不是「该缺陷只在构造数据里存在」**。机制是代码级成立的：任何「锚点的 `+1` 行不存在于段落表」的情形
+  （空段落占号造成缺口、锚点是来源末段、`pmc_fm` 回落来源只有 0～1 段）都会让列表里紧挨锚点的条目落到下一个锚点上。
+  现场没有触发 ≠ 不能触发。
+
+### 验证手段与限度
+
+- 本节的复测用**产品解析函数**重解析真实 `jats_bytes`、用**同一个只读投影**读取任务，因此验的是产品行为，不是替身；
+  全程不调用模型、不联网、不消耗任何预算。临时库是 `.run-r2/data` 的副本，原库与在跑的进程未被触碰。
+- **验收基线在当前 main 上仍红（本轮实测，不是推断）**：把 `test/input-context-multianchor-baseline` 那条用例
+  临时应用到本分支工作树（只加用例、不碰实现）后跑 `npm --prefix frontend test`，得 **51 条 / 50 passed / 1 failed**，
+  失败点即 `an entry counts as the next paragraph only when the server placed it there by ordinal`；跑完已还原，工作区无残留。
+  配合上一条的 `git diff` 为空，可以排除「实现已经修好只是用例过时」这种可能。
+- `docs/verification.md` 没有测试对其内容作断言（`tests/` 下读 `docs/` 的有两处：`tests/tools/test_api_contract.py` 读
+  `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`），所以本次的验证手段是
+  脚本断言与 grep，**不是**测试套件。
