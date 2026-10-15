@@ -1116,10 +1116,10 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
   `tests/retrieval/test_query_and_jats.py` 验「序号与 `paragraph_id` 尾段一致、被跳过的空段落占号造成段落表缺口」，
   `tests/tools/test_checks_api.py` 构造的正是错位场景——锚点 1 的 `+1` 是空段落、被跳过，列表里紧挨的是另一个锚点 3，
   响应里的序号把它们分开（`1` 与 `3`）。这两处是**人工构造**的样本，不能当作真实来源的实测。
-- **不是「前端已经正确」**。`frontend/src/state/model.ts` 的 `anchorWindow()` 仍取 `paragraphs[index ± 1]`，
-  `paragraphRole()` 仍只看 `cited` / `entered_context`；`git diff 958ac17 origin/main -- frontend/src/state/model.ts` 为**空**，
-  即从 #46 合并点到 #49 合并后的 main，该文件一字未改。所以 Issue #20 第 17 项在界面上的错误呈现**未被修复**，
-  本次只是让契约层具备了判据。
+- **「前端尚未修复」只对 #53 合并前的 main 成立**。本节写作时 `frontend/src/state/model.ts` 的 `anchorWindow()` 仍取
+  `paragraphs[index ± 1]`、`paragraphRole()` 只按 `cited` / `entered_context` 两枚来源标志拼标签，`git diff 958ac17 origin/main -- frontend/src/state/model.ts` 为**空**；
+  这三项都是当时的实测。Issue #20 第 17 项在界面上的错误呈现**已由 PR #53 修复**（`anchorWindow()` 改按 `ordinal±1` 判定），
+  所以本节只记录修复前的契约层结论，前端一侧的落地判据与复测见文末「#47 前端侧落地后的结论订正」。
 - **不是「该缺陷只在构造数据里存在」**。机制是代码级成立的：任何「锚点的 `+1` 行不存在于段落表」的情形
   （空段落占号造成缺口、锚点是来源末段、`pmc_fm` 回落来源只有 0～1 段）都会让列表里紧挨锚点的条目落到下一个锚点上。
   现场没有触发 ≠ 不能触发。
@@ -1128,10 +1128,56 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
 
 - 本节的复测用**产品解析函数**重解析真实 `jats_bytes`、用**同一个只读投影**读取任务，因此验的是产品行为，不是替身；
   全程不调用模型、不联网、不消耗任何预算。临时库是 `.run-r2/data` 的副本，原库与在跑的进程未被触碰。
-- **验收基线在当前 main 上仍红（本轮实测，不是推断）**：把 `test/input-context-multianchor-baseline` 那条用例
+- **验收基线当时在 main 上仍红（该轮实测，不是推断）**：把 `test/input-context-multianchor-baseline` 那条用例
   临时应用到本分支工作树（只加用例、不碰实现）后跑 `npm --prefix frontend test`，得 **51 条 / 50 passed / 1 failed**，
-  失败点即 `an entry counts as the next paragraph only when the server placed it there by ordinal`；跑完已还原，工作区无残留。
-  配合上一条的 `git diff` 为空，可以排除「实现已经修好只是用例过时」这种可能。
+  失败点即 `an entry counts as the next paragraph only when the server placed it there by ordinal`；跑完已还原，工作区无残留，
+  与「`git diff` 为空」互证，排除了「实现已修好只是用例过时」。该结论只对 `d4f8829` 之前的 main 成立，此后见文末订正节。
 - `docs/verification.md` 没有测试对其内容作断言（`tests/` 下读 `docs/` 的有两处：`tests/tools/test_api_contract.py` 读
   `docs/architecture.md`、`tests/boundary/test_domain_contract.py` 读 `docs/glossary.md`），所以本次的验证手段是
   脚本断言与 grep，**不是**测试套件。
+
+## #47 前端侧落地后的结论订正（2026-10-15）
+
+PR #53（`fix(frontend): 只有 ordinal±1 才算原文邻段（#47）`，squash-merge `d4f8829`，base `a72f5b00` = #51，head `2b278652`）
+把 Issue #20 第 17 项的界面呈现修掉了，Issue #47 随该 PR 自动关闭。`AGENTS.md` 把本文档划给测试侧，
+所以这次订正独立于该功能 PR：本节只订正本文随它过时的结论，不重述它的实现，也不改动 `frontend/` 下的代码。
+
+### 订正对象与依据
+
+| 位置 | 原记述 | 现记述 |
+| --- | --- | --- |
+| `:1119-1122` | 「不是『前端已经正确』……从 #46 合并点到 #49 合并后的 main，该文件一字未改……错误呈现**未被修复**」 | 该判断只对 #53 合并前的 main 成立；`anchorWindow()` 已改按 `ordinal±1` 判定，界面上的错误呈现已修复 |
+| `:1131-1134` | 「验收基线在当前 main 上仍红（本轮实测，不是推断）」 | 该结论只对 #53 合并前的 main 成立；那条用例已随 #53 合入，并在合并后的 main 上通过 |
+
+两处都是**段落级替换、不增行**，`:1119` 之前的既有行号一处未移（全仓按行号引用本文档的只有 `:391`（4 处）与 `:541`（2 处），两者都在本节改动之前，
+见 `:993` 的自检），新增内容全部在文末：本文总行数由 1138 增至 1184。
+
+### 前端侧的落地判据（在 `d4f8829` 的代码上核对）
+
+| 判据 | 位置 | 内容 |
+| --- | --- | --- |
+| 邻段按序号判定 | `frontend/src/state/model.ts` 的 `originalNeighbour()` | 新增函数：仅当 `candidate.ordinal === anchor.ordinal + delta` 时返回候选，否则 `null`；`anchorWindow()` 的 `before` / `after` 都由它产出，不再取 `paragraphs[index ± 1]` |
+| `ordinal` 成为必填 | `frontend/src/api/validation.ts` 的 `contextParagraph` | 新增校验子：必须是 `Number.isInteger` 且 `>= 1`；缺字段或值为 `0` / `-1` / `1.5` / `'5'` 一律判为契约不合法，`GET /api/checks/{id}/evidence-context` 的响应会被前端拒绝 |
+| 用例 | `frontend/tests/input-context.test.mjs` | 我推的恒红基线（`test/input-context-multianchor-baseline` @ `281b0f6`）随 #53 带入；承重断言 `anchorsOnly.after === null` / `anchorsOnly.before === null` 逐字保留，被改写的只有其后的 `paragraphRole(farAnchor)` |
+
+最后一行以用例形式记录：原基线里 `paragraphRole(farAnchor)` 期望写 `'被引用'` 是**错的**（真实值为 `'被引用 · 进入模型上下文'`），
+因排在承重断言之后从未执行到，所以 #53 的那处改动是**改正**而非放宽断言。
+
+### 复测（本轮实测，不是推断）
+
+在 `d4f8829`（= 当时的 `origin/main`）新建的工作树上、先 `npm --prefix frontend ci` 装好依赖后跑：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm --prefix frontend test` | **52 passed / 0 fail**（`:1131` 记的 51 条 / 50 passed / 1 failed 是 #53 合并前的值） |
+| `npm --prefix frontend run build` | `vue-tsc --noEmit` 与 Vite 生产构建均通过 |
+
+### 这一节不能被读成什么
+
+- **不是「真实来源已复现该缺陷」**：上一节「evidence-context 的 `ordinal` 契约复测」的源层与投影层复测结论不变——现有真实来源的 `ordinal` 序列连续，
+  两条 `COMPLETED` 任务 0 处错位。本次修的是**机制**（列表相邻 ≠ 原文相邻），在这份数据上不会改变任何界面的可见输出，
+  所以这次修复**没有被真实来源的实测覆盖过**。
+- **不是「邻段标签也跟着改了」**：`paragraphRole()` 一字未改，仍按 `cited` / `entered_context` 两枚来源标志拼标签；
+  变的是「谁算邻段」，不是「邻段怎么标」。
+- **不是「本文档有测试兜底了」**：`docs/verification.md` 仍无任何测试对其内容作断言（见上文「验证手段与限度」），
+  本节的验证手段是脚本断言、`git` 比对与上表两条命令的实跑输出。
