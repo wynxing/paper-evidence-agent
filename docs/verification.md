@@ -1203,7 +1203,7 @@ PR #40（squash-merge `043fe7a`）按 #31 的**首选修法**落地：把共享�
 A/B 的 8 条失败全部落在 `tests/functional/test_semantic_acceptance.py`——7 个参数的 `test_a_frozen_case_is_judged_against_the_frozen_version`
 与 `test_a_sample_that_points_at_a_missing_paragraph_is_refused`——报错为 `ImportError: cannot import name 'VERSION_HASH' from 'conftest' (…/tests/performance/conftest.py)`，
 与 #31 的记录逐项一致（条数、失败文件、报错形态）。A 与 B 之差只有一条我加的探针用例，说明**不需要该目录里有用例文件**，只放 `conftest.py` 就足以顶掉排序。
-A/B 的 passed 少于 #31 当时记的 268，是因为这两个工作树没有装前端依赖、且 `a919d5b` 之后 main 又新增了用例；可比的是失败条数与失败点。
+A/B 的总数是 255（再加我那条探针用例），与 #31 记录的「255 基线」**一致**；#31 当时的 276 = 255 + 21 条性能用例，本轮没有把那 21 条一并拉进来，所以 passed 是 247 / 248 而不是 268。可比的是失败条数（8）与失败点，两者逐项吻合。
 
 新增守卫 `tests/boundary/test_test_layout.py`：用 `ast` 扫描 `tests/**/*.py`，断言不存在真实的 `import conftest` 或 `from conftest import …`
 （注释与 docstring 里的提及不算，显式相对导入不算）。它另带一条自检用例，检测函数本身失效时守卫会红。
