@@ -31,4 +31,7 @@ include = ["paper_evidence*"]
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
 pythonpath = ["."]
-markers = ["scaffold: temporary assertions removed when the declared route is implemented"]
+markers = [
+    "scaffold: temporary assertions removed when the declared route is implemented",
+    "live: needs real upstream network egress; skipped unless PAPER_EVIDENCE_LIVE_SOURCES=1",
+]

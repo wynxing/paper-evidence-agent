@@ -1072,7 +1072,7 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
 本节订正本文「端到端联调后端缺口」一栏里两处随 PR #49（squash-merge `25fc2fd`）过时的结论，
 并记录一次**不需要模型密钥**的复测。`AGENTS.md` 把本文档划给测试侧，所以这次改动独立于该功能 PR。
 
-### 订正对象与依据
+### ordinal 契约复测：订正对象与依据
 
 | 位置 | 原记述 | 现记述 |
 | --- | --- | --- |
@@ -1110,7 +1110,7 @@ PR #46（合并为 `958ac17`）把 Issue #44 后端 / worker 栏的 3.1–3.5 �
 所以「列表相邻」在这份数据上恰好等于「原文相邻」。这与本文在此前记录的口径一致（真实数据未显形），
 区别只是：**现在可以用 `ordinal` 直接判定，不必再靠「列表相邻」这个间接推论**。
 
-### 这一节不能被读成什么
+### ordinal 契约复测：这一节不能被读成什么
 
 - **不是「真实来源已复现该缺陷」**。复测结果是 0 处错位；错位只在**构造样本**上被覆盖：
   `tests/retrieval/test_query_and_jats.py` 验「序号与 `paragraph_id` 尾段一致、被跳过的空段落占号造成段落表缺口」，
@@ -1228,3 +1228,70 @@ A/B 的总数是 255（再加我那条探针用例），与 #31 记录的「255 
 要复现「该断言在修复前会红」不必回到那个分支：把 `model.ts` 的 `originalNeighbour()` 退回按列表相邻取值即可。
 同批删除的还有 `docs/verification-ordinal-landed`（`b407d4d`）：它与合并后的 main **逐字节等价**（`git diff origin/main b407d4d` 为空），
 且 PR #54 仍持有该提交，删分支不丢内容。
+
+## 真实 PMC 来源契约（2026-10-15）
+
+本节补的是 `tests/tools/test_sources.py` 结构上覆盖不到的一层。那套用例走 `httpx.MockTransport`，钉住的是**本客户端发出的请求形状**，永远钉不住 **PMC 实际返回的形状**。`#28` 正是从这个缝里活下来的：仓库里所有 JATS 夹具都是人工构造的最小快照（`claim_kind: constructed`），而连接器注释曾断言 `pmc_fm` 返回完整 `<body>`，与实测相反——**248 个用例里没有一条能反驳它**。
+
+### 真实 PMC 来源契约：新增内容
+
+- `tests/tools/test_live_source_contract.py`：15 条（5 项 × 3 个 CC BY 记录），**真实网络**。
+- `backend/pyproject.toml`：注册 `live` marker；只有 `PAPER_EVIDENCE_LIVE_SOURCES=1` 时才运行。
+
+选取三条已知 CC BY 记录（`PMC1182327` / `PMC8806060` / `PMC7461750`）。**只硬编码公开标识符，仓库内不落存任何文章正文**，每次运行都读当前上游。这是刻意的：既避开版权与体积问题，也让上游格式变更时测试真的会动。
+
+复现命令（需网络出口）：
+
+```bash
+PAPER_EVIDENCE_LIVE_SOURCES=1 \
+  backend/.venv/bin/python -m pytest -c backend/pyproject.toml -q -m live
+```
+
+### 真实 PMC 来源契约：实测
+
+环境：Windows / Python 3.12，2026-10-15。结果是 `15 passed in 11.31s`。同时记录了本次两种 `metadataPrefix` 的元素计数：
+
+| DOI | PMCID | `pmc` body / sec / p（字节） | `pmc_fm` body / sec / p（字节） |
+| --- | --- | --- | --- |
+| 10.1371/journal.pmed.0020124 | PMC1182327 | **1 / 8 / 38**（74,610） | **0 / 0 / 4**（13,203） |
+| 10.1371/journal.pone.0262629 | PMC8806060 | **1 / 20 / 57**（102,152） | **0 / 0 / 3**（13,951） |
+| 10.1186/s12889-020-09394-x | PMC7461750 | **1 / 6 / 0**（18,254） | **0 / 0 / 0**（16,688） |
+
+三点与 `#28` 一致，且是**新的一次独立测量**（§「PMC 全文取回：metadataPrefix 修正」那次记的是 2026-10-12）：
+
+1. `pmc` 三例全部含 `<body>`；`pmc_fm` 三例 `<body>` 计数**全为 0**。
+2. **`pmc_fm` 并未被拒**——三例都返回 HTTP 200 与题录，没有 `cannotDisseminateFormat`。也就是说**回落分支在这三个记录上根本没被触发**，取到正文靠的是 `pmc` 直接成功。
+3. 三个记录的 `license` 均为 `CC BY`、`language` 均为 `en`，`fetch_record` 落到的都是有 `<body>` 的形式。
+
+### 真实 PMC 来源契约：变异验证
+
+断言是否承重，用变异测过，不看"跑绿就算数"：
+
+| 变异 | 结果 |
+| --- | --- |
+| `_FULL_TEXT_PREFIX` 由 `pmc` 改为 `pmc_fm`（即退回 `#28` 的缺陷行为） | **6 failed, 9 passed** |
+| 不设 `PAPER_EVIDENCE_LIVE_SOURCES`（模拟 CI） | **15 skipped, 0 failed** |
+
+失败的 6 条恰是**追踪实现选择**的两项：`test_a_frozen_record_indexes_more_paragraphs_than_its_front_matter`（3 条）与 `test_a_fetched_record_is_english_cc_by_full_text`（3 条）。另外两条纯上游契约用例（`test_the_full_text_prefix_serves_a_body`、`test_the_front_matter_prefix_serves_no_body`）在变异下**保持绿**——这是正确的：它们断言 PMC 在固定字面前缀下返回什么，与实现选了哪个前缀无关。
+
+一条过程记录：这两项的第一版**都用了硬编码前缀**，变异下只有 3 条红。改成「冻结侧走公开的 `fetch_record`、对照侧取 `pmc_fm`」之后才变成 6 条。也就是说，第一版虽然跑绿，却**不追踪实现选择**——同一句"段落数 > 摘要段数"，走不走公开路径，承重能力完全不同。这正好印证 `#28` 的提醒：`quote 存在并不证明 label 正确`。
+
+### 真实 PMC 来源契约：全量基线
+
+| 检查 | 结果 |
+| --- | --- |
+| 后端全量 `pytest -c backend/pyproject.toml`（不设 `LIVE_SOURCES`） | **300 passed, 15 skipped**，2 warnings（62.69s） |
+| `PAPER_EVIDENCE_LIVE_SOURCES=1 -m live` | **15 passed**（11.31s） |
+| `npm --prefix frontend test` | **52 passed / 0 failed** |
+| `npm --prefix frontend run build` | 通过 |
+
+既有 300 条一条未改、一条未少；新增的 15 条默认进 `skipped` 而**不是失败**，CI（无网络出口）不会因此变红。
+
+### 真实 PMC 来源契约：未覆盖与限度
+
+- **CI 上这 15 条永远 `skipped`**。因此 `300 passed, 15 skipped` **不能读成"来源契约已验证"**——它只说明"来源契约没有被 CI 覆盖"。必须在有网络的环境显式跑，并把结果记进本文件；`skipped` 一律按未验证处理。
+- **非 OA 回落路径本轮仍未真实触发**：三个记录的 `pmc` 请求全部成功，`cannotDisseminateFormat` → `pmc_fm` 这条分支一次都没进。该分支**仍只有 mock 覆盖**，与 §「PMC 全文取回：metadataPrefix 修正」记的"没有抽样非 OA 记录的真实响应体"是同一条缺口，本节没有改善它。
+- **只有 3 个记录、且都在 OA 子集内**。样本量不足以声称"PMC 的 `pmc_fm` 一律无正文"是普遍规律；它只能证明"这三个记录如此"。要谈普遍性需要抽样协议，本节不提供。
+- **只断言结构，不断言语义**：断言是 `<body>` 存在、段落数超过题录+摘要，不比对某段文字。这是刻意的——正文内容会随版本变，结构契约才是连接器的职责边界。
+- **上游不可达时这 15 条会以 `UPSTREAM_*` 错误失败**，属环境问题而非缺陷；重跑前先区分，不要记成回归。
+- `#28` 的**产品口径仍未定**（非 OA 回落时是否阻断判定）。本节不对该行为置评，也不因为 `pmc` 能取到正文就认为 `#28` 可以关闭。
