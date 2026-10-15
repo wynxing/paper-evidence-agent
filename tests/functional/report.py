@@ -344,13 +344,21 @@ def sample_fingerprint(samples: Path) -> str:
 
     Sample file *names* are hashed alongside their bytes so that adding,
     removing or renaming a sample always changes the digest.
+
+    Line endings are **not** sample content: git stores these files with LF, a
+    Windows working copy gets CRLF, and hashing the raw bytes made the digest —
+    and with it the whole report — depend on the checkout rather than the data.
+    Measured 2026-10-15: raw bytes gave ``sha256:3035a7030a983d95`` on Windows
+    against ``sha256:08149557cc65b289`` on the CI runner, so ``--check`` could
+    only ever pass on the machine that generated the report. Normalising CRLF to
+    LF makes the digest a property of the samples alone.
     """
 
     digest = hashlib.sha256()
     for path in sorted(samples.glob("*.json")):
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return f"sha256:{digest.hexdigest()[:16]}"
 
