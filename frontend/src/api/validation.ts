@@ -3,6 +3,8 @@ type Validator = (value: unknown) => boolean
 export const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 export const text: Validator = value => typeof value === 'string'
 const number: Validator = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
+/** Frozen body position, from 1. The same integer the server uses when it expands ordinal±1. */
+const ordinal: Validator = value => typeof value === 'number' && Number.isInteger(value) && value >= 1
 const bool: Validator = value => typeof value === 'boolean'
 const oneOf = (...values: unknown[]): Validator => value => values.includes(value)
 const nullable = (validate: Validator): Validator => value => value === null || validate(value)
@@ -43,7 +45,7 @@ export function coherentOutcome(value: unknown): boolean {
 }
 export const validateDetail: Validator = value => shape(detailFields)(value) && coherentOutcome(value)
 export const validateCheckInput = shape({ id: text, claim: text, doi: text, previous_id: nullable(text), config_digest: text, authorized_recipients: strings })
-const contextParagraph = shape({ paragraph_id: text, section: text, text: text, paragraph_hash: text, source_url: text, entered_context: bool, cited: bool })
+const contextParagraph = shape({ paragraph_id: text, section: text, ordinal, text: text, paragraph_hash: text, source_url: text, entered_context: bool, cited: bool })
 export const validateEvidenceContext = shape({ id: text, source_id: nullable(text), paragraphs: array(contextParagraph) })
 export const validateCreated = shape({ id: text, status: oneOf('QUEUED') })
 export const validateSource = shape({ doi: text, title: text, authors: strings, year: nullable(number) })

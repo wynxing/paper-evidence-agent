@@ -657,8 +657,8 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     const s = session('#/checks/done')
     const { api } = s
     api.tasks.set('done', { doi: '10.1000/done', claim: '原论断', detail: taskDetail('done', 'COMPLETED', { claim: '原论断' }) })
-    const anchor = { paragraph_id: 'p1', section: 'Results', text: '冻结原文', paragraph_hash: 'h', source_url: '', entered_context: true, cited: true }
-    const before = { paragraph_id: 'p0', section: 'Intro', text: '前一段', paragraph_hash: 'h0', source_url: '', entered_context: false, cited: false }
+    const anchor = { paragraph_id: 'p1', section: 'Results', text: '冻结原文', paragraph_hash: 'h', source_url: '', ordinal: 2, entered_context: true, cited: true }
+    const before = { paragraph_id: 'p0', section: 'Intro', text: '前一段', paragraph_hash: 'h0', source_url: '', ordinal: 1, entered_context: false, cited: false }
     let mode = 'anchor'
     api.overrides.getEvidenceContext = async () => {
       if (mode === 'fail') throw new ClientError('network', '连接失败，请检查服务后重新读取。', null)
