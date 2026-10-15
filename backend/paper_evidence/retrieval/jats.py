@@ -5,6 +5,12 @@ bytes and parser version always yield the same ids, text and hashes. Paragraph
 text is taken in document order, JATS entities are resolved, in-paragraph
 whitespace runs collapse to a single U+0020 and paragraph ends are trimmed. Case,
 quotes, hyphens and Unicode normalization form are preserved.
+
+``section`` is the enclosing ``<sec>`` title, and a paragraph that has no
+enclosing ``<sec>`` is named after the container it sits in — ``abstract`` or
+``body``. 术语表「文本与定位契约」 defines ``section`` as 原文章节, so the
+container is the only honest answer there; a paragraph read out of ``<abstract>``
+must not be presented as body text.
 """
 
 import xml.etree.ElementTree as ElementTree
@@ -69,9 +75,15 @@ def parse_jats(snapshot: SourceSnapshot) -> list[Paragraph]:
     ordinal = 0
     seen_ids: set[str] = set()
     hashes: dict[str, str] = {}
-    containers = [item for item in (abstract, body) if item is not None] or [root]
-    for container in containers:
-        for section, element in _walk(container, None):
+    # 段落按文档顺序取自摘要、再取自正文，每个容器以自己的名字兜底：没有外层 `<sec>`
+    # 的 `<p>` 就属于该容器。`section` 是「原文章节」，把摘要里的段落标成 `body`
+    # 会让模型提示与界面断言这段文字出自正文；`pmc_fm` 回落时摘要就是全部内容，这条
+    # 错标会把「只拿到摘要」彻底掩盖（Issue #28）。
+    containers = [
+        (item, name) for name, item in (("abstract", abstract), ("body", body)) if item is not None
+    ] or [(root, "body")]
+    for container, fallback in containers:
+        for section, element in _walk(container, fallback):
             ordinal += 1
             text = normalize_paragraph_text("".join(element.itertext()))
             if not text:
@@ -90,7 +102,7 @@ def parse_jats(snapshot: SourceSnapshot) -> list[Paragraph]:
                 Paragraph(
                     paragraph_id=pid,
                     source_id=source_key,
-                    section=section or "body",
+                    section=section or fallback,
                     ordinal=ordinal,
                     text=text,
                     paragraph_hash=digest,

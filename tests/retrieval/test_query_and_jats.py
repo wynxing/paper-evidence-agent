@@ -38,6 +38,31 @@ GAPPED_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
 </article>
 """
 
+# `pmc_fm` 与多数真实 JATS 的摘要形态：`<abstract>` 下直接放 `<p>`，没有 `<sec>` 包装。
+ABSTRACT_ONLY_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en">
+  <front><article-meta><title-group><article-title>Demo</article-title></title-group>
+    <abstract>
+      <p>The treatment reduced mortality by 20 percent.</p>
+      <p>No effect was observed in the control group.</p>
+    </abstract>
+  </article-meta></front>
+</article>
+"""
+
+# 全文形态：摘要与正文并存，且正文里另有一段不在 `<sec>` 内。
+ABSTRACT_AND_BODY_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en">
+  <front><article-meta><title-group><article-title>Demo</article-title></title-group>
+    <abstract><p>The treatment reduced mortality by 20 percent.</p></abstract>
+  </article-meta></front>
+  <body>
+    <sec id="s1"><title>Results</title><p id="n1">A result paragraph.</p></sec>
+    <p id="n2">A loose body paragraph.</p>
+  </body>
+</article>
+"""
+
 
 def snapshot(jats: bytes = JATS) -> SourceSnapshot:
     record = SourceRecord(
@@ -97,6 +122,27 @@ def test_parse_jats_keeps_the_ordinal_it_counted_in_the_paragraph_id():
     assert [p.ordinal for p in paragraphs] == [1, 3]
     assert [p.paragraph_id.rsplit(":", 1)[1] for p in paragraphs] == ["1", "3"]
     assert [p.native_jats_id for p in paragraphs] == ["a", "b"]
+
+
+def test_parse_jats_names_an_unwrapped_paragraph_after_its_container():
+    """没有外层 `<sec>` 的段落按所在容器命名，摘要不能冒充正文。
+
+    `section` 是「原文章节」（术语表「文本与定位契约」）。`pmc_fm` 回落时摘要就是
+    来源的全部内容，把它的段落标成 `body` 会让模型提示（`agents/prompts.py` 把
+    `section` 写进候选片段）与界面断言这段文字出自正文，正是 PRD 列为负例的
+    「基于摘要判定全文」。正文里同样没有 `<sec>` 的段落仍叫 `body`，所以这不是把
+    兜底一律换成 `abstract`。
+    """
+
+    abstract_only = parse_jats(snapshot(ABSTRACT_ONLY_JATS))
+    assert [p.section for p in abstract_only] == ["abstract", "abstract"]
+    # 命名空间不变：章节只影响 `section`，序号与段落 ID 仍是原样。
+    assert [p.ordinal for p in abstract_only] == [1, 2]
+    assert abstract_only[0].paragraph_id == f"p:PMC123:{VERSION_HASH}:jats-0.1.0:1"
+
+    mixed = parse_jats(snapshot(ABSTRACT_AND_BODY_JATS))
+    assert [p.section for p in mixed] == ["abstract", "Results", "body"]
+    assert [p.native_jats_id for p in mixed] == [None, "n1", "n2"]
 
 
 def test_parse_jats_rejects_unparsable_content():
