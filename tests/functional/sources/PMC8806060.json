@@ -1,0 +1,465 @@
+{
+  "schema": 2,
+  "case_id": "PMC8806060",
+  "provenance": {
+    "doi": "10.1371/journal.pone.0262629",
+    "pmcid": "PMC8806060",
+    "title": "A method of detecting apple leaf diseases based on improved convolutional neural network",
+    "authors": [
+      "Jie Di",
+      "Qing Li"
+    ],
+    "year": 2022,
+    "license": "CC BY",
+    "version": "1",
+    "access_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8806060/"
+  },
+  "article_sha256": "a7d5ee99e0c1c932aca1a1032cf542de796d3a12f8a764445614422671c3f411",
+  "response_sha256": "50479d80b642a3cb23fbcd9ee03d9a1ae98b9ce1892700231f9c6900142b422d",
+  "version_hash": "50479d80b642a3cb23fbcd9ee03d9a1ae98b9ce1892700231f9c6900142b422d",
+  "response_bytes": 102152,
+  "paragraph_count": 55,
+  "paragraphs": [
+    {
+      "ordinal": 1,
+      "section": "abstract",
+      "paragraph_hash": "e995f8e8f3896f95532d8c24744c2ec78f7a945c97549880bbf1144e7a9edc7b",
+      "text_length": 1731,
+      "native_jats_id": null,
+      "preview": "Apple tree diseases have perplexed orchard farmers for several years. At present, numerous studies have investigated dee"
+    },
+    {
+      "ordinal": 2,
+      "section": "1. Introduction",
+      "paragraph_hash": "cca41bcee8365156a27012c703a46cbfc5d5be3959cd3535242240863724729a",
+      "text_length": 1228,
+      "native_jats_id": null,
+      "preview": "With over 2,000 years of history in China, areas of apple implantation have expanded annually, and 65% of all apples in "
+    },
+    {
+      "ordinal": 3,
+      "section": "1. Introduction",
+      "paragraph_hash": "1847257d2c1e92a6cef8a9ab52005081c7f0a4f37e7bfd3110d92d622698fa1d",
+      "text_length": 485,
+      "native_jats_id": null,
+      "preview": "Hundreds of apple diseases disseminate in fruits, leaves, branches, roots, and other areas, but often initially appear i"
+    },
+    {
+      "ordinal": 4,
+      "section": "1. Introduction",
+      "paragraph_hash": "0606125f705bb47d5da9fdc0811a2e7564a833252a85aba797a4202c7e5cdce3",
+      "text_length": 1340,
+      "native_jats_id": null,
+      "preview": "Nowadays, based on traditional algorithms, much methods has been made in the detection of apple leaf diseases, artificia"
+    },
+    {
+      "ordinal": 5,
+      "section": "1. Introduction",
+      "paragraph_hash": "98662a812ce09e043f825348950b02ca6dd7cf9ed48277d449f6c08280f5c718",
+      "text_length": 2314,
+      "native_jats_id": null,
+      "preview": "Since the emergence of target detection technology during the 1960s, many domestic and overseas investigators have focus"
+    },
+    {
+      "ordinal": 6,
+      "section": "1. Introduction",
+      "paragraph_hash": "ce3aeede84f391a47cb985f84aef0c0e48f8afc344c37f0800490faecb1353cc",
+      "text_length": 2046,
+      "native_jats_id": null,
+      "preview": "Convolutional neural network learning methods are now being applied to classify and identify apple leaf diseases, such a"
+    },
+    {
+      "ordinal": 7,
+      "section": "1. Introduction",
+      "paragraph_hash": "643521cecf3fa21a7a45ff9e44a9250118eebea758390524d936c39f90f3ff9e",
+      "text_length": 1757,
+      "native_jats_id": null,
+      "preview": "There are two main types of target detection in the deep learning era [33]. The first is based on region formation. Repr"
+    },
+    {
+      "ordinal": 8,
+      "section": "2.1.1 YOLO network model",
+      "paragraph_hash": "2e397d8997adc9d4f4fbde2e5f6f42d60ace771523c915f49bc86d5aaea01c5b",
+      "text_length": 752,
+      "native_jats_id": null,
+      "preview": "The core principle of YOLO is the consideration that target detection is a regression problem. In this algorithm, images"
+    },
+    {
+      "ordinal": 9,
+      "section": "2.1.1 YOLO network model",
+      "paragraph_hash": "ef14c630769ab2fd1f20b7fb2f11e5f8699372539bc0d998669091ffdc755701",
+      "text_length": 646,
+      "native_jats_id": null,
+      "preview": "In Eq (1), Pr(object) is the probability that a target object falls into the grid, which is a standard for measuring the"
+    },
+    {
+      "ordinal": 10,
+      "section": "2.1.1 YOLO network model",
+      "paragraph_hash": "5aab8a666d32a5ee54472a7c20203ac5220aadb1c3d27ff59115283435a0587f",
+      "text_length": 458,
+      "native_jats_id": null,
+      "preview": "On this basis, YOLO selects the appropriate candidate region to predict while detecting the input picture to obtain the "
+    },
+    {
+      "ordinal": 11,
+      "section": "2.1.2 YOLOv2 network",
+      "paragraph_hash": "5a396cbc9042fef4a80cc6230cb1fc2d95962a004a503e971b9d48ca1e1ba9dd",
+      "text_length": 1453,
+      "native_jats_id": null,
+      "preview": "Although YOLO has been greatly improved in terms of detection speed, its detection accuracy is far from optimal. Object "
+    },
+    {
+      "ordinal": 12,
+      "section": "2.1.3 Tiny-YOLO network",
+      "paragraph_hash": "0e723d63f639cc9293e5a15382c34652490ffc792698d614ff5b27c3e7bc4269",
+      "text_length": 614,
+      "native_jats_id": null,
+      "preview": "Tiny-YOLO is a miniature “accelerated version” network based on the Darknet-19 structure (Fig 1). This reduces the compl"
+    },
+    {
+      "ordinal": 13,
+      "section": "2.1.3 Tiny-YOLO network",
+      "paragraph_hash": "b7788b547d84b1804a381adec43d3d83a5ba51ef00e601c757a6dbd1cfe3c552",
+      "text_length": 60,
+      "native_jats_id": null,
+      "preview": "Tiny-YOLO structure and the network parameter shown in here."
+    },
+    {
+      "ordinal": 14,
+      "section": "2.1.4 Dense connective network",
+      "paragraph_hash": "789415cbb158f60842454bdfc4e18fa38deb24e7107271b3959235f0392b6681",
+      "text_length": 323,
+      "native_jats_id": null,
+      "preview": "Huang, Liu [40] connected all layers in the network in pairs so that each layer in the network can receive the character"
+    },
+    {
+      "ordinal": 15,
+      "section": "2.1.4 Dense connective network",
+      "paragraph_hash": "965c9e135f8962a5e8de559079deb6988bc812fd42b5f2a77539a835520fb71d",
+      "text_length": 1059,
+      "native_jats_id": null,
+      "preview": "DenseNet has the following important characteristics. It alleviates the problem of gradient dissipation during training "
+    },
+    {
+      "ordinal": 16,
+      "section": "2.1.4 Dense connective network",
+      "paragraph_hash": "4323792b65ce156229e2fed8e65e66ec44f86192b4e30d4a1ec29d31a3d54a4c",
+      "text_length": 253,
+      "native_jats_id": null,
+      "preview": "DenseNet encourages feature reuse, which means that the features of each picture can be used, and this reduces disappear"
+    },
+    {
+      "ordinal": 17,
+      "section": "2.1.5 F-YOLO network",
+      "paragraph_hash": "819237591802e23172b98bf14e7286ff9ebeda5eb7dd591398b081d54d816b6d",
+      "text_length": 1027,
+      "native_jats_id": null,
+      "preview": "Mehta and Ozturk [41] proposed F-YOLO based on Tiny-YOLO. Generally, a deeper and wider network structure, results in a "
+    },
+    {
+      "ordinal": 18,
+      "section": "2.2 DF-Tiny-YOLO network model",
+      "paragraph_hash": "ee1794d0ef5509ea1e9b688ef41fe1a7245869bdb0d1584c6ba7d29781cfc19b",
+      "text_length": 190,
+      "native_jats_id": null,
+      "preview": "The following improvements to the original Tiny-YOLO network structure were made based on existing knowledge to realize "
+    },
+    {
+      "ordinal": 19,
+      "section": "2.2 DF-Tiny-YOLO network model",
+      "paragraph_hash": "2c0e535a6356c4583f41b776e717893a570b2ff93f66625a147d2d7d363da913",
+      "text_length": 614,
+      "native_jats_id": null,
+      "preview": "Huang, Liu [40] proposed the concept of a dense connection network. They replaced the 13 × 13 × 512 convolution layer in"
+    },
+    {
+      "ordinal": 20,
+      "section": "2.2 DF-Tiny-YOLO network model",
+      "paragraph_hash": "98ce6bbdd3933ee8eab3d99f907874569e2a58b82b1247177d9e94f0704af64e",
+      "text_length": 266,
+      "native_jats_id": null,
+      "preview": "Resize and reorg were adopted to compress large feature diagrams, reduce network computation, accelerate network trainin"
+    },
+    {
+      "ordinal": 21,
+      "section": "2.2 DF-Tiny-YOLO network model",
+      "paragraph_hash": "ad2a3fd70c475627eb3cfb23ad4383035ceee83c4c568621dc84ccf9b3fb0721",
+      "text_length": 253,
+      "native_jats_id": null,
+      "preview": "Using 1 × 1, 1 × 1, and 3 × 3 convolution kernels at the network terminals will contribute to reducing the dimension of "
+    },
+    {
+      "ordinal": 22,
+      "section": "2.2 DF-Tiny-YOLO network model",
+      "paragraph_hash": "b78c10abb1f2f8f77377352008115c2bbfac20c96f599888488138c9cd976294",
+      "text_length": 153,
+      "native_jats_id": null,
+      "preview": "A DF-Tiny-YOLO network model was constructed with the structure shown in Fig 3 based on these improvements, and the netw"
+    },
+    {
+      "ordinal": 23,
+      "section": "3.1.1 Experimental data",
+      "paragraph_hash": "a8446b2cbaf105b62c7eccd35728304d02e720678becbc79d08bfba92c5d3c7c",
+      "text_length": 602,
+      "native_jats_id": null,
+      "preview": "We randomly selected four clear common apple leaf pictures of the same size in the PlantVillage database as the experime"
+    },
+    {
+      "ordinal": 24,
+      "section": "3.1.1 Experimental data",
+      "paragraph_hash": "bb70ece7db29edbc7a191516583e23a8c87b909003dae7c6a5ca65da125c4e6b",
+      "text_length": 65,
+      "native_jats_id": null,
+      "preview": "The figure describes the basic situation of four types of leaves."
+    },
+    {
+      "ordinal": 25,
+      "section": "3.1.1 Experimental data",
+      "paragraph_hash": "5da9bc9c4e3468606dbbe1894eb30fc6ac96fd38dc33954e64808c7fd575b482",
+      "text_length": 51,
+      "native_jats_id": null,
+      "preview": "The table shows division of training and test sets."
+    },
+    {
+      "ordinal": 26,
+      "section": "3.1.1 Experimental data",
+      "paragraph_hash": "a4911dd8fa7348828e13441a79c4412b0082c5f9f60e612b7b859f3f1375faa0",
+      "text_length": 156,
+      "native_jats_id": null,
+      "preview": "Many common diseases affect apple leaves. Table 2 summarizes the main characteristics of diseased and healthy leaves wit"
+    },
+    {
+      "ordinal": 27,
+      "section": "3.1.1 Experimental data",
+      "paragraph_hash": "7753adabf758f1aee3221aa31063e342c236ec922f14ece5d89f80981849446c",
+      "text_length": 388,
+      "native_jats_id": null,
+      "preview": "After uniformly labeling the four categories of apple leaf picture data, the leaf samples were manually labeled individu"
+    },
+    {
+      "ordinal": 28,
+      "section": "3.1.2 Environment and tools",
+      "paragraph_hash": "a9f292a58da618b7decae18c042b7db50eb8953644148fd206a178b64cd5b872",
+      "text_length": 70,
+      "native_jats_id": null,
+      "preview": "Table 3 shows the server platform configuration and tools used herein."
+    },
+    {
+      "ordinal": 29,
+      "section": "3.1.3 Model training",
+      "paragraph_hash": "990b7a69fc9283b74d0f2398a143554f3238563135d5aa085ddd9759627cbc14",
+      "text_length": 324,
+      "native_jats_id": null,
+      "preview": "Referring to the training parameters of the original Tiny-YOLO model, the main initial training parameters of the improv"
+    },
+    {
+      "ordinal": 30,
+      "section": "3.1.3 Model training",
+      "paragraph_hash": "3931562c4af2d1ee50e38e116a94601cd5788f5bc49e2269639344359692cf09",
+      "text_length": 1151,
+      "native_jats_id": null,
+      "preview": "Fig 5 shows the experimental process for the target detection of apple leaf diseases. The apple leaf images are first sc"
+    },
+    {
+      "ordinal": 31,
+      "section": "3.1.3 Model training",
+      "paragraph_hash": "e537618eee03fd68a5fe3c9d0f5ce92af7acf5b8e155c796bc4666a167bc907a",
+      "text_length": 90,
+      "native_jats_id": null,
+      "preview": "The figure shows the experimental process for the target detection of apple leaf diseases."
+    },
+    {
+      "ordinal": 32,
+      "section": "3.1.4 Experimental evaluation indexes",
+      "paragraph_hash": "488ef364b5a6a36cee7de9ff47c5d8affc3b4c02278f1f260f512499dcf36b3b",
+      "text_length": 297,
+      "native_jats_id": null,
+      "preview": "The mean average precision (mAP), intersection over union (IoU), recall, and frame per second (FPS) were adopted as the "
+    },
+    {
+      "ordinal": 33,
+      "section": "3.1.4 Experimental evaluation indexes",
+      "paragraph_hash": "cf886b7ba2b17937ff2a78b59446890c3f496df34825f421e80291cc284c05c0",
+      "text_length": 262,
+      "native_jats_id": null,
+      "preview": "Precision (accuracy rate), is the proportion of correctly recognized object A to the number of all objects recognized as"
+    },
+    {
+      "ordinal": 34,
+      "section": "3.1.4 Experimental evaluation indexes",
+      "paragraph_hash": "c8892ca5d9001edd5066cbf0464f2fa172f1c7c4ece2052bc8aca185dcf92a92",
+      "text_length": 212,
+      "native_jats_id": null,
+      "preview": "Recall (recall ratio), indicates the proportion of the number of objects correctly identified as A in the recognition re"
+    },
+    {
+      "ordinal": 35,
+      "section": "3.1.4 Experimental evaluation indexes",
+      "paragraph_hash": "36d3c37739287fb10fc0ad12ce2002b9b9337796d94b45714a7c1de6ac2c7b00",
+      "text_length": 133,
+      "native_jats_id": null,
+      "preview": "The IoU refers to the degree of overlap between the prediction box of object A and the original label box (Eq (5)). IoU="
+    },
+    {
+      "ordinal": 36,
+      "section": "3.1.4 Experimental evaluation indexes",
+      "paragraph_hash": "93db6a5a332a31b518cb87b862cce40edf90764f294090e05d85ae889ddb7c3c",
+      "text_length": 124,
+      "native_jats_id": null,
+      "preview": "Frame Rate per Second (FPS) is a common indicator of speed, namely, the number of pictures that can be processed per sec"
+    },
+    {
+      "ordinal": 37,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "d7d1a2eb0b6f148ab1775e3be428346cc85a7ac2c9b111d5048fd24aafee8f95",
+      "text_length": 1140,
+      "native_jats_id": null,
+      "preview": "To prevent the prediction model from overfitting, we determine whether the training model is optimal by observing the av"
+    },
+    {
+      "ordinal": 38,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "3c7c07958bced954b688b45c578692b08b67f50e65e964ecd3b30863f195c86d",
+      "text_length": 96,
+      "native_jats_id": null,
+      "preview": "The figure shows variations in the average losses of DF-Tiny-YOLO and Tiny-YOLO during training."
+    },
+    {
+      "ordinal": 39,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "8300b576e787dab302f87b18ecda14ce7753631ea41272f4abe1cc1cedd6488c",
+      "text_length": 707,
+      "native_jats_id": null,
+      "preview": "Table 5 compares the experimental results of DF-Tiny-YOLO, YOLOv2, and Tiny-YOLO. Compared with YOLOV2 and the original "
+    },
+    {
+      "ordinal": 40,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "87a38e55f1398c341c73575231f5b0d8912699cd711ddd83420aacbff0cb7b50",
+      "text_length": 767,
+      "native_jats_id": null,
+      "preview": "The confusion matrix is a standard format for representing accuracy evaluation and is represented in this paper in the f"
+    },
+    {
+      "ordinal": 41,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "17a0e9424f4592abe4766af2981bde2cedcff2b679cf5f54118725332d131413",
+      "text_length": 142,
+      "native_jats_id": null,
+      "preview": "The table shows the confusion matrix of DF-Tiny-YOLO, including the classification precision and Recall of four differen"
+    },
+    {
+      "ordinal": 42,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "2312e22858676c42d22eae6425ffe9569fc1701898f0b36fa805b7cb1e555b30",
+      "text_length": 402,
+      "native_jats_id": null,
+      "preview": "Fig 7 shows the detection of apple leaf diseases by DF-Tiny-YOLO, YOLOv2, and Tiny-YOLO. Based on output image results, "
+    },
+    {
+      "ordinal": 43,
+      "section": "3.2 Experimental results and analysis",
+      "paragraph_hash": "284b943966d27a030bd63a2aea59d6f1e38186814b8cb1e1ffcde0aba037f4a1",
+      "text_length": 81,
+      "native_jats_id": null,
+      "preview": "The figures show the classification and localization effects of different models."
+    },
+    {
+      "ordinal": 44,
+      "section": "4.1 Research conclusion",
+      "paragraph_hash": "5ab7f2abe35c32c27823cd4e0fc2365435765ebe760b9e522f04d716a35633da",
+      "text_length": 639,
+      "native_jats_id": null,
+      "preview": "Nowadays, much progress has been made in the detection of apple leaf diseases. When the traditional approach seemed to h"
+    },
+    {
+      "ordinal": 45,
+      "section": "4.1 Research conclusion",
+      "paragraph_hash": "0bbcd47f9d58d40448e87fb3053c391e182864734b252c5fb62355d0090d73e0",
+      "text_length": 1704,
+      "native_jats_id": null,
+      "preview": "Redmon, Divvala [38] launched the YOLOv1 target detection network in 2016 and it has since been improved in versions v2 "
+    },
+    {
+      "ordinal": 46,
+      "section": "4.1 Research conclusion",
+      "paragraph_hash": "c1ae36e14bbed6a71250a8a509b30c647358ccd3aaa2a8f3179d9bf23a80566d",
+      "text_length": 701,
+      "native_jats_id": null,
+      "preview": "Upgraded, more complex versions of the YOLO network algorithm have been developed. However, we selected Tiny-YOLO as the"
+    },
+    {
+      "ordinal": 47,
+      "section": "4.2 Future research",
+      "paragraph_hash": "3a9b912a5fb172e8093531613ae8fc08e8dd456753a1f43980455312964dd61b",
+      "text_length": 148,
+      "native_jats_id": null,
+      "preview": "Due to time, environmental and other constraints, there are still several areas for improvement and further expansion of"
+    },
+    {
+      "ordinal": 48,
+      "section": "4.2 Future research",
+      "paragraph_hash": "2aa5350a8024961c013effe1fe6927f828c8089ad719ca726e49f71716c57bc1",
+      "text_length": 369,
+      "native_jats_id": null,
+      "preview": "Data availability is a prerequisite for research, and in apple leaf disease detection research, sufficient and diverse r"
+    },
+    {
+      "ordinal": 49,
+      "section": "4.2 Future research",
+      "paragraph_hash": "384290106c92a81654262aac2dce584039f4ac18b0e0078abe0ac1d2a005c9c4",
+      "text_length": 561,
+      "native_jats_id": null,
+      "preview": "Various new convolutional neural network models are emerging and existing models are being improved and developed, and m"
+    },
+    {
+      "ordinal": 50,
+      "section": "4.2 Future research",
+      "paragraph_hash": "a773ce8c98c925f1908394d90244387b8f38da26aa36b4583c83d86a08bb3567",
+      "text_length": 630,
+      "native_jats_id": null,
+      "preview": "In addition to apple leaf disease images, videos can also be used as detection objects, and real-time detection of more "
+    },
+    {
+      "ordinal": 51,
+      "section": "Supporting information",
+      "paragraph_hash": "f0a6ba7c4483b44a6278412db1449e8be86478f80db203a57836039b1176933b",
+      "text_length": 47,
+      "native_jats_id": null,
+      "preview": "The file shows detailed results of experiments."
+    },
+    {
+      "ordinal": 52,
+      "section": "Supporting information",
+      "paragraph_hash": "f02332cfc667e04fc2f86d4cfa8e90407509809cd631d9ad2735a61b8f971523",
+      "text_length": 6,
+      "native_jats_id": null,
+      "preview": "(XLSX)"
+    },
+    {
+      "ordinal": 53,
+      "section": "Supporting information",
+      "paragraph_hash": "5cd4a43ee259815e44b18b247874258350fef6b058c542e48b7dac730a44eee0",
+      "text_length": 36,
+      "native_jats_id": null,
+      "preview": "Click here for additional data file."
+    },
+    {
+      "ordinal": 54,
+      "section": "Supporting information",
+      "paragraph_hash": "614ca9fa61a4644ea3475925fedaea744215a008b738c0a35cb88c46bc039cd0",
+      "text_length": 5,
+      "native_jats_id": null,
+      "preview": "(ZIP)"
+    },
+    {
+      "ordinal": 55,
+      "section": "Supporting information",
+      "paragraph_hash": "5cd4a43ee259815e44b18b247874258350fef6b058c542e48b7dac730a44eee0",
+      "text_length": 36,
+      "native_jats_id": null,
+      "preview": "Click here for additional data file."
+    }
+  ],
+  "claims": []
+}
