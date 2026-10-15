@@ -740,7 +740,7 @@ Windows 上 `tests/conftest.py` 选用 selector 事件循环，实测 `asyncio.s
 
 ### 未覆盖与阻塞
 
-- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒，本次探测在 `query_generation` 止步。链路正确性已由 #20 第 1 轮的本地替身上游证明（主流程跑到 `COMPLETED`）；**仍未完成的是真实模型下的语义判断**，需 Issue #7 的「最简模型密钥配置说明」落地后才能补。替身或构造数据的结果不得用于声称语义验收通过。
+- **模型密钥缺失**：环境无 `PAPER_EVIDENCE_MODEL_API_KEY`，SDK 传输回落到 `PAPER_EVIDENCE_MODEL_BASE_URL`（默认 `http://127.0.0.1:4000`）后连接被拒，本次探测在 `query_generation` 止步。链路正确性已由 #20 第 1 轮的本地替身上游证明（主流程跑到 `COMPLETED`）；**该缺口已被后续实测补齐**——真实模型下的判断与证据校验已由 #20 第 2 轮（2026-10-14，上游 `deepseek/deepseek-flash`）跑通，本次探测缺的只是当时的环境密钥；**至今仍未完成的是论文语义验收**。替身或构造数据的结果不得用于声称语义验收通过。
 - **Issue #20 清单未链接 worker 常驻要求**：API 进程自身不执行任务，不启动 worker 时任务会永远停在 `QUEUED`（本次实测确认）。该要求已写在 `docs/development.md` 第 58 行，但清单「前提」没有链接它，建议补一行，避免执行人误判为功能缺陷。
 - 未做 UI 层验证：轮询可见性、加载中/断网/空历史三态、桌面 1440px / 平板 1024px / 窄屏 390px 布局均需真实前端，本次未覆盖。
 - 未测在途任务的取消：本次只覆盖 **`QUEUED` 任务的取消**（含重复取消的幂等）与 **终态任务的取消拒绝分支**；**`RUNNING` 在途任务的取消、取消与完成的竞态仍未实测**。
@@ -1181,3 +1181,50 @@ PR #53（`fix(frontend): 只有 ordinal±1 才算原文邻段（#47）`，squash
   变的是「谁算邻段」，不是「邻段怎么标」。
 - **不是「本文档有测试兜底了」**：`docs/verification.md` 仍无任何测试对其内容作断言（见上文「验证手段与限度」），
   本节的验证手段是脚本断言、`git` 比对与上表两条命令的实跑输出。
+
+## 测试侧收尾：测试布局守卫与两处过时状态订正（#31，2026-10-15）
+
+本节记录三件事：#31（测试目录的裸 `conftest` 导入）的收尾实测与新增守卫，以及两条随本轮变化而过时的记述。
+
+### #31：根因已由 PR #40 消除，但此前只靠约定
+
+PR #40（squash-merge `043fe7a`）按 #31 的**首选修法**落地：把共享辅助对象从各维度 conftest 移进该维度独有的模块名
+（`tests/adversarial/doubles.py`、`tests/functional/acceptance.py`），用例改为显式导入；`tests/performance/` 仍不放 `conftest.py`。
+
+本轮按 #31 的原始复现步骤做前后对照。工作树 `pe-i31`（自 `origin/main` 新建），解释器用主树 `backend/.venv`，
+命令 `pytest -c backend/pyproject.toml -q --basetemp=<%TEMP% 下新建目录>`：
+
+| # | 被测提交 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| A | `a919d5b`（修复前） | 只新增 `tests/performance/conftest.py` | **8 failed / 247 passed** |
+| B | `a919d5b` | 同一 `conftest.py`，并在该目录再放一个用例文件 | **8 failed / 248 passed** |
+| C | `1d0b3f5`（当前 main） | 与 B 完全相同 | **299 passed / 0 failed** |
+
+A/B 的 8 条失败全部落在 `tests/functional/test_semantic_acceptance.py`——7 个参数的 `test_a_frozen_case_is_judged_against_the_frozen_version`
+与 `test_a_sample_that_points_at_a_missing_paragraph_is_refused`——报错为 `ImportError: cannot import name 'VERSION_HASH' from 'conftest' (…/tests/performance/conftest.py)`，
+与 #31 的记录逐项一致（条数、失败文件、报错形态）。A 与 B 之差只有一条我加的探针用例，说明**不需要该目录里有用例文件**，只放 `conftest.py` 就足以顶掉排序。
+A/B 的 passed 少于 #31 当时记的 268，是因为这两个工作树没有装前端依赖、且 `a919d5b` 之后 main 又新增了用例；可比的是失败条数与失败点。
+
+新增守卫 `tests/boundary/test_test_layout.py`：用 `ast` 扫描 `tests/**/*.py`，断言不存在真实的 `import conftest` 或 `from conftest import …`
+（注释与 docstring 里的提及不算，显式相对导入不算）。它另带一条自检用例，检测函数本身失效时守卫会红。
+反向核对：临时植入 `tests/boundary/_probe_violation.py`（一行 `from conftest import available_cases`）后守卫立即失败并在消息里指名该文件，移除后恢复通过。
+
+**限度**：守卫只拦「裸名导入」这一条路径。#31 描述的机制本身没有改变——无 `__init__.py` 的目录按 `prepend` 模式导入、
+模块名取 `conftest` 时会互相顶掉——只是现在再踩会立刻被用例指出来。`#31` 不涉及模型或浏览器行为，本节也没有这两类验证。
+
+### 两条过时记述的订正
+
+| 位置 | 原记述 | 现记述 |
+| --- | --- | --- |
+| 本文 `:743` | 「**仍未完成的是真实模型下的语义判断**，需 Issue #7 的「最简模型密钥配置说明」落地后才能补」 | 该缺口只对 2026-10-12 那轮探测成立；真实模型下的判断与证据校验已由 #20 第 2 轮（`deepseek/deepseek-flash`）跑通，仍未完成的只剩论文语义验收 |
+| `README.md`「持续集成」段 | 「会运行两个检查：`backend` …、`frontend` …」 | 改为三个检查，补上 `e2e`（Playwright 用例自带前端 dev server 与常驻 worker），本地复现命令同步补 `cd tests/e2e && npm ci && npx playwright install chromium && npm test` |
+| `README.md`「当前状态」段 | 「**模型**连通性与论文语义验收尚未验证」 | 拆开写：模型连通性已在真实上游跑通（同上，指向 #20 第 2 轮）；论文语义验收仍未验证，功能样本为人工构造 |
+
+### 一处引用随远端分支删除的说明
+
+`:1131` 与 `:1161` 引用的夹具分支 `test/input-context-multianchor-baseline`（`281b0f6`）**已于 2026-10-15 删除远端分支**。
+它唯一改动过的文件 `frontend/tests/input-context.test.mjs` 已随 #53 进入 main，分支上不再有 main 里没有的内容，
+保留的只有一条**从未执行到**的错误期望（`paragraphRole(farAnchor) === '被引用'`，真实值为 `'被引用 · 进入模型上下文'`）。
+要复现「该断言在修复前会红」不必回到那个分支：把 `model.ts` 的 `originalNeighbour()` 退回按列表相邻取值即可。
+同批删除的还有 `docs/verification-ordinal-landed`（`b407d4d`）：它与合并后的 main **逐字节等价**（`git diff origin/main b407d4d` 为空），
+且 PR #54 仍持有该提交，删分支不丢内容。
