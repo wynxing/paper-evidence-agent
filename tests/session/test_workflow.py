@@ -1,6 +1,7 @@
 """Bounded multi-step workflow: budgets, repair, cancellation and terminals."""
 
 import asyncio
+import json
 import time
 from dataclasses import replace
 
@@ -38,17 +39,16 @@ JATS = f"""<?xml version="1.0" encoding="UTF-8"?>
 """.encode("utf-8")
 
 
-def final_json(quote=QUOTE1, label="支持", paragraph_id=PID1, evidence=None):
-    import json
+def final_json(quote=QUOTE1, label="支持", paragraph_id=PID1, evidence=None, **overrides):
+    """A legal final response, or the same shape with named decision fields replaced."""
 
     items = [{"paragraph_id": paragraph_id, "quote": quote}] if evidence is None else evidence
-    return json.dumps({
-        "action": "final",
-        "decision": {
-            "label": label, "rationale": "r", "supported_parts": [], "scope_differences": [],
-            "limitations": [], "evidence": items,
-        },
-    }, ensure_ascii=False)
+    decision = {
+        "label": label, "rationale": "r", "supported_parts": [], "scope_differences": [],
+        "limitations": [], "evidence": items,
+    }
+    decision.update(overrides)
+    return json.dumps({"action": "final", "decision": decision}, ensure_ascii=False)
 
 
 def neighbour_only_final(label="支持", paragraph_id=PID1):
@@ -91,7 +91,8 @@ class FakeGateway:
 
     async def complete(self, request_id, prompt, deadline, *, purpose, round_index, prompt_version="",
                        context_paragraph_ids=None, repairs_request_id=None):
-        self.calls.append({"request_id": request_id, "purpose": purpose, "round": round_index})
+        self.calls.append({"request_id": request_id, "purpose": purpose, "round": round_index,
+                           "prompt": prompt})
         item = self.responses.pop(0)
         failed = isinstance(item, Exception)
         attempt = ModelAttempt(
@@ -383,6 +384,60 @@ def test_quote_error_after_the_single_repair_is_used_reports_quote_mismatch(stor
     # The structural repair consumed the single global repair slot.
     assert detail.accounting.repair_requests_used == 1
     assert gateway.calls[2]["purpose"] == "output_repair"
+
+
+# ------------------------------------------------ decision output contract (#62)
+
+
+def test_decision_prompt_declares_the_array_fields_and_a_minimal_shape(store, settings):
+    """三个字段是字符串数组这件事必须由提示词说清楚（Issue #62）。
+
+    真实模型对单值自然写成字符串（`"scope_differences":"…"`），而 `DecisionDraft`
+    要求 `list[str]`，于是一份语义上已判对的输出被整单丢弃。提示词不给类型、只靠
+    修复兜底，就等于把唯一一次修复额度花在信息不足的提示上。
+    """
+
+    _, gateway = run(store, settings, [QUERIES, final_json()])
+    prompt = next(call["prompt"] for call in gateway.calls if call["purpose"] == "decision")
+
+    assert "字符串数组" in prompt
+    example, _ = json.JSONDecoder().raw_decode(prompt[prompt.index("{", prompt.index("最小形状")):])
+    decision = example["decision"]
+    # 示例里三个字段都是数组字面量：没有内容写 []，而不是省略该字段或写空串。
+    for field in ("supported_parts", "scope_differences", "limitations"):
+        assert isinstance(decision[field], list), field
+    assert isinstance(decision["evidence"], list)
+    assert isinstance(decision["evidence"][0], dict)
+
+
+def test_repair_note_names_every_decision_field_that_broke_the_contract(store, settings):
+    """修复提示词要指出 decision 里哪个字段不合契约，不能只说「动作字段不合法」。"""
+
+    broken = final_json(scope_differences="论断范围更窄", limitations="仅单一结果句")
+    detail, gateway = run(store, settings, [QUERIES, broken, final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.accounting.repair_requests_used == 1
+    repair = next(call["prompt"] for call in gateway.calls if call["purpose"] == "output_repair")
+    # 一次修复的输入要带本次响应里全部可检测错误（测试方案「任务内澄清、隔离与多步执行」）。
+    assert "final.decision.scope_differences" in repair
+    assert "final.decision.limitations" in repair
+    assert "list_type" in repair
+    # 旧实现把这句当成全部诊断，方向指到了 action 上。
+    assert "动作字段不合法" not in repair
+
+
+def test_repair_note_locates_a_malformed_retrieve_payload(store, settings):
+    """retrieve 分支同样要给出字段路径：出错的是载荷，从来不是 action。"""
+
+    detail, gateway = run(store, settings,
+                          ['{"queries": ["zzzz"]}', '{"action": "retrieve", "queries": "mortality"}',
+                           RETRIEVE, final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    repair = next(call["prompt"] for call in gateway.calls if call["purpose"] == "output_repair")
+    assert "retrieve.queries" in repair
+    assert "动作字段不合法" not in repair
 
 
 # ------------------------------------------- cancel-vs-completion race (round 3)

@@ -6,6 +6,7 @@ data: the prompts mark them as data and never let them change the task, the
 source binding or the allowed tools.
 """
 
+from paper_evidence.config import PROMPT_VERSION
 from paper_evidence.domain.contracts import SourcePreview
 from paper_evidence.domain.records import Paragraph
 
@@ -29,6 +30,13 @@ _DECISION_SYSTEM = (
     "{\"action\":\"final\",\"decision\":{...}} 或 "
     "{\"action\":\"retrieve\",\"queries\":[...],\"neighbor_paragraph_ids\":[...]}。"
     "decision 含 label、rationale、supported_parts、scope_differences、limitations、evidence。"
+    "supported_parts、scope_differences、limitations 是字符串数组，没有内容时写 []，"
+    "不得写成单个字符串。最小形状（尖括号内是占位说明，不要照抄）："
+    "{\"action\":\"final\",\"decision\":{\"label\":\"<四类标签之一>\",\"rationale\":\"<理由>\","
+    "\"supported_parts\":[\"<论断中被证据支持的部分>\"],\"scope_differences\":[],"
+    "\"limitations\":[\"<覆盖范围与无法判定的部分>\"],"
+    "\"evidence\":[{\"paragraph_id\":\"<上列候选片段的段落 ID>\","
+    "\"quote\":\"<该候选段落中的逐字子串>\"}]}}。"
     "label 取 支持/部分支持/相矛盾/证据不足 之一。evidence 每项含 paragraph_id 与 quote，"
     "quote 必须是候选段落中的逐字精确子串，不得改写、拼接或翻译。"
     "仅在你需要额外检索或读取已知邻居段落时才使用 retrieve；"
@@ -45,7 +53,9 @@ _DECISION_SYSTEM = (
 class PaperPromptBuilder:
     """Implements the PaperPromptBuilder port."""
 
-    version = "paper-prompt-0.1.0"
+    #: 记录进 ``ModelCall.prompt_version``，同时是冻结配置快照的 ``prompts.version``。
+    #: 改动任一条提示词文本都要在 `config.PROMPT_VERSION` 上发布新版本（Issue #62）。
+    version = PROMPT_VERSION
 
     def query_generation(self, claim: str, source: SourcePreview) -> str:
         return (
