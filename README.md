@@ -8,7 +8,7 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 后端已实现首版业务流程，前端已提供核验工作台：
 
-- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部**来源**连通性已有实测（Crossref 解析与 PMC 全文取回，见[验证记录](docs/verification.md)）；**模型**连通性与论文语义验收尚未验证。
+- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部**来源**连通性已有实测（Crossref 解析与 PMC 全文取回，见[验证记录](docs/verification.md)）；**模型**连通性也已在真实上游上跑通（Issue #20 第 2 轮：真实模型 + 常驻 worker，任务推进到 `COMPLETED` 并产出判断与证据校验记录）；**论文语义验收仍未验证**——现有功能样本为人工构造，不得当作总体准确率。
 - 前端包含新建核验、任务详情和运行诊断，支持显式模拟演示和真实接口模式。模拟材料为构造数据，不访问后端或模型；真实模式调用后端，不回退模拟数据。
 
 设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
@@ -72,9 +72,9 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 
 ## 持续集成
 
-拉取请求和推送到 `main` 会运行两个检查：`backend` 执行 pytest，`frontend` 执行前端测试与构建。
+拉取请求和推送到 `main` 会运行三个检查：`backend` 执行 pytest，`frontend` 执行前端测试与构建，`e2e` 执行 Playwright 端到端用例（用例自带前端 dev server 与常驻 worker，见 [`tests/e2e/`](tests/e2e/)）。
 
-本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend test`，`npm --prefix frontend run build`。
+本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend test`，`npm --prefix frontend run build`；`e2e` 另需 `cd tests/e2e && npm ci && npx playwright install chromium && npm test`。
 
 ## 文档
 
