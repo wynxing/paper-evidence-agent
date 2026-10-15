@@ -1,0 +1,99 @@
+{
+  "schema": 2,
+  "case_id": "PMC7461750",
+  "provenance": {
+    "doi": "10.1186/s12889-020-09394-x",
+    "pmcid": "PMC7461750",
+    "title": "Publisher Correction to: Protocol of a population-based prospective COVID-19 cohort study Munich, Germany (KoCo19)",
+    "authors": [
+      "Katja Radon",
+      "Elmar Saathoff",
+      "Michael Pritsch",
+      "Jessica Michelle Guggenbühl Noller",
+      "Inge Kroidl",
+      "Laura Olbrich",
+      "Verena Thiel",
+      "Max Diefenbach",
+      "Friedrich Riess",
+      "Felix Forster",
+      "Fabian Theis",
+      "Andreas Wieser",
+      "Michael Hoelscher",
+      "the KoCo19 collaboration group",
+      "Christiane Fuchs",
+      "Abhishek Bakuli",
+      "Judith Eckstein",
+      "Günter Froeschl",
+      "Otto Geisenberger",
+      "Christof Geldmacher",
+      "Arlett Heiber",
+      "Larissa Hoffmann",
+      "Kristina Huber",
+      "Dafni Metaxa",
+      "Michel Pletschette",
+      "Camilla Rothe",
+      "Mirjam Schunk",
+      "Claudia Wallrauch",
+      "Thorbjörn Zimmer",
+      "Stephan Prückner",
+      "Jan Hasenauer",
+      "Noemi Castelletti",
+      "Eleftheria Zeggini",
+      "Michael Laxy",
+      "Reiner Leidl",
+      "Lars Schwettmann"
+    ],
+    "year": 2020,
+    "license": "CC BY",
+    "version": "1",
+    "access_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7461750/"
+  },
+  "article_sha256": "9c240fd8d211ad8c7869ba63644f00b060a00f0d22af48803f87f522cf1915d8",
+  "response_sha256": "0416e0ca6698eb12a04bb6a0fea1cef80a50292cea50b212ec50652dea360509",
+  "version_hash": "0416e0ca6698eb12a04bb6a0fea1cef80a50292cea50b212ec50652dea360509",
+  "response_bytes": 18254,
+  "paragraph_count": 5,
+  "paragraphs": [
+    {
+      "ordinal": 1,
+      "section": "body",
+      "paragraph_hash": "50c2c591a5cc1ca2eeb37947d5c9a376653be77b621c5a18ab3e60369e2900a3",
+      "text_length": 48,
+      "native_jats_id": "Par2",
+      "preview": "Correction to: BMC Public Health 20, 1036 (2020)"
+    },
+    {
+      "ordinal": 2,
+      "section": "body",
+      "paragraph_hash": "1d0897fccbd3dafb6e8b81efaa17fc46742a6bc10788a9ab52bee89d51118805",
+      "text_length": 42,
+      "native_jats_id": "Par3",
+      "preview": "https://doi.org/10.1186/s12889-020-09164-9"
+    },
+    {
+      "ordinal": 3,
+      "section": "body",
+      "paragraph_hash": "92f824aacea8bb646f85171dbfd0f823902fc9ed68decb6582820fbafca17ff9",
+      "text_length": 147,
+      "native_jats_id": "Par4",
+      "preview": "In the publication of the original article [1], the author Dr. Fuchs was erroneously omitted as a collaborator from the "
+    },
+    {
+      "ordinal": 4,
+      "section": "body",
+      "paragraph_hash": "7ef0e230b22049c997a802d657dda7657a2d6b33f0e62e9d173fa20bb1a762c5",
+      "text_length": 92,
+      "native_jats_id": "Par5",
+      "preview": "The collaboration group has been updated above. The original article [1] has been corrected."
+    },
+    {
+      "ordinal": 5,
+      "section": "body",
+      "paragraph_hash": "052053d4dc9f6fcb570612a1b1ec4aac562e5e3a8b4d2335f6e57d6ac1ca81db",
+      "text_length": 81,
+      "native_jats_id": "Par6",
+      "preview": "The publisher apologizes for the inconvenience caused to the authors and readers."
+    }
+  ],
+  "claims": []
+}

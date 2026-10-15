@@ -1,0 +1,280 @@
+{
+  "schema": 2,
+  "case_id": "PMC1182327",
+  "provenance": {
+    "doi": "10.1371/journal.pmed.0020124",
+    "pmcid": "PMC1182327",
+    "title": "Why Most Published Research Findings Are False",
+    "authors": [
+      "John P. A. Ioannidis"
+    ],
+    "year": 2005,
+    "license": "CC BY",
+    "version": "1",
+    "access_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC1182327/"
+  },
+  "article_sha256": "caf353df06c98af87b826da2211a1a3f4e873639c28d35d98d12aae25f8cee80",
+  "response_sha256": "ff7984a9feec6dbe87ae1a6e6126531030955b80fc5d25957458a909f0116086",
+  "version_hash": "ff7984a9feec6dbe87ae1a6e6126531030955b80fc5d25957458a909f0116086",
+  "response_bytes": 74610,
+  "paragraph_count": 32,
+  "paragraphs": [
+    {
+      "ordinal": 1,
+      "section": "abstract",
+      "paragraph_hash": "7b2d6b1804a0f322a774111e9330b7259c6dac1eb37f93f76d4a9fed53c67402",
+      "text_length": 1169,
+      "native_jats_id": null,
+      "preview": "There is increasing concern that most current published research findings are false. The probability that a research cla"
+    },
+    {
+      "ordinal": 2,
+      "section": "body",
+      "paragraph_hash": "c1da435a50c162419a0b79a258589d2117e70b35e8c1ebe33d82ae3da845abed",
+      "text_length": 649,
+      "native_jats_id": null,
+      "preview": "Published research findings are sometimes refuted by subsequent evidence, with ensuing confusion and disappointment. Ref"
+    },
+    {
+      "ordinal": 3,
+      "section": "Modeling the Framework for False Positive Findings",
+      "paragraph_hash": "537067cde54f5e6cb9500c0b92f4d6064e2dea3ca7bcf6a6b2dbc3ae253d4866",
+      "text_length": 958,
+      "native_jats_id": null,
+      "preview": "Several methodologists have pointed out [9–11] that the high rate of nonreplication (lack of confirmation) of research d"
+    },
+    {
+      "ordinal": 4,
+      "section": "Modeling the Framework for False Positive Findings",
+      "paragraph_hash": "afe6605d804a642ae54fecd198bba20dfb2619f094c401b11fe535f5ec58162c",
+      "text_length": 62,
+      "native_jats_id": null,
+      "preview": "It can be proven that most claimed research findings are false"
+    },
+    {
+      "ordinal": 5,
+      "section": "Modeling the Framework for False Positive Findings",
+      "paragraph_hash": "883327dccd1e525b255b39fc6c795de844e3f8fa857ba142129de736ee303c79",
+      "text_length": 2078,
+      "native_jats_id": null,
+      "preview": "As has been shown previously, the probability that a research finding is indeed true depends on the prior probability of"
+    },
+    {
+      "ordinal": 6,
+      "section": "Modeling the Framework for False Positive Findings",
+      "paragraph_hash": "2b536f5d87891c60ba780074c215f60e7ea61381b6c9d3fe238bb208a164e37b",
+      "text_length": 341,
+      "native_jats_id": null,
+      "preview": "What is less well appreciated is that bias and the extent of repeated independent testing by different teams of investig"
+    },
+    {
+      "ordinal": 7,
+      "section": "Bias",
+      "paragraph_hash": "4fd8ad9c61d77fd12fbd64debd068a8054ea30ef5a45cc57b247c8e984759262",
+      "text_length": 2245,
+      "native_jats_id": null,
+      "preview": "First, let us define bias as the combination of various design, data, analysis, and presentation factors that tend to pr"
+    },
+    {
+      "ordinal": 8,
+      "section": "Bias",
+      "paragraph_hash": "0952721adfeb88a74269e9998fb75eb46c7918d148833bbb6fb5927c058c2c8d",
+      "text_length": 51,
+      "native_jats_id": null,
+      "preview": "Panels correspond to power of 0.20, 0.50, and 0.80."
+    },
+    {
+      "ordinal": 9,
+      "section": "Testing by Several Independent Teams",
+      "paragraph_hash": "405e4cba9240875b29c3dc6359c8a013bde9f52b410a2351f1270ed57f2c9990",
+      "text_length": 1174,
+      "native_jats_id": null,
+      "preview": "Several independent teams may be addressing the same sets of research questions. As research efforts are globalized, it "
+    },
+    {
+      "ordinal": 10,
+      "section": "Testing by Several Independent Teams",
+      "paragraph_hash": "0952721adfeb88a74269e9998fb75eb46c7918d148833bbb6fb5927c058c2c8d",
+      "text_length": 51,
+      "native_jats_id": null,
+      "preview": "Panels correspond to power of 0.20, 0.50, and 0.80."
+    },
+    {
+      "ordinal": 11,
+      "section": "Corollaries",
+      "paragraph_hash": "a2af0f8125d74cabc7ed7a8779dd343dab934ba5f3ab75be60b050388ca7b8d8",
+      "text_length": 182,
+      "native_jats_id": null,
+      "preview": "A practical example is shown in Box 1. Based on the above considerations, one may deduce several interesting corollaries"
+    },
+    {
+      "ordinal": 12,
+      "section": "Box 1. An Example: Science at Low Pre-Study Odds",
+      "paragraph_hash": "f82f8ab5ebaf691d174b70de230b99f95d38506582bd4d4be920b24b066a46d4",
+      "text_length": 1059,
+      "native_jats_id": null,
+      "preview": "Let us assume that a team of investigators performs a whole genome association study to test whether any of 100,000 gene"
+    },
+    {
+      "ordinal": 13,
+      "section": "Box 1. An Example: Science at Low Pre-Study Odds",
+      "paragraph_hash": "f2aa99095b7663533ec9c17ed4fd90b385a8b1a03f21b158f8245ff234a8b156",
+      "text_length": 1328,
+      "native_jats_id": null,
+      "preview": "Now let us suppose that the investigators manipulate their design, analyses, and reporting so as to make more relationsh"
+    },
+    {
+      "ordinal": 14,
+      "section": "Corollaries",
+      "paragraph_hash": "93e41fa374e9e1fc49209ac31724acbd0a713a0f74c5cd15ad04439ecbd42ae7",
+      "text_length": 626,
+      "native_jats_id": null,
+      "preview": "Corollary 1: The smaller the studies conducted in a scientific field, the less likely the research findings are to be tr"
+    },
+    {
+      "ordinal": 15,
+      "section": "Corollaries",
+      "paragraph_hash": "a6e279504ff64a675bdb9729d72328ba0b0e1d22dfb8942509dbb54cb1b5c07e",
+      "text_length": 1017,
+      "native_jats_id": null,
+      "preview": "Corollary 2: The smaller the effect sizes in a scientific field, the less likely the research findings are to be true. P"
+    },
+    {
+      "ordinal": 16,
+      "section": "Corollaries",
+      "paragraph_hash": "fae485b0640fc1ad9e87e7d958af4f321f50f74352a3513b96ee4b7a0a1c6f55",
+      "text_length": 694,
+      "native_jats_id": null,
+      "preview": "Corollary 3: The greater the number and the lesser the selection of tested relationships in a scientific field, the less"
+    },
+    {
+      "ordinal": 17,
+      "section": "Corollaries",
+      "paragraph_hash": "6d9dbd73741519decda85daf83d5bbaf6f647ce462023ca56b2ae15d6ac2a3e5",
+      "text_length": 1453,
+      "native_jats_id": null,
+      "preview": "Corollary 4: The greater the flexibility in designs, definitions, outcomes, and analytical modes in a scientific field, "
+    },
+    {
+      "ordinal": 18,
+      "section": "Corollaries",
+      "paragraph_hash": "2fb2238013f42c67622f99d66dd286ba7745d32e310c8a052c551898b1a0e718",
+      "text_length": 1080,
+      "native_jats_id": null,
+      "preview": "Corollary 5: The greater the financial and other interests and prejudices in a scientific field, the less likely the res"
+    },
+    {
+      "ordinal": 19,
+      "section": "Corollaries",
+      "paragraph_hash": "e38755cd6a922a9e44bea39644cba9c10f6105757410658a2bcacaf7e6c03e2e",
+      "text_length": 1188,
+      "native_jats_id": null,
+      "preview": "Corollary 6: The hotter a scientific field (with more scientific teams involved), the less likely the research findings "
+    },
+    {
+      "ordinal": 20,
+      "section": "Corollaries",
+      "paragraph_hash": "ab7512f6e43b21f4403bfae296af904ec0e87c66074a51595536c97a4794a294",
+      "text_length": 986,
+      "native_jats_id": null,
+      "preview": "These corollaries consider each factor separately, but these factors often influence each other. For example, investigat"
+    },
+    {
+      "ordinal": 21,
+      "section": "Most Research Findings Are False for Most Research Designs and for Most Fields",
+      "paragraph_hash": "5c30ce943378e3850998880979519e383aa4c0be1be478f87f469875f9b86a8c",
+      "text_length": 1628,
+      "native_jats_id": null,
+      "preview": "In the described framework, a PPV exceeding 50% is quite difficult to get. Table 4 provides the results of simulations u"
+    },
+    {
+      "ordinal": 22,
+      "section": "Most Research Findings Are False for Most Research Designs and for Most Fields",
+      "paragraph_hash": "df5cc58293af77b4c1e6c48fd4f8ecaf9113890ef568d408b25a8fb2490c700f",
+      "text_length": 97,
+      "native_jats_id": null,
+      "preview": "The estimated PPVs (positive predictive values) are derived assuming a = 0.05 for a single study."
+    },
+    {
+      "ordinal": 23,
+      "section": "Most Research Findings Are False for Most Research Designs and for Most Fields",
+      "paragraph_hash": "435a8cfd745cf78eedac272fc7ce9be166bd0eaa71f4b7f95e49d7767f08e2e2",
+      "text_length": 33,
+      "native_jats_id": null,
+      "preview": "RCT, randomized controlled trial."
+    },
+    {
+      "ordinal": 24,
+      "section": "Claimed Research Findings May Often Be Simply Accurate Measures of the Prevailing Bias",
+      "paragraph_hash": "64bf5bf6f80fa413e8834c6e634a5aa174a7bcb064661f1462053e236c26ea43",
+      "text_length": 702,
+      "native_jats_id": null,
+      "preview": "As shown, the majority of modern biomedical research is operating in areas with very low pre- and post-study probability"
+    },
+    {
+      "ordinal": 25,
+      "section": "Claimed Research Findings May Often Be Simply Accurate Measures of the Prevailing Bias",
+      "paragraph_hash": "cf614310a3b090951fe27c23596d125f3d5cc8c18a81ee86351b62cd6e931dd3",
+      "text_length": 843,
+      "native_jats_id": null,
+      "preview": "For example, let us suppose that no nutrients or dietary patterns are actually important determinants for the risk of de"
+    },
+    {
+      "ordinal": 26,
+      "section": "Claimed Research Findings May Often Be Simply Accurate Measures of the Prevailing Bias",
+      "paragraph_hash": "e067b764b9fe98cc15d0d45b61b2d6927721c6b29c52df5c7f7ac7ff724ab050",
+      "text_length": 727,
+      "native_jats_id": null,
+      "preview": "For fields with very low PPV, the few true relationships would not distort this overall picture much. Even if a few rela"
+    },
+    {
+      "ordinal": 27,
+      "section": "Claimed Research Findings May Often Be Simply Accurate Measures of the Prevailing Bias",
+      "paragraph_hash": "b7bde3f3d0e72584461cae05de6b9c125639fe6431f53acddf3ea44eb33b304b",
+      "text_length": 530,
+      "native_jats_id": null,
+      "preview": "Of course, investigators working in any field are likely to resist accepting that the whole field in which they have spe"
+    },
+    {
+      "ordinal": 28,
+      "section": "How Can We Improve the Situation?",
+      "paragraph_hash": "38bbb187792eb934a4ccf81ef6917469c1b0ec66d96a1ff41164afc1114a5dd3",
+      "text_length": 337,
+      "native_jats_id": null,
+      "preview": "Is it unavoidable that most research findings are false, or can we improve the situation? A major problem is that it is "
+    },
+    {
+      "ordinal": 29,
+      "section": "How Can We Improve the Situation?",
+      "paragraph_hash": "5ed0d71efde19ef5e87bca37574f07ef94a4855fb6468b56138f9e5a5b6f0d4f",
+      "text_length": 1238,
+      "native_jats_id": null,
+      "preview": "Better powered evidence, e.g., large studies or low-bias meta-analyses, may help, as it comes closer to the unknown “gol"
+    },
+    {
+      "ordinal": 30,
+      "section": "How Can We Improve the Situation?",
+      "paragraph_hash": "337be68af277efca1e9617068c422c9f33dd7aadbad3b95025f6ae6a40a6903a",
+      "text_length": 1001,
+      "native_jats_id": null,
+      "preview": "Second, most research questions are addressed by many teams, and it is misleading to emphasize the statistically signifi"
+    },
+    {
+      "ordinal": 31,
+      "section": "How Can We Improve the Situation?",
+      "paragraph_hash": "c72f3628091f5e3252996b18f3453db8aaf3276bce4091146fc0332cec6e37f0",
+      "text_length": 668,
+      "native_jats_id": null,
+      "preview": "Finally, instead of chasing statistical significance, we should improve our understanding of the range of R values—the p"
+    },
+    {
+      "ordinal": 32,
+      "section": "How Can We Improve the Situation?",
+      "paragraph_hash": "26014be34f25dd826baa26caecc73976ba55b38fee7656cb1706640f23240649",
+      "text_length": 1234,
+      "native_jats_id": null,
+      "preview": "Nevertheless, most new discoveries will continue to stem from hypothesis-generating research with low or very low pre-st"
+    }
+  ],
+  "claims": []
+}
