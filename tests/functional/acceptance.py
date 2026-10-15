@@ -189,16 +189,23 @@ class ScriptedGateway:
 class AcceptanceOutcome:
     case: FrozenCase
     detail: object
-    gateway: ScriptedGateway
+    # Either a ``ScriptedGateway`` (the default, replay) or whatever gateway the
+    # caller injected (``live_acceptance.py`` passes a recording real-model
+    # gateway). Callers that need ScriptedGateway internals must build it
+    # themselves rather than read them off an outcome.
+    gateway: object
     paragraphs: dict
 
 
-def run_case(case: FrozenCase, work_dir, *, transcript=None) -> AcceptanceOutcome:
+def run_case(case: FrozenCase, work_dir, *, transcript=None, gateway=None) -> AcceptanceOutcome:
     """Run one frozen case through the real workflow over an injected source.
 
     Module-level so the acceptance tests and the report generator drive the same
     implementation — a second copy would let the reported numbers drift from the
-    numbers the tests assert on.
+    numbers the tests assert on. ``gateway`` lets the live acceptance runner
+    (``live_acceptance.py``) drive the *same* workflow with the real model instead
+    of replaying a transcript; leaving it ``None`` keeps the replay behaviour
+    every existing caller depends on.
     """
 
     settings = replace(Settings.from_env(), data_dir=work_dir, contact_email="")
@@ -213,10 +220,11 @@ def run_case(case: FrozenCase, work_dir, *, transcript=None) -> AcceptanceOutcom
         jats_bytes=case.jats,
     )
     parsed = parse_jats(snapshot)
-    gateway = ScriptedGateway(
-        case.transcript if transcript is None else transcript,
-        [item.paragraph_id for item in parsed],
-    )
+    if gateway is None:
+        gateway = ScriptedGateway(
+            case.transcript if transcript is None else transcript,
+            [item.paragraph_id for item in parsed],
+        )
     workflow = BoundedWorkflow(
         store=store, resolver=FrozenResolver(case), fulltext=FrozenFulltext(case),
         retriever=StoreRetriever(store, settings.retrieval_context_limit),
