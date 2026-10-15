@@ -24,6 +24,7 @@ Two properties make the report checkable rather than merely readable:
   non-zero when the committed report differs from a fresh generation.
 """
 
+import difflib
 import hashlib
 import sys
 from dataclasses import dataclass
@@ -405,6 +406,19 @@ def main() -> int:
             "请运行 `python report.py` 并提交结果",
             file=sys.stderr,
         )
+        # Show what actually drifted. A bare "不一致" costs one round trip per
+        # occurrence — and the drift is often one line, not a rewrite.
+        diff = list(difflib.unified_diff(
+            current.splitlines(keepends=True),
+            report.splitlines(keepends=True),
+            fromfile="已提交的报告",
+            tofile="重新生成的结果",
+            n=1,
+        ))
+        for line in diff[:60]:
+            sys.stderr.write(line if line.endswith("\n") else line + "\n")
+        if len(diff) > 60:
+            sys.stderr.write(f"...（另有 {len(diff) - 60} 行差异未显示）\n")
         return 1
 
     target.write_text(report, encoding="utf-8")
