@@ -49,6 +49,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
 
+      # docs/semantic-report.md 由 tests/functional/report.py 生成：正文里每个计数都从同一份
+      # metrics 派生，且不含随 commit 变化的字段，所以可以「重新生成并逐字节比对」。
+      # 放在 pytest 之前：报告漂移是一步就能修的机械错误（跑一次 `python report.py` 并提交），
+      # 先失败能省掉一轮 pytest。这是既有 `backend` 作业里的一步，**不新增检查项**。
+      - name: Check the semantic report matches the frozen samples
+        run: python tests/functional/report.py --check
+
       - name: Run pytest
         run: python -m pytest -c backend/pyproject.toml -q
 

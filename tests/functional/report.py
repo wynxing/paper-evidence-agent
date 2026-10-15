@@ -24,6 +24,7 @@ Two properties make the report checkable rather than merely readable:
   non-zero when the committed report differs from a fresh generation.
 """
 
+import difflib
 import hashlib
 import sys
 from dataclasses import dataclass
@@ -343,13 +344,21 @@ def sample_fingerprint(samples: Path) -> str:
 
     Sample file *names* are hashed alongside their bytes so that adding,
     removing or renaming a sample always changes the digest.
+
+    Line endings are **not** sample content: git stores these files with LF, a
+    Windows working copy gets CRLF, and hashing the raw bytes made the digest —
+    and with it the whole report — depend on the checkout rather than the data.
+    Measured 2026-10-15: raw bytes gave ``sha256:3035a7030a983d95`` on Windows
+    against ``sha256:08149557cc65b289`` on the CI runner, so ``--check`` could
+    only ever pass on the machine that generated the report. Normalising CRLF to
+    LF makes the digest a property of the samples alone.
     """
 
     digest = hashlib.sha256()
     for path in sorted(samples.glob("*.json")):
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return f"sha256:{digest.hexdigest()[:16]}"
 
@@ -405,6 +414,19 @@ def main() -> int:
             "请运行 `python report.py` 并提交结果",
             file=sys.stderr,
         )
+        # Show what actually drifted. A bare "不一致" costs one round trip per
+        # occurrence — and the drift is often one line, not a rewrite.
+        diff = list(difflib.unified_diff(
+            current.splitlines(keepends=True),
+            report.splitlines(keepends=True),
+            fromfile="已提交的报告",
+            tofile="重新生成的结果",
+            n=1,
+        ))
+        for line in diff[:60]:
+            sys.stderr.write(line if line.endswith("\n") else line + "\n")
+        if len(diff) > 60:
+            sys.stderr.write(f"...（另有 {len(diff) - 60} 行差异未显示）\n")
         return 1
 
     target.write_text(report, encoding="utf-8")

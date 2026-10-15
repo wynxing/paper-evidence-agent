@@ -72,9 +72,9 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 
 ## 持续集成
 
-拉取请求和推送到 `main` 会运行三个检查：`backend` 执行 pytest，`frontend` 执行前端测试与构建，`e2e` 执行 Playwright 端到端用例（用例自带前端 dev server 与常驻 worker，见 [`tests/e2e/`](tests/e2e/)）。
+拉取请求和推送到 `main` 会运行三个检查：`backend` 执行 pytest 与语义报告一致性检查，`frontend` 执行前端测试与构建，`e2e` 执行 Playwright 端到端用例（用例自带前端 dev server 与常驻 worker，见 [`tests/e2e/`](tests/e2e/)）。
 
-本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`npm --prefix frontend test`，`npm --prefix frontend run build`；`e2e` 另需 `cd tests/e2e && npm ci && npx playwright install chromium && npm test`。
+本地从仓库根目录复现：`npm --prefix frontend ci`，`backend/.venv/bin/python -m pytest -c backend/pyproject.toml`，`backend/.venv/bin/python tests/functional/report.py --check`，`npm --prefix frontend test`，`npm --prefix frontend run build`；`e2e` 另需 `cd tests/e2e && npm ci && npx playwright install chromium && npm test`。
 
 ## 文档
 
