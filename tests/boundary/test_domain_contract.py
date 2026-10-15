@@ -9,6 +9,8 @@ import pytest
 from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
 
+from paper_evidence.agents.prompts import PaperPromptBuilder
+from paper_evidence.config import Settings, config_snapshot
 from paper_evidence.domain import ContractError, ErrorCode, ResultLabel, Stage, TaskStatus
 from paper_evidence.domain.contracts import default_limits, default_timeouts
 from paper_evidence.domain.records import Paragraph, TaskInput
@@ -33,6 +35,18 @@ def test_enums_match_glossary():
 def test_module_boundaries_are_importable():
     for module in ("storage", "sources", "retrieval", "agents", "models", "graph", "diagnosis", "tracing", "worker"):
         importlib.import_module(f"paper_evidence.{module}.ports")
+
+
+def test_the_prompt_version_on_calls_is_the_one_the_frozen_snapshot_pins():
+    """调用账记的提示词版本与冻结快照里的必须是同一个（Issue #62）。
+
+    `ModelCall.prompt_version` 取 `PaperPromptBuilder.version`，冻结配置快照的
+    `prompts.version` 取 `PROMPT_VERSION`；诊断包要用这两处对账。两处各写一个字面量
+    时，只改一处不会有任何检查变红，而记录会与真实提示词不符——那本身又是一类
+    「记录与实际不符」。本用例挡住重新写回第二个字面量。
+    """
+
+    assert config_snapshot(Settings.from_env())["prompts"]["version"] == PaperPromptBuilder().version
 
 
 def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):

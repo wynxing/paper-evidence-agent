@@ -4,6 +4,11 @@ Structure and per-step action legality are checked with Pydantic. Quote validity
 is checked deterministically against the frozen paragraph text in the workflow,
 not here. A malformed response is MODEL_INVALID_OUTPUT; a response whose quotes
 cannot be located is QUOTE_MISMATCH. Both are repairable once globally.
+
+A rejected response names every field that broke the contract, because this text
+is both the operator's diagnosis and the input to the one repair request: a
+message that only said "动作字段不合法" could not tell a malformed ``decision``
+from a malformed ``action`` (Issue #62).
 """
 
 import json
@@ -98,6 +103,57 @@ def _extract_json(text: str) -> dict:
     raise OutputError("模型输出不是 JSON 对象")
 
 
+#: pydantic 错误类型 → 该字段期望什么。未登记的类型直接用 pydantic 自己的说明，
+#: 不猜一个中文说法：这条消息同时是人看的诊断和修复提示词的输入，不许失真。
+_EXPECTED = {
+    "list_type": "字符串数组",
+    "string_type": "字符串",
+    "dict_type": "对象",
+    "model_type": "对象",
+    "literal_error": "四类学术标签之一",
+}
+
+#: 收到的值只报类型。原值可能是整段模型输出，既不进日志，也不该塞进修复提示词。
+_RECEIVED = {str: "字符串", list: "数组", dict: "对象", bool: "布尔值", int: "数字", float: "数字"}
+
+
+def _received(value: object) -> str:
+    for kind, name in _RECEIVED.items():
+        if type(value) is kind:
+            return name
+    return "空值" if value is None else type(value).__name__
+
+
+def _failure(action: str, item: dict) -> str:
+    """One field-level failure, prefixed with the action whose payload failed.
+
+    ``action`` is the branch that was validated, not a field: putting it in the
+    path keeps a malformed ``decision`` from reading like a malformed ``action``
+    (Issue #62).
+    """
+
+    path = ".".join([action, *(str(step) for step in item["loc"])])
+    if item["type"] == "missing":
+        return f"{path}: missing（缺少必填字段）"
+    if item["type"] == "extra_forbidden":
+        return f"{path}: extra_forbidden（契约外的多余字段）"
+    expected = _EXPECTED.get(item["type"])
+    if expected is None:
+        return f"{path}: {item['type']}（{item['msg'].removeprefix('Value error, ')}）"
+    return f"{path}: {item['type']}（需要{expected}，收到{_received(item.get('input'))}）"
+
+
+def _diagnosis(action: str, error: ValidationError) -> str:
+    """Every field failure of this response, not one sentence about ``action``.
+
+    测试方案「任务内澄清、隔离与多步执行」要求一次修复的输入包含当前响应**全部**可
+    检测错误；旧实现把所有 ``ValidationError`` 折成「动作字段不合法」，既漏掉出错的
+    字段，也把方向指到了 ``action`` 上，修复提示词因此无法纠正（Issue #62）。
+    """
+
+    return "；".join(_failure(action, item) for item in error.errors())
+
+
 def parse_query_output(text: str) -> list[str]:
     payload = _extract_json(text)
     queries = payload.get("queries")
@@ -117,5 +173,5 @@ def parse_decision_output(text: str) -> RetrieveAction | FinalAction:
         if action == "final":
             return FinalAction.model_validate({"decision": payload.get("decision")})
     except ValidationError as error:
-        raise OutputError("动作字段不合法") from error
+        raise OutputError(_diagnosis(action, error)) from error
     raise OutputError("未知的 action")
