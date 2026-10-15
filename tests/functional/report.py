@@ -13,6 +13,14 @@ The sample set is a *constructed* first version, so the report states that the
 labels are not claimed to be stable and the numbers are not a population
 accuracy estimate (测试方案「采样与分母」).
 
+The report is produced by **replaying** scripted model outputs (``ScriptedGateway``),
+so it can only show that the decision pipeline and the denominator rules are stable.
+It cannot show that the system produces these labels under a real model: the
+real-model evidence is a separate, non-reproducible artefact
+(``docs/semantic-acceptance-live.md``) that is deliberately *not* gated. The rendered
+report says so in a box at the top, because the one number a reader is most likely
+to over-read is 「语义标签正确数/总数」.
+
 Two properties make the report checkable rather than merely readable:
 
 * every count appearing in the prose is derived from :func:`metrics`, so the
@@ -208,10 +216,19 @@ def render(outcomes: list[Outcome], *, sample_fingerprint: str) -> str:
 
     add("# 语义验收报告：功能准确性维度")
     add("")
+    add("> **本报告是回放结果，不是系统能力。** 全部样本由 `ScriptedGateway` 按脚本回放驱动，")
+    add("> 因此它只证明**判定链路与分母口径稳定**，**不**证明系统在真实模型下能产出这些标签。")
+    add("> 真实模型下的验收证据是另一份产物 `docs/semantic-acceptance-live.md`"
+        "（不可复现、不接 CI 门禁，见 `#62`）。")
+    add("> **不要把下面 §3 的「语义标签正确数/总数」读成准确率或系统能力。**")
+    add("")
     add("本文件由 `tests/functional/report.py` 生成，不要手工编辑。")
     add("")
     add("## 0. 口径与限制")
     add("")
+    add("- **本报告不覆盖真实模型**：生成它的一切模型输出都来自脚本回放，"
+        "因此下文「语义标签正确数/总数」不是准确率，也不构成系统能力证明"
+        "（见开头提示框与 §9）。")
     add(f"- 数据来源：`tests/functional/samples/` 的冻结样本，样本集指纹 `{sample_fingerprint}`。"
         "报告内不含随 commit 变化的字段，同一样本集重新生成的结果逐字节一致"
         "（可用 `python report.py --check` 校验；生成时的 commit 记录在验证日志里，不写进正文）。")
