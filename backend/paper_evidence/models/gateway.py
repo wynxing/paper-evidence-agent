@@ -48,6 +48,11 @@ class OpenAIChatGateway(AttemptRecorder):
         super().__init__(
             model_alias=model_alias, configured_model=configured_model, deployment_id=deployment_id,
             recipient=recipient, attempt_seconds=attempt_seconds,
+            # The gateway sends only the alias and resolves the provider side
+            # itself, so there is no provider-qualified name to observe here.
+            # Recording null says exactly that, instead of naming a model this
+            # process never dispatched (Issue #68).
+            provider_model=None,
         )
         self._client = client
         self._base = base_url.rstrip("/")

@@ -8,7 +8,8 @@ attempt index starting at 1, and null rather than zero for anything unobserved.
 Keeping that in one place is what stops the two transports from drifting apart
 in the diagnosis packet.
 
-Nothing here opens a socket or names a provider.
+Nothing here opens a socket or resolves a provider: a provider-qualified name is
+carried through, never chosen here.
 """
 
 import time
@@ -86,10 +87,15 @@ def elapsed_ms(started: float) -> int:
 class AttemptRecorder:
     """Build the request and attempt records a transport has to hand back."""
 
-    def __init__(self, *, model_alias: str, configured_model: str, deployment_id: str,
-                 recipient: str, attempt_seconds: float) -> None:
+    def __init__(self, *, model_alias: str, configured_model: str, provider_model: str | None,
+                 deployment_id: str, recipient: str, attempt_seconds: float) -> None:
         self.model_alias = model_alias
         self._configured_model = configured_model
+        # The provider-qualified name this transport dispatches. Required rather
+        # than defaulted so a transport that has no provider side says so, and a
+        # new one cannot silently leave the record unable to name the model that
+        # ran (Issue #68).
+        self._provider_model = provider_model
         self._deployment_id = deployment_id
         self._recipient = recipient
         self._attempt_seconds = float(attempt_seconds)
@@ -150,6 +156,7 @@ class AttemptRecorder:
             gateway_request_id=gateway_request_id,
             upstream_response_id=upstream_response_id,
             configured_model=self._configured_model,
+            provider_model=self._provider_model,
             deployment_id=self._deployment_id,
             recipient=self._recipient,
             response_model=response_model,

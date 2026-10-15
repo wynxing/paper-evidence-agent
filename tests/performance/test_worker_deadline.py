@@ -27,8 +27,8 @@ SOURCE_URL = "https://sources.test/works/10.1000/perf"
 
 def _recorder(attempt_seconds: float) -> AttemptRecorder:
     return AttemptRecorder(model_alias="paper-default", configured_model="agnes-2.5-flash",
-                           deployment_id="agnes-primary", recipient="Agnes",
-                           attempt_seconds=attempt_seconds)
+                           provider_model="openai/agnes-2.5-flash", deployment_id="agnes-primary",
+                           recipient="Agnes", attempt_seconds=attempt_seconds)
 
 
 class _CapturingTransport(httpx.AsyncBaseTransport):

@@ -97,7 +97,8 @@ class FakeGateway:
         failed = isinstance(item, Exception)
         attempt = ModelAttempt(
             attempt_id=f"{request_id}:1", attempt_index=1, span_id="s", gateway_request_id=None,
-            upstream_response_id=None, configured_model="m", deployment_id="d", recipient="Agnes",
+            upstream_response_id=None, configured_model="m", provider_model="p", deployment_id="d",
+            recipient="Agnes",
             response_model=None if failed else "agnes", verified_model_version=None, recovery_kind="none",
             recovery_reason=None, status="error" if failed else "success",
             error_code=item.error_code if failed else None, duration_ms=5, usage=None,

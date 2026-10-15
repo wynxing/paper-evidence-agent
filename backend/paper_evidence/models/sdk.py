@@ -185,8 +185,8 @@ class LiteLLMSdkGateway(AttemptRecorder):
         completion=None,
     ) -> None:
         super().__init__(
-            model_alias=model_alias, configured_model=configured_model, deployment_id=deployment_id,
-            recipient=recipient, attempt_seconds=attempt_seconds,
+            model_alias=model_alias, configured_model=configured_model, provider_model=provider_model,
+            deployment_id=deployment_id, recipient=recipient, attempt_seconds=attempt_seconds,
         )
         self._provider_model = provider_model
         self._api_base = api_base

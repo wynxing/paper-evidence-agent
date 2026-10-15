@@ -24,7 +24,8 @@ def attempt(index: int, usage: TokenUsage | None = None) -> ModelAttempt:
     return ModelAttempt(
         attempt_id=f"r1:{index}", attempt_index=index, span_id=f"span:r1:{index}",
         gateway_request_id=None, upstream_response_id=None,
-        configured_model="agnes-2.5-flash", deployment_id="agnes-primary", recipient="Agnes",
+        configured_model="agnes-2.5-flash", provider_model="openai/agnes-2.5-flash",
+        deployment_id="agnes-primary", recipient="Agnes",
         response_model="agnes", verified_model_version=None, recovery_kind="none",
         recovery_reason=None, status="success", error_code=None, duration_ms=1, usage=usage,
     )

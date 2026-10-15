@@ -118,9 +118,10 @@ def capturing():
     return seen, completion
 
 
-def build(completion=None, *, recipient="Agnes", api_base="https://models.test/v1", api_key="k"):
+def build(completion=None, *, recipient="Agnes", api_base="https://models.test/v1", api_key="k",
+          provider_model="openai/agnes-2.5-flash"):
     return LiteLLMSdkGateway(
-        provider_model="openai/agnes-2.5-flash", api_base=api_base, api_key=api_key,
+        provider_model=provider_model, api_base=api_base, api_key=api_key,
         model_alias="paper-default", configured_model="agnes-2.5-flash", deployment_id="agnes-primary",
         recipient=recipient, attempt_seconds=45, completion=completion,
     )
@@ -196,6 +197,7 @@ def test_success_records_the_call_id_the_sdk_would_have_sent_as_a_header():
     assert attempt.gateway_request_id == "call-1"
     assert attempt.upstream_response_id == "chatcmpl-1"
     assert attempt.response_model == "agnes-2.5-flash"
+    assert attempt.provider_model == "openai/agnes-2.5-flash"
     assert attempt.verified_model_version is None  # never the alias
     assert attempt.recipient == "Agnes"
     assert attempt.usage is not None and attempt.usage.total_tokens == 30
@@ -213,6 +215,20 @@ def test_the_wire_payload_uses_the_configured_mapping_not_the_alias():
     assert seen["model"] == "openai/agnes-2.5-flash"
     assert seen["temperature"] == 0 and seen["stream"] is False
     assert seen["api_base"] == "https://models.test/v1" and seen["api_key"] == "k"
+
+
+def test_the_attempt_records_the_model_the_sdk_actually_dispatches():
+    """记录里的模型名必须与实际发出去的那个一致（Issue #68）。
+
+    只写常量 `configured_model` 时，换上游后这条尝试记录一个字节都不会变，诊断包
+    也就答不出「这次到底调了哪个模型」——只有上游回报的 `response_model` 是变的，
+    而它取决于上游是否如实回传。本用例把记录与线上载荷绑在一起：两处只能改一起。
+    """
+
+    seen, completion = capturing()
+    attempt = complete(build(completion, provider_model="deepseek/deepseek-flash")).call.attempts[0]
+    assert attempt.provider_model == seen["model"] == "deepseek/deepseek-flash"
+    assert attempt.configured_model == "agnes-2.5-flash"  # 常量：换上游不会变
 
 
 def test_client_side_recovery_stays_off():
