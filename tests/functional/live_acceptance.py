@@ -34,6 +34,8 @@ import asyncio
 import datetime
 import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -87,6 +89,25 @@ class RecordingGateway(LiteLLMSdkGateway):
         self.replies = []
 
 
+def head_commit() -> str | None:
+    """The commit this record was produced from, so a run can be attributed.
+
+    Best-effort by design: a record without it is still usable; a record that
+    *states the wrong* commit would be worse than one that states none. So a missing
+    git, a missing worktree, or a non-zero exit all yield ``None`` rather than a guess.
+    """
+
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except Exception:  # noqa: BLE001 - attribution is never worth failing a run
+        return None
+    value = done.stdout.strip()
+    return value if done.returncode == 0 and len(value) == 40 else None
+
+
 def deepseek_balance() -> str | None:
     """Best-effort balance read, so the record can carry a cost figure.
 
@@ -125,6 +146,23 @@ def parse_error(text: str, purpose: str) -> str | None:
         return f"{type(error).__name__}: {error}"
 
 
+def label_source(row: dict) -> str:
+    """Whether the label came from a model ``final`` action or from the workflow.
+
+    A label the workflow derives itself (the bounded retrieval came back empty,
+    `graph/workflow.py` returns ``INSUFFICIENT_EVIDENCE`` on its own) is **not** a
+    model judgement. Counting the two together is how a record turns a degradation
+    into a capability, so the record has to say which one each row is.
+    """
+
+    if row.get("actual") is None:
+        return "—"
+    for reply in row.get("replies") or []:
+        if re.search(r'"action"\s*:\s*"final"', reply.get("text") or ""):
+            return "模型判定"
+    return "工作流降级"
+
+
 def measure(case, work: Path, gateway: RecordingGateway) -> dict:
     gateway.reset()
     started = time.monotonic()
@@ -148,16 +186,20 @@ def measure(case, work: Path, gateway: RecordingGateway) -> dict:
     row["replies"] = [dict(reply) for reply in gateway.replies]
     for reply in row["replies"]:
         reply["parse_error"] = parse_error(reply["text"], reply["purpose"] or "")
+    row["label_source"] = label_source(row)
     return row
 
 
 def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
-           balance_before: str | None, balance_after: str | None, started_at: str) -> str:
+           balance_before: str | None, balance_after: str | None, started_at: str,
+           commit: str | None = None) -> str:
     matched = sum(1 for row in rows if row["actual"] == row["expected"])
     unlabelled = sum(1 for row in rows if row["actual"] is None)
+    derived = sum(1 for row in rows if row.get("label_source") == "工作流降级")
     models = sorted({reply["response_model"] for row in rows for reply in row["replies"]
                      if reply.get("response_model")})
 
+    commit_cell = f"`{commit}`" if commit else "未取到（不在 git 工作树内）"
     lines = [
         "# 真实模型语义验收记录（非门禁产物）",
         "",
@@ -170,8 +212,10 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         "| 项 | 值 |",
         "| --- | --- |",
         f"| 生成时间 | {started_at} |",
+        f"| 运行所在提交 | {commit_cell} |",
         f"| `PAPER_EVIDENCE_PROVIDER_MODEL` | `{provider_model}` |",
         f"| 上游回报的模型 | {'、'.join(f'`{m}`' for m in models) if models else '未取得（上游未回传 `model`）'} |",
+        f"| 冻结快照里的 `provider_model` | `{settings.provider_model}`（本进程请求的名字；`#68` / `PR #75` 起进快照与 `config_digest`） |",
         f"| 冻结配置里的 `configured_model` | `{settings.configured_model}`（**不是实际调用的模型**，见下） |",
         f"| 样本集 | `tests/functional/samples/`，N = {len(rows)} |",
         f"| 样本集指纹 | `{fingerprint}` |",
@@ -189,17 +233,22 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         "",
         "- **不是可复现证据**。模型的输出不保证逐字节一致；引用时必须带上本文件顶部的生成时间与模型名。",
         "- **不是 CI 门禁**。它不进 `.github/workflows/`，也不该进：CI 既无网络出口也无凭据。",
-        "- **不是「系统准确率」**。下游还要区分「模型判错」与「根本没产出标签」——见下表最后一列。",
+        "- **不是「系统准确率」**。下游要分开看三件事：**没产出标签**、**标签由工作流降级产出**、"
+        "**模型判错**。前两者都不是模型判断，不能计入任何一侧。",
+        "- **「标签来源」列里的「工作流降级」不是模型的判断**。有界检索为空时由 `graph/workflow.py` "
+        "自己返回 `INSUFFICIENT_EVIDENCE`（该行通常伴有 `RETRIEVAL_EMPTY`）。它可能正好与人工核对一致，"
+        "但那是规则对了，不是模型对了。",
         "- **不是默认上游的表现**。产品默认上游与本次不同时，结论的可迁移性是有限的，须显式声明。",
         "",
         "## 逐例结果",
         "",
-        "| case | 期望标签 | 实际标签 | 终态 | 错误码 | 证据条数 | 用时 |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| case | 期望标签 | 实际标签 | 标签来源 | 终态 | 错误码 | 证据条数 | 用时 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
-        lines.append("| `%s` | %s | %s | %s | %s | %s | %ss |" % (
+        lines.append("| `%s` | %s | %s | %s | %s | %s | %s | %ss |" % (
             row["case_id"], row["expected"], row["actual"] or "**无标签**",
+            row.get("label_source") or "—",
             row["status"], row["error"] or "—",
             "—" if row["evidence"] is None else row["evidence"], row["seconds"],
         ))
@@ -210,6 +259,7 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         "| --- | --- |",
         f"| 标签与人工核对一致 | **{matched} / {len(rows)}** |",
         f"| **未产出标签**（`FAILED`/`BLOCKED` 等） | **{unlabelled} / {len(rows)}** |",
+        f"| 其中标签由**工作流降级**（不是模型判断）产出 | **{derived} / {len(rows)}** |",
         "",
     ]
     if balance_before and balance_before == balance_after:
@@ -292,7 +342,7 @@ def main() -> int:
     out.write_text(
         render(rows, provider_model=provider_model, settings=settings,
                fingerprint=sample_fingerprint(SAMPLES), balance_before=balance_before,
-               balance_after=balance_after, started_at=started_at),
+               balance_after=balance_after, started_at=started_at, commit=head_commit()),
         encoding="utf-8",
     )
     matched = sum(1 for row in rows if row["actual"] == row["expected"])
