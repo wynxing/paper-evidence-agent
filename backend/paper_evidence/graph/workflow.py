@@ -141,6 +141,11 @@ class BoundedWorkflow:
                 raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "首次检索为空时未申请补充查询")
 
         context = list(round0)
+        # The round the published decision came from. Quote validation repairs the
+        # decision it just checked, so its record has to name that round: a first
+        # round that goes straight to ``final`` is round 0, and only a decision
+        # taken after a supplemental round is round 1 (Issue #70).
+        decision_round = 0
         if isinstance(decision, RetrieveAction):
             if not budget.can_dispatch_supplemental():
                 raise ContractError(ErrorCode.BUDGET_EXCEEDED, "补充检索额度已用尽")
@@ -155,6 +160,7 @@ class BoundedWorkflow:
             context = merged
             decision = await self._decide(task, deadline, recorder, budget, claim, merged, round_index=1,
                                           final_only=True)
+            decision_round = 1
             if isinstance(decision, RetrieveAction):
                 # Request 3 may only final; repair into a final using existing material.
                 decision = await self._repair_action(
@@ -165,7 +171,8 @@ class BoundedWorkflow:
         if not isinstance(decision, FinalAction):
             # Explicit instead of assert: this must survive ``python -O``.
             raise ContractError(ErrorCode.MODEL_INVALID_OUTPUT, "请求未提交最终判断")
-        published = await self._validate(task, deadline, recorder, budget, source_id, decision.decision, context)
+        published = await self._validate(task, deadline, recorder, budget, source_id, decision.decision,
+                                         context, round_index=decision_round)
         return _Outcome(decision=published, error_code=None, stage=Stage.EVIDENCE_VALIDATION)
 
     # ---------------------------------------------------------------- requests
@@ -178,7 +185,7 @@ class BoundedWorkflow:
             return parse_query_output(text)
         except OutputError as error:
             text = await self._repair_request(task, deadline, recorder, budget, stage=Stage.QUERY_GENERATION,
-                                              purpose="query_generation", prompt=prompt, round_index=0,
+                                              prompt=prompt, round_index=0,
                                               context=[], note=str(error),
                                               repairs_request_id=f"{task.id}:query_generation:0")
             try:
@@ -195,7 +202,7 @@ class BoundedWorkflow:
             return parse_decision_output(text)
         except OutputError as error:
             text = await self._repair_request(task, deadline, recorder, budget, stage=Stage.DECISION,
-                                              purpose="decision", prompt=prompt, round_index=round_index,
+                                              prompt=prompt, round_index=round_index,
                                               context=context, note=str(error),
                                               repairs_request_id=f"{task.id}:decision:{round_index}")
             try:
@@ -218,7 +225,7 @@ class BoundedWorkflow:
 
         prompt = self._prompts.decision(claim, candidates, final_only=final_only)
         text = await self._repair_request(
-            task, deadline, recorder, budget, stage=stage, purpose="decision", prompt=prompt,
+            task, deadline, recorder, budget, stage=stage, prompt=prompt,
             round_index=round_index, context=[item.paragraph_id for item in candidates], note=note,
             repairs_request_id=f"{task.id}:decision:{round_index}", exhausted_code=exhausted_code,
         )
@@ -240,7 +247,7 @@ class BoundedWorkflow:
                                   round_index=round_index, context=context, request_id=request_id,
                                   repairs_request_id=None)
 
-    async def _repair_request(self, task, deadline, recorder, budget, *, stage, purpose, prompt, round_index,
+    async def _repair_request(self, task, deadline, recorder, budget, *, stage, prompt, round_index,
                               context, note, repairs_request_id,
                               exhausted_code=ErrorCode.MODEL_INVALID_OUTPUT) -> str:
         await self._check_cancel(task.id)
@@ -252,7 +259,16 @@ class BoundedWorkflow:
             raise ContractError(exhausted_code, "输出修复额度已用尽")
         budget.take_repair()
         await self._db(self._store.take_request, task.id, "repair_requests_used")
-        request_id = f"{task.id}:output_repair:{round_index}"
+        # The discriminator is this repair's own ordinal in the task, not the round
+        # of the request it repairs. One (purpose, round) slot can legitimately be
+        # repaired twice — an unparsable decision, then the quote check of the
+        # repaired one — so a round-based id would repeat, and ``request_id`` is the
+        # ledger's primary key (Issue #70). The round of the repaired request stays
+        # in ``round`` next to ``repairs_request_id``, so nothing is lost.
+        #
+        # A repair always records ``purpose="output_repair"``: the purpose names the
+        # step this request performs, not the response it replaces (术语表「阶段标识」).
+        request_id = f"{task.id}:output_repair:{budget.repair_requests_used}"
         return await self._invoke(
             task, deadline, recorder, stage=Stage.OUTPUT_REPAIR, purpose="output_repair",
             prompt=f"{prompt}\n\n上一轮输出不合法：{note}\n请只输出修正后的 JSON，不要解释。",
@@ -314,7 +330,8 @@ class BoundedWorkflow:
 
     # -------------------------------------------------------------- validation
 
-    async def _validate(self, task, deadline, recorder, budget, source_id, draft: DecisionDraft, context):
+    async def _validate(self, task, deadline, recorder, budget, source_id, draft: DecisionDraft, context,
+                        *, round_index):
         await recorder.enter(Stage.EVIDENCE_VALIDATION, "quote_check")
         started = time.monotonic()
         allowed = {item.paragraph_id for item in context}
@@ -322,9 +339,14 @@ class BoundedWorkflow:
             published = await self._build_decision(source_id, draft, allowed)
         except QuoteError as error:
             await recorder.fail(Stage.EVIDENCE_VALIDATION, "quote_check", ErrorCode.QUOTE_MISMATCH, started)
+            # The repair takes the round of the decision it repairs, so its record
+            # points back at a request that really exists: ``{task}:decision:{round}``.
+            # A task whose first round went straight to ``final`` only ever dispatched
+            # ``{task}:decision:0``, so recording this repair as round 1 named a
+            # request that was never made (Issue #70).
             repaired = await self._repair_action(
-                task, deadline, recorder, budget, task.claim, context, round_index=1, final_only=True,
-                note=str(error), stage=Stage.EVIDENCE_VALIDATION,
+                task, deadline, recorder, budget, task.claim, context, round_index=round_index,
+                final_only=True, note=str(error), stage=Stage.EVIDENCE_VALIDATION,
                 exhausted_code=ErrorCode.QUOTE_MISMATCH,
             )
             if not isinstance(repaired, FinalAction):

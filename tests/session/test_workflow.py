@@ -243,6 +243,85 @@ def test_quote_mismatch_after_repair_fails(store, settings):
     assert detail.label is None and detail.decision is None
 
 
+# ------------------------------------------- repair round attribution (#70)
+
+
+def assert_repairs_point_at_recorded_requests(calls):
+    """Every repair pointer names a request that exists in the same ledger.
+
+    调用账的这条边是诊断包与外部评审的归因依据；反向指针指向不存在的请求时，
+    按它反查会查空或误配到另一条任务里同名的真实请求（Issue #70）。
+    """
+
+    ids = {call.request_id for call in calls}
+    for call in calls:
+        if call.repairs_request_id is not None:
+            assert call.repairs_request_id in ids
+
+
+def test_a_quote_repair_points_at_the_first_round_decision(store, settings):
+    """首轮直接 final 的任务：引文校验修的是 decision:0，不是从未存在的 decision:1。
+
+    旧实现把 `_validate` 的修复硬编码成 round_index=1，这里只有一次 decision
+    请求（round 0），记录却写成 `t1:decision:1`；`docs/semantic-acceptance-live.md`
+    的三轮真实运行里有 7 处这种记录。
+    """
+
+    detail, _ = run(store, settings, [QUERIES, final_json(quote="A rewritten sentence."), final_json()])
+    assert detail.status is TaskStatus.COMPLETED
+
+    calls = store.model_calls("t1")
+    assert [call.request_id for call in calls] == ["t1:query_generation:0", "t1:decision:0",
+                                                   "t1:output_repair:1"]
+    repair = calls[-1]
+    assert repair.purpose == "output_repair"
+    assert repair.round == 0
+    assert repair.repairs_request_id == "t1:decision:0"
+    assert_repairs_point_at_recorded_requests(calls)
+
+
+def test_a_quote_repair_after_a_supplemental_round_points_at_decision_one(store, settings):
+    """发生过补读的任务：被修的是第 1 轮的 decision，修复记 round=1 并指向它。"""
+
+    detail, _ = run(store, settings, ['{"queries": ["zzzz"]}', RETRIEVE, final_json(quote="wrong"),
+                                      final_json()])
+    assert detail.status is TaskStatus.COMPLETED
+
+    calls = store.model_calls("t1")
+    assert [call.request_id for call in calls] == ["t1:query_generation:0", "t1:decision:0",
+                                                   "t1:decision:1", "t1:output_repair:1"]
+    repair = calls[-1]
+    assert repair.round == 1
+    assert repair.repairs_request_id == "t1:decision:1"
+    assert_repairs_point_at_recorded_requests(calls)
+
+
+def test_two_repairs_of_one_decision_keep_two_distinct_request_ids(store, settings):
+    """同一个 decision:0 被修两次时，两条记录都要留下 —— 主键不能相撞。
+
+    解析失败先用掉一次修复，引文校验失败再用一次（额度调大到 2 才可达）。两次修的
+    是同一个 (purpose, round)，所以判别式不能取轮次：那样两条都叫
+    `t1:output_repair:0`，而 `model_calls` 的主键是 (task_id, request_id)，
+    后写的会覆盖先写的，调用账静默少一条（Issue #70 的附带风险）。
+    """
+
+    limits = Limits(main_requests=3, repair_requests=2, attempts_per_request=2, supplemental_rounds=1)
+    detail, _ = run(store, settings, [QUERIES, '{"action": "final"}',
+                                      final_json(paragraph_id="not-a-candidate-id"), final_json()],
+                    limits=limits)
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.accounting.repair_requests_used == 2
+    calls = store.model_calls("t1")
+    assert [call.purpose for call in calls] == ["query_generation", "decision", "output_repair",
+                                                "output_repair"]
+    repairs = calls[2:]
+    assert [call.request_id for call in repairs] == ["t1:output_repair:1", "t1:output_repair:2"]
+    assert [call.round for call in repairs] == [0, 0]
+    assert [call.repairs_request_id for call in repairs] == ["t1:decision:0", "t1:decision:0"]
+    assert_repairs_point_at_recorded_requests(calls)
+
+
 def test_budget_exhaustion_fails_before_dispatch(store, settings):
     detail, gateway = run(store, settings, [QUERIES, final_json()],
                           limits=Limits(main_requests=1, repair_requests=1, attempts_per_request=2,

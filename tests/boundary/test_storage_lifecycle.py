@@ -14,7 +14,7 @@ import pytest
 
 from paper_evidence.config import Settings
 from paper_evidence.domain import ErrorCode, TaskStatus
-from paper_evidence.domain.contracts import RunConfigSnapshot, SourceRecord
+from paper_evidence.domain.contracts import ModelCall, RunConfigSnapshot, SourceRecord
 from paper_evidence.domain.records import TaskInput
 from paper_evidence.domain.rules import criteria_reference
 from paper_evidence.retrieval.jats import parse_jats
@@ -338,6 +338,35 @@ def test_a_source_row_written_before_authors_existed_still_reads(store):
     record = store.source_record("t1")
     assert record.title == "Legacy" and record.authors == [] and record.year is None
     assert store.get("t1").source.doi == "10.1000/xyz"
+
+
+def test_a_repeated_request_id_is_rejected_instead_of_overwriting_the_ledger(store):
+    """`model_calls` 的主键是 (task_id, request_id)：重复 ID 必须显式失败。
+
+    `INSERT OR REPLACE` 会让后写的那条静默覆盖先写的：调用账少一条记录、不报错、
+    不留痕，而 架构设计「动作与预算」要求两次输出的本地记录都保留（Issue #70）。
+    """
+
+    make_task(store, "t1")
+    store.record_model_call("t1", _call("t1:decision:0", prompt_version="v1"))
+    with pytest.raises(RuntimeError):
+        store.record_model_call("t1", _call("t1:decision:0", prompt_version="v2"))
+
+    # 先写入的那条原样留着，没有被覆盖。
+    assert [(call.request_id, call.prompt_version) for call in store.model_calls("t1")] == [
+        ("t1:decision:0", "v1")]
+
+    # 同一任务内的另一个 ID 不受影响，写入照常。
+    store.record_model_call("t1", _call("t1:decision:1"))
+    assert [call.request_id for call in store.model_calls("t1")] == ["t1:decision:0", "t1:decision:1"]
+
+
+def _call(request_id, *, prompt_version="v", round_index=0):
+    return ModelCall(
+        request_id=request_id, purpose="decision", round=round_index, model_alias="paper-default",
+        prompt_version=prompt_version, params_digest="d", context_paragraph_ids=[],
+        repairs_request_id=None, attempts=[],
+    )
 
 
 def test_opening_an_older_database_adds_the_new_columns_and_keeps_rows(tmp_path):

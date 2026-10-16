@@ -656,10 +656,25 @@ class SqliteStore:
                 for row in self._query("SELECT payload FROM execution WHERE task_id = ? ORDER BY seq", (task_id,))]
 
     def record_model_call(self, task_id: str, call: ModelCall) -> None:
-        self._write(
-            "INSERT OR REPLACE INTO model_calls (task_id, request_id, payload) VALUES (?, ?, ?)",
-            (task_id, call.request_id, _json(call)),
-        )
+        """Append one logical request. A repeated ``request_id`` is a defect, not an update.
+
+        ``INSERT OR REPLACE`` would drop the earlier row when two requests claimed
+        one ``(task_id, request_id)`` slot, so the ledger would lose a call with no
+        trace — while 架构设计「动作与预算」 requires the local record of *both*
+        outputs to survive a repair (Issue #70). The primary key is meant to catch
+        exactly that, so the write is a plain insert and the collision surfaces as
+        an unclassified local failure (任务 FAILED、错误码为 null，术语表「4. 错误码」).
+        The workflow derives request ids from per-task ordinals, so no reachable run
+        can collide; reaching this means the ids drifted from that scheme.
+        """
+
+        try:
+            self._write(
+                "INSERT INTO model_calls (task_id, request_id, payload) VALUES (?, ?, ?)",
+                (task_id, call.request_id, _json(call)),
+            )
+        except sqlite3.IntegrityError as error:
+            raise RuntimeError(f"调用账出现重复的逻辑请求 ID：{call.request_id}") from error
 
     def model_calls(self, task_id: str) -> list[ModelCall]:
         return [ModelCall.model_validate(json.loads(row["payload"]))
