@@ -50,6 +50,22 @@ test('demo preserves old tasks on retry, cancellation closes, export only return
   await assert.rejects(c.createCheck({ claim: 'x', doi: '10.0000/demo', ...consent, cloud_consent: false }))
   await assert.rejects(c.createCheck({ claim: 'x', doi: '10.0000/demo', ...consent, config_digest: 'stale' }), e => e.status === 409)
 })
+test('an older poll response cannot overwrite a newer read', async () => {
+  const resolvers = []
+  const seen = []
+  const poller = createPoller(() => new Promise(resolve => resolvers.push(resolve)), value => seen.push(value.status), () => {}, 5)
+  poller.start()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(resolvers.length, 1)
+  poller.stop()
+  poller.start()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(resolvers.length, 2)
+  resolvers[1]({ status: 'COMPLETED' })
+  resolvers[0]({ status: 'RUNNING' })
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.deepEqual(seen, ['COMPLETED'])
+})
 test('poller discards late results after stopping and stops at terminal state', async () => {
   let release; let received = 0
   const p = createPoller(() => new Promise(r => { release = r }), () => received++, () => {}, 5)
@@ -220,6 +236,18 @@ test('elapsed and stamp text never invent a duration or an instant', () => {
   assert.equal(elapsedText('not-a-time', '2026-01-01T00:00:00+00:00'), '暂无数据')
   assert.match(stampText('2026-01-01T00:00:00+00:00'), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
   assert.equal(stampText(null), ''); assert.equal(stampText('not-a-time'), '')
+})
+test('schema 2.2 packets exported before provider_model still validate', async () => {
+  const packet = await createDemoClient().getDiagnosticPacket('demo-1')
+  assert.equal(validatePacket(packet), true)
+  delete packet.model_calls[0].attempts[0].provider_model
+  assert.equal(validatePacket(packet), true)
+  packet.model_calls[0].attempts[0].provider_model = null
+  assert.equal(validatePacket(packet), true)
+  packet.model_calls[0].attempts[0].provider_model = 'openai/agnes-2.5-flash'
+  assert.equal(validatePacket(packet), true)
+  packet.model_calls[0].attempts[0].provider_model = 1
+  assert.equal(validatePacket(packet), false)
 })
 test('the bibliography reaches the exported packet', async () => {
   const c = createDemoClient()
