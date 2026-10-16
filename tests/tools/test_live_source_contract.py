@@ -26,11 +26,15 @@ import xml.etree.ElementTree as ElementTree
 import httpx
 import pytest
 
+from paper_evidence.config import Settings
 from paper_evidence.domain.contracts import SourceRecord
 from paper_evidence.domain.records import SourceSnapshot
 from paper_evidence.retrieval.jats import parse_jats
+from paper_evidence.sources.crossref import CrossrefClient, DoiResolver
 from paper_evidence.sources.http import USER_AGENT, Fetcher
+from paper_evidence.sources.openalex import OpenAlexClient
 from paper_evidence.sources.pmc import PmcClient
+from paper_evidence.sources.service import SourceService
 
 pytestmark = [
     pytest.mark.live,
@@ -191,3 +195,61 @@ def test_a_fetched_record_is_english_cc_by_full_text(pmcid, doi):
     assert _tag_counts(record.jats_bytes)["body"] >= 1, (
         f"{pmcid} 的 fetch_record 落到了没有 <body> 的形式，即题录+摘要"
     )
+
+
+# ----------------------------------------- #67: 标识命名的是「版本」而不是「这一次请求」
+
+#: #67 实测所用的记录。修复前它两次取回的 ``version_hash`` / ``source_id`` / 首段
+#: ``paragraph_id`` 全都不同，因为 ``jats_bytes`` 装的是整个 OAI-PMH 信封，而信封里的
+#: ``<responseDate>`` 每次都变。现在字节是 ``<article>`` 子树，所以标识必须能重复。
+STABILITY_PROBE_DOI = "10.1371/journal.pmed.0020124"
+
+#: 两次取回之间的间隔。信封本来就每次都变，所以任意非零间隔都能暴露回归；
+#: 几秒还能让两次的 ``<responseDate>`` 在实际中确实不同。
+STABILITY_GAP_SECONDS = 4.0
+
+
+def _live_source_service(http: httpx.AsyncClient) -> SourceService:
+    """生产接线（``api.deps.SourceService`` 同一套参数）套在真实 ``httpx`` 客户端上。"""
+
+    settings = Settings()
+    fetcher = Fetcher(http, DEADLINE_SECONDS, USER_AGENT)
+    return SourceService(
+        CrossrefClient(fetcher, settings.crossref_base_url),
+        DoiResolver(fetcher, settings.doi_resolver_base_url),
+        PmcClient(fetcher, settings.pmc_id_converter_url, settings.pmc_oai_url),
+        OpenAlexClient(fetcher, settings.openalex_base_url),
+    )
+
+
+def test_a_sources_frozen_identity_repeats_across_two_fetches():
+    """#67：正文没变时，两次取回必须在**每一个**标识上一致。
+
+    ``version_hash`` / ``source_id`` / ``paragraph_id`` 是一条已存判断所钉住的东西。
+    如果正文原地不动而它们动了，就没有任何记录还能回到它自称的来源上核对——
+    而冻结版本的全部意义正在于此。修复前的实测：整层信封被哈希，相隔 4 秒两次
+    取回，三个标识全变。
+
+    这里走的是**公开** ``SourceService.fetch``，因为 ``version_hash`` 与 ``source_id``
+    是它算出来的；只测 ``PmcClient.fetch_record`` 钉不住这一层。
+    """
+
+    async def one_fetch():
+        async with httpx.AsyncClient(timeout=DEADLINE_SECONDS) as http:
+            service = _live_source_service(http)
+            deadline = time.monotonic() + DEADLINE_SECONDS
+            snapshot = await service.fetch(STABILITY_PROBE_DOI, deadline)
+            return snapshot, parse_jats(snapshot)
+
+    first, first_paragraphs = asyncio.run(one_fetch())
+    time.sleep(STABILITY_GAP_SECONDS)
+    second, second_paragraphs = asyncio.run(one_fetch())
+
+    assert first.jats_bytes == second.jats_bytes, (
+        "同一篇文章两次取回的字节不同——要么上游真的改版，要么 jats_bytes 又把 OAI "
+        "信封（含每次不同的 <responseDate>）算进来了"
+    )
+    assert first.metadata.version_hash == second.metadata.version_hash
+    assert first.source_id == second.source_id
+    assert [p.ordinal for p in first_paragraphs] == [p.ordinal for p in second_paragraphs]
+    assert first_paragraphs[0].paragraph_id == second_paragraphs[0].paragraph_id

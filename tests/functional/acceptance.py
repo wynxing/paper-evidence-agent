@@ -2,9 +2,16 @@
 
 This directory holds the frozen semantic acceptance set. Per 测试方案:44 the
 frozen samples and their expected labels are read by the tests only and are
-never imported by the running application; per 测试方案:46 every sample records a
-real PMC source with a human-checked DOI, version, licence, original paragraph
-position and expected label.
+never imported by the running application.
+
+Per 测试方案:46 the *acceptance* set must record a real PMC source with a
+human-checked DOI, version, licence, paragraph position and expected label.
+**These seven samples do not meet that yet**, and must not be described as if
+they did: they are constructed inputs — fabricated DOIs under ``10.1000/``,
+``PMC0000001``, hand-written JATS and canned model replies — and each declares
+``claim_kind: constructed``. The real-source half lives in
+``tests/functional/sources/`` (see ``freeze_sources.py``) and its ``claims``
+field is still empty.
 
 The upstream model is *not* faked into correctness: the runner feeds the canned
 model outputs that the sample declares and asserts on what the application
