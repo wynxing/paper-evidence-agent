@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import pytest
 
+from paper_evidence.agents.output import OutputError, parse_decision_output
 from paper_evidence.agents.prompts import PaperPromptBuilder
 from paper_evidence.config import Settings
 from paper_evidence.domain import ContractError, ErrorCode, TaskStatus
@@ -439,6 +440,65 @@ def test_repair_note_locates_a_malformed_retrieve_payload(store, settings):
     repair = next(call["prompt"] for call in gateway.calls if call["purpose"] == "output_repair")
     assert "retrieve.queries" in repair
     assert "动作字段不合法" not in repair
+
+
+# -------------------------------- top-level strictness of the output contract (#79)
+
+
+def _with_stray_top_level_field(text: str, **stray) -> str:
+    """A legal response plus fields the contract does not declare, at the top level."""
+
+    return json.dumps({**json.loads(text), **stray}, ensure_ascii=False)
+
+
+def test_a_field_outside_the_contract_is_rejected_at_the_top_level_in_both_branches():
+    """同一类输入（契约外顶层字段）在两个分支必须给出同一结论（Issue #79）。
+
+    旧实现里 `final` 只把 `decision` 送进校验，多余键在校验**之前**就被丢掉，
+    `extra="forbid"` 根本没机会看到它们：`retrieve` 报 `extra_forbidden`，`final`
+    静默通过。严格度是契约的属性，不能取决于解析函数挑了哪些键。
+    """
+
+    stray_final = _with_stray_top_level_field(final_json(), confidence=0.9)
+    stray_retrieve = _with_stray_top_level_field(RETRIEVE, confidence=0.9)
+
+    for payload, branch in ((stray_final, "final"), (stray_retrieve, "retrieve")):
+        with pytest.raises(OutputError) as raised:
+            parse_decision_output(payload)
+        # 诊断给出「被校验的分支 + 字段路径」，与 #62 的字段定位口径一致。
+        assert f"{branch}.confidence: extra_forbidden" in str(raised.value), branch
+
+
+def test_a_stray_top_level_field_in_a_final_response_costs_one_repair_not_the_task(store, settings):
+    """final 带契约外顶层字段：拒收但可修，修好后照常完成，不得静默通过也不得直接失败。
+
+    收紧 `final` 是线上行为变化，所以把它钉在「消耗一次修复」而不是「任务失败」上：
+    诊断指名了要删的键，模型有一次机会改对（Issue #79 影响 2）。
+    """
+
+    stray = _with_stray_top_level_field(final_json(), confidence=0.9)
+    detail, gateway = run(store, settings, [QUERIES, stray, final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.label == "支持"
+    assert detail.accounting.repair_requests_used == 1
+    # 静默通过的话这里只会有两次调用，也没有 output_repair。
+    assert [call["purpose"] for call in gateway.calls] == ["query_generation", "decision", "output_repair"]
+    repair = gateway.calls[2]["prompt"]
+    assert "final.confidence" in repair
+    assert "extra_forbidden" in repair
+
+
+def test_a_stray_top_level_field_that_survives_the_repair_is_model_invalid_output(store, settings):
+    """修复后仍带契约外字段则终态 MODEL_INVALID_OUTPUT，且不暗增修复额度。"""
+
+    stray = _with_stray_top_level_field(final_json(), confidence=0.9)
+    detail, _ = run(store, settings, [QUERIES, stray, stray])
+
+    assert detail.status is TaskStatus.FAILED
+    assert detail.error_code is ErrorCode.MODEL_INVALID_OUTPUT
+    assert detail.label is None and detail.decision is None
+    assert detail.accounting.repair_requests_used == 1
 
 
 # ------------------------------------------- cancel-vs-completion race (round 3)

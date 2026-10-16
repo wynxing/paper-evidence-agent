@@ -9,6 +9,13 @@ A rejected response names every field that broke the contract, because this text
 is both the operator's diagnosis and the input to the one repair request: a
 message that only said "动作字段不合法" could not tell a malformed ``decision``
 from a malformed ``action`` (Issue #62).
+
+Every branch hands the **whole** payload to its contract, ``action`` included, so
+a field outside the contract is rejected at the top level exactly as it is inside
+``decision``. Hand-picking the keys a branch happens to know makes ``extra="forbid"``
+a rule with an undocumented exception: ``final`` used to pass only ``decision``,
+so a stray top-level field was dropped before validation ever saw it, while the
+same stray field made ``retrieve`` fail (Issue #79).
 """
 
 import json
@@ -36,6 +43,14 @@ class OutputError(ValueError):
 
 
 class _Contract(BaseModel):
+    """Reject fields outside the contract, at the top level and nested alike.
+
+    ``extra="forbid"`` only means anything when the **whole** payload reaches it:
+    a parser that pre-filters the keys it knows hides the stray ones from this
+    setting, and then whether a field is rejected depends on how the call site was
+    written rather than on the contract (Issue #79).
+    """
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -168,10 +183,13 @@ def parse_decision_output(text: str) -> RetrieveAction | FinalAction:
     payload = _extract_json(text)
     action = payload.get("action")
     try:
+        # 两个分支送同一份东西：整份载荷。`action` 本来就是两个动作各自的字段，
+        # 而只挑契约内键送校验会让 final 的顶层多余字段在校验前被丢掉、retrieve 的
+        # 同一类输入却报错——同一份 `_Contract` 出两种严格度（Issue #79）。
         if action == "retrieve":
-            return RetrieveAction.model_validate({k: v for k, v in payload.items() if k != "action"})
+            return RetrieveAction.model_validate(payload)
         if action == "final":
-            return FinalAction.model_validate({"decision": payload.get("decision")})
+            return FinalAction.model_validate(payload)
     except ValidationError as error:
         raise OutputError(_diagnosis(action, error)) from error
     raise OutputError("未知的 action")

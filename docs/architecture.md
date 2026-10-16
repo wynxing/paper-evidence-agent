@@ -147,7 +147,7 @@ flowchart TD
 
 ### 动作与预算
 
-**规则**：请求 1 输出文献语言的非空 queries 字符串数组；请求 2 输出 `action=final` 加最终判断，或 `action=retrieve` 加 queries 和 neighbor_paragraph_ids；请求 3 仅能 final。它们都是同一个 paper agent 的不同步骤，不新增内部评审。retrieve 至少提供一个查询或已知邻居段落 ID；初次无候选时必须提供非空 queries。查询生成只发送论断与已确认的书目/文献语言，不发送整篇正文；判断只发送获准候选片段。
+**规则**：请求 1 输出文献语言的非空 queries 字符串数组；请求 2 输出 `action=final` 加最终判断，或 `action=retrieve` 加 queries 和 neighbor_paragraph_ids；请求 3 仅能 final。它们都是同一个 paper agent 的不同步骤，不新增内部评审。retrieve 至少提供一个查询或已知邻居段落 ID；初次无候选时必须提供非空 queries。判断的两个形状（final / retrieve）由同一份契约校验**整份载荷**：`action` 之外只允许该动作自己的字段，契约外的多余字段（顶层与嵌套同样）按结构不合法处理，不得静默忽略——严格度是契约的属性，不能随解析写法而变。查询生成只发送论断与已确认的书目/文献语言，不发送整篇正文；判断只发送获准候选片段。
 
 - `search(source_id, queries)` 与 `read_neighbors(source_id, paragraph_ids)` 只访问当前任务冻结的来源。source_id 由工作流绑定；模型只提交查询及当前来源已知段落 ID。非法段落 ID、任意 URL/路径等动作输入不执行。
 - 初始检索为 round=0；补充查询和邻居读取合并为唯一的 round=1，去重后进入上下文。按 [D4](tech-stack.md#d4-状态与检索) 逐词转义并组合 FTS5 MATCH，再绑定 SQL 参数；模型文本既不能成为 SQL，也不能成为 MATCH 操作符。程序执行检索失败为 RETRIEVAL_FAILED，不触发模型修复。

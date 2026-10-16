@@ -86,7 +86,7 @@ BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案�
 | `UPSTREAM_UNAVAILABLE` | 连接故障或暂时性服务错误，恢复未成功 | `FAILED` |
 | `TASK_TIMEOUT` | 从执行器领取任务起达到总执行时限，包含重试等待、不含排队 | `FAILED` |
 | `BUDGET_EXCEEDED` | 动作合法但执行将超出授权调用/补读额度；不含本步非法动作。提示查看已用/上限，调整配置并重新授权新任务，不能自动加额度 | `FAILED` |
-| `MODEL_INVALID_OUTPUT` | 结构或本步动作不合法，修复机会用尽后仍无效；包括请求 3 要求 retrieve，不因其涉及补读改判预算耗尽 | `FAILED` |
+| `MODEL_INVALID_OUTPUT` | 结构或本步动作不合法（含契约外的多余字段，顶层与嵌套同样），修复机会用尽后仍无效；包括请求 3 要求 retrieve，不因其涉及补读改判预算耗尽 | `FAILED` |
 | `QUOTE_MISMATCH` | 摘录或引用来源校验失败，修复机会用尽后仍无效 | `FAILED` |
 
 CANCELLED 的 error_code 为 null；取消不是错误。已受理取消优先于随后到达的 deadline，其他执行停止原因按架构规则处理。恢复后的终态保留最后导致停止的原因，完整错误链保存在 execution 与 attempts。来源 HTTP 响应先由连接器按接口语义解释，不能将所有 404 都当作参数错误。其他未恢复执行错误使用 FAILED 并保留脱敏的异常类别，`error_code` 为 `null`，不强行套用错误含义。
