@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 from paper_evidence.domain import ContractError, ErrorCode
+from paper_evidence.retrieval.jats import parse_jats
 from paper_evidence.sources.crossref import CrossrefClient, DoiResolver
 from paper_evidence.sources.doi import is_valid_doi, normalize_doi, require_valid_doi
 from paper_evidence.sources.http import Fetcher, classify_status
@@ -21,30 +22,55 @@ from paper_evidence.sources.service import SourceService
 
 DOI = "10.1000/xyz"
 
-JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
-<article xml:lang="en">
+#: The record the connector must freeze, described the way upstream serves it: an
+#: ``<article>`` subtree **inside** an OAI-PMH envelope. The two fixtures below are
+#: only the ``<article>`` part — ``oai_response`` adds the envelope, so a test can
+#: tell the two byte ranges apart, and ``version_hash`` is defined over the
+#: ``<article>`` bytes alone (Issue #67). The live record declares its namespaces on
+#: ``<article>`` itself, so the envelope contributes no namespace either.
+JATS = b"""<article xml:lang="en">
  <front><article-meta>
    <article-id pub-id-type="doi">10.1000/xyz</article-id>
    <title-group><article-title>Demo study</article-title></title-group>
    <permissions><license license-type="cc-by">CC BY 4.0</license></permissions>
  </article-meta></front>
  <body><sec><title>Results</title><p>The treatment reduced mortality.</p></sec></body>
-</article>
-"""
+</article>"""
 
 #: The shape PMC actually returns for ``metadataPrefix=pmc_fm``: front matter
 #: (title, permissions, abstract) and **no ``<body>``**. Measured against live
 #: PMC on 2026-10-12 — three of three records had a ``<body>`` count of 0.
-FRONT_MATTER_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
-<article xml:lang="en">
+FRONT_MATTER_JATS = b"""<article xml:lang="en">
  <front><article-meta>
    <article-id pub-id-type="doi">10.1000/xyz</article-id>
    <title-group><article-title>Demo study</article-title></title-group>
    <abstract><p>The treatment reduced mortality.</p></abstract>
    <permissions><license license-type="cc-by">CC BY 4.0</license></permissions>
  </article-meta></front>
-</article>
-"""
+</article>"""
+
+#: ``<responseDate>`` is the only part of the envelope that changes between two
+#: fetches of an unchanged record — measured live 2026-10-16 on PMC1182327: the
+#: full-response digest moved (``19ea7f7a…`` → ``cc37eb4d…``) while the
+#: ``<article>`` digest stayed ``caf353df06c98af8…``.
+RESPONSE_DATE = "2026-10-15T12:27:19Z"
+
+
+def oai_response(article: bytes, response_date: str = RESPONSE_DATE) -> bytes:
+    """Wrap an ``<article>`` subtree the way PMC's GetRecord does."""
+
+    return (
+        b'<?xml version="1.0" encoding="UTF-8"?>\n'
+        b'<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">\n'
+        b" <responseDate>" + response_date.encode() + b"</responseDate>\n"
+        b' <request verb="GetRecord">https://pmc.test/oai</request>\n'
+        b" <GetRecord><record>\n"
+        b"  <header><identifier>oai:pubmedcentral.nih.gov:123</identifier></header>\n"
+        b"  <metadata>" + article + b"</metadata>\n"
+        b" </record></GetRecord>\n"
+        b"</OAI-PMH>\n"
+    )
+
 
 #: The GetRecord error PMC answers for a record outside the Open Access subset.
 CANNOT_DISSEMINATE = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -163,7 +189,9 @@ def test_resolver_redirect_without_agency_record_is_metadata_not_found():
 # ---------------------------------------------------------------------- fetch
 
 
-def fetch_handler(jats=JATS, pmcid="PMC123", doi_in_article="10.1000/xyz"):
+def fetch_handler(jats=JATS, pmcid="PMC123", doi_in_article="10.1000/xyz", response=None):
+    article = jats.replace(b"10.1000/xyz", doi_in_article.encode())
+
     def handler(request):
         host = request.url.host
         if host == "crossref.test":
@@ -171,7 +199,7 @@ def fetch_handler(jats=JATS, pmcid="PMC123", doi_in_article="10.1000/xyz"):
         if host == "pmc.test" and request.url.path == "/idconv":
             return httpx.Response(200, json={"records": [{"pmcid": pmcid}] if pmcid else []})
         if host == "pmc.test" and request.url.path == "/oai":
-            body = jats.replace(b"10.1000/xyz", doi_in_article.encode())
+            body = oai_response(article) if response is None else response
             return httpx.Response(200, content=body)
         if host == "openalex.test":
             return httpx.Response(200, json={"open_access": {"is_oa": True},
@@ -182,16 +210,76 @@ def fetch_handler(jats=JATS, pmcid="PMC123", doi_in_article="10.1000/xyz"):
 
 
 def test_fetch_returns_a_licensed_snapshot_with_a_version_hash():
+    """``version_hash`` 覆盖 ``<article>`` 子树，**不**覆盖整个 OAI-PMH 响应。
+
+    Issue #67：响应信封里的 ``<responseDate>`` 每次请求都不同，把它算进哈希会让
+    ``version_hash``（进而 ``source_id``、``paragraph_id``）每次取回都变。这里同时断言
+    相等与不等，好让退回「对整包取哈希」立刻失败，而不是只靠一个看起来仍旧成立的等号。
+    """
+
     import time
 
-    snapshot = run(build(fetch_handler()), deadline=time.monotonic() + 60)
+    response = oai_response(JATS)
+    snapshot = run(build(fetch_handler(response=response)), deadline=time.monotonic() + 60)
     assert snapshot.metadata.license == "CC BY"
     assert snapshot.metadata.pmcid == "PMC123"
     # access_url 必须指向实际冻结的 PMC 版本，而不是 OpenAlex 的 landing page。
     assert snapshot.metadata.access_url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/"
     assert snapshot.open_locations == ("https://open.example/x",)
     assert snapshot.metadata.version_hash == hashlib.sha256(JATS).hexdigest()
+    assert snapshot.metadata.version_hash != hashlib.sha256(response).hexdigest(), (
+        "整包带每次请求都不同的 <responseDate>，不能作版本标识"
+    )
     assert snapshot.source_id == f"PMC123:{snapshot.metadata.version_hash}"
+    assert snapshot.jats_bytes == JATS
+
+
+def test_stable_identifiers_survive_a_second_fetch_of_the_same_record():
+    """同一记录取回两次、只有信封 ``<responseDate>`` 不同：三个标识必须逐字不变。
+
+    Issue #67 的缺口正在这里：``version_hash`` 曾对整个 OAI-PMH 响应取哈希，于是
+    ``source_id = <pmcid>:<version_hash>`` 与
+    ``paragraph_id = p:<source-key>:<version-hash>:<parser>:<ordinal>``
+    每次取回都变——诊断包里的段落引用、人工核对结论记下的段落位置、两次验收（回归）之间的
+    对比，都会因此失效。同一记录重取必须得到同一份来源。
+
+    原有用例没有检验过这条语义：它们都用固定常量 ``VERSION_HASH`` 构造来源，从未从
+    ``fetch`` 的真实字节算过一次哈希。所以这里走完整的 ``fetch`` 链路，两次输入正文完全
+    相同、只有请求时刻不同。
+    """
+
+    first_response = oai_response(JATS, "2026-10-15T12:27:19Z")
+    second_response = oai_response(JATS, "2026-10-15T12:27:23Z")
+    assert first_response != second_response, "两次取回的信封时间必须不同才能检验稳定性"
+    served = [first_response, second_response]
+
+    def handler(request):
+        host = request.url.host
+        if host == "crossref.test":
+            return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+        if host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
+        if host == "pmc.test" and request.url.path == "/oai":
+            return httpx.Response(200, content=served.pop(0))
+        if host == "openalex.test":
+            return httpx.Response(200, json={"locations": []})
+        return httpx.Response(404)
+
+    import time
+
+    service = build(handler)
+    first = run(service, deadline=time.monotonic() + 60)
+    second = run(service, deadline=time.monotonic() + 60)
+
+    assert first.metadata.version_hash == second.metadata.version_hash, (
+        "同一版本重取得到了不同的 version_hash，它标识的是这一次请求而不是这个版本"
+    )
+    assert first.source_id == second.source_id
+    assert [item.paragraph_id for item in parse_jats(first)] == [
+        item.paragraph_id for item in parse_jats(second)
+    ], "同一版本的段落 ID 必须可跨次指认，否则按 ID 保存的引用重取后全部失效"
+    # 锚点：那个稳定值就是 <article> 子树的哈希，而不是任一次响应的整包哈希。
+    assert first.metadata.version_hash == hashlib.sha256(JATS).hexdigest()
 
 
 @pytest.mark.parametrize("status,expected", [
@@ -343,6 +431,7 @@ def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
     assert seen == ["pmc", "pmc_fm"], "先取正文，被拒后才回落"
     assert record.pmcid == "PMC123"
     assert record.license == "CC BY"
+    assert record.jats_bytes == FRONT_MATTER_JATS, "冻结的是 <article> 子树，不含 OAI 信封"
     assert b"<body" not in record.jats_bytes, "回落拿到的只有题录+摘要，不含正文"
 
 

@@ -90,6 +90,10 @@ class SourceService:
         # access_url 与证据 source_url 必须指向实际读取并冻结的 PMC 版本。
         # OpenAlex 的 landing page 可能指向出版商页面的另一个版本，只作本地线索另存。
         access_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/"
+        # record.jats_bytes 是 <article> 子树字节，不含 OAI 信封（sources/pmc.py
+        # 的 _article_bytes）。因此 version_hash 标识的是「这个版本」，不是「这一次
+        # 请求」：信封里的 <responseDate> 每次都不同，对它取哈希会让 version_hash、
+        # source_id 与 paragraph_id 每次取回都变（Issue #67）。
         version_hash = sha256(record.jats_bytes).hexdigest()
         source = SourceRecord(
             title=_title(message) or record.title,
