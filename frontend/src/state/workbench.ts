@@ -48,7 +48,7 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   const submittedInput = ref<CheckInput | null>(null); const evidenceContext = ref<EvidenceContext | null>(null)
   const contexts = reactive(new Map<string, SubmissionContext>())
   const scenario = ref<DemoScenario>('部分支持')
-  const loading = ref(false); const resolving = ref(false); const busy = ref(false)
+  const loading = ref(false); const resolving = ref(false); const busy = ref(false); const historyLoading = ref(true)
   const submittedInputLoading = ref(false); const evidenceContextLoading = ref(false)
   const message = ref(''); const historyError = ref(''); const connectionError = ref('')
   const submittedInputError = ref(''); const evidenceContextError = ref('')
@@ -70,8 +70,14 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   function changeDoi(value: string) { draft.doi = value; invalidateDraft(draft, true); abortPreview() }
   async function refreshHistory() {
     const version = ++historyVersion; historyReads?.abort(); historyReads = new AbortController()
-    try { const rows = await client(historyReads.signal).listChecks(); if (version === historyVersion) { history.value = rows; historyError.value = '' } }
-    catch (error) { if (version === historyVersion && !historyReads?.signal.aborted) historyError.value = describe(error) }
+    historyLoading.value = true; historyError.value = ''
+    try {
+      const rows = await client(historyReads.signal).listChecks()
+      if (version !== historyVersion) return
+      history.value = rows; historyError.value = ''
+    } catch (error) {
+      if (version === historyVersion && !historyReads?.signal.aborted) historyError.value = describe(error)
+    } finally { if (version === historyVersion) historyLoading.value = false }
   }
   async function resolve() {
     abortPreview(); message.value = ''; draft.cloudConsent = false; draft.sourceConfirmed = false; draft.source = null; draft.config = null; draft.fallbacks = []
@@ -256,6 +262,6 @@ export function useWorkbench(options: WorkbenchOptions = {}) {
   function visibilityChanged() { if (document.hidden) { poll?.stop(); reads?.abort(); packetReads?.abort() } else { void loadRoute(); void refreshHistory() } }
   onMounted(() => { window.addEventListener('hashchange', hashChanged); document.addEventListener('visibilitychange', visibilityChanged); void refreshHistory(); void loadRoute() })
   onUnmounted(() => { routeVersion++; historyVersion++; reads?.abort(); historyReads?.abort(); packetReads?.abort(); submittedReads?.abort(); contextReads?.abort(); abortPreview(); poll?.stop(); window.removeEventListener('hashchange', hashChanged); document.removeEventListener('visibilitychange', visibilityChanged) })
-  return { demo, scenario, route, draft, history, detail, packet, submittedInput, evidenceContext, context, loading, resolving, busy, submittedInputLoading, evidenceContextLoading, message, historyError, connectionError, submittedInputError, evidenceContextError, changeClaim, changeDoi, resolve, submit, navigate, startNew, prepareEdit, cancel, remove, feedback, semanticExport, selectScenario, refreshHistory, refreshPacket, loadSubmittedInput, loadEvidenceContext, reload: loadRoute }
+  return { demo, scenario, route, draft, history, detail, packet, submittedInput, evidenceContext, context, loading, resolving, busy, historyLoading, submittedInputLoading, evidenceContextLoading, message, historyError, connectionError, submittedInputError, evidenceContextError, changeClaim, changeDoi, resolve, submit, navigate, startNew, prepareEdit, cancel, remove, feedback, semanticExport, selectScenario, refreshHistory, refreshPacket, loadSubmittedInput, loadEvidenceContext, reload: loadRoute }
 }
 export type Workbench = ReturnType<typeof useWorkbench>

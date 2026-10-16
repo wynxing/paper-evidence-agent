@@ -36,7 +36,9 @@ watch(work.route, () => { if (window.innerWidth < 768) sidebar.value = false })
       <button v-if="narrow" class="text-button" @click="sidebar = false">收起导航</button>
       <button class="nav-new" :class="{ active: work.route.value.view === 'new' }" :disabled="work.busy.value" @click="work.startNew"><span aria-hidden="true">＋</span> 新的核验</button>
       <div class="history-label"><span>本地历史</span><button class="icon-button" aria-label="刷新本地历史" @click="work.refreshHistory">↻</button></div>
-      <p v-if="work.historyError.value" class="sidebar-notice">{{ work.historyError.value }}</p><p v-else-if="!work.history.value.length" class="sidebar-notice">暂无核验记录</p>
+      <div v-if="work.historyError.value" class="sidebar-notice sidebar-error" role="alert"><p>{{ work.historyError.value }}</p><button type="button" @click="work.refreshHistory">重新读取</button></div>
+      <p v-else-if="work.historyLoading.value && !work.history.value.length" class="sidebar-notice" role="status">正在读取本地历史…</p>
+      <p v-else-if="!work.history.value.length" class="sidebar-notice">暂无核验记录</p>
       <nav class="history-list"><button v-for="row in work.history.value" :key="row.id" :class="{ active: row.id === work.route.value.id }" :aria-current="row.id === work.route.value.id ? 'page' : undefined" :disabled="work.busy.value" @click="work.navigate(row.id)"><span class="history-doi">{{ row.doi }}</span><span class="history-claim">{{ row.claim_excerpt || '未记录论断' }}</span><span class="history-state"><StatusBadge :status="row.status" :label="row.label" /><span v-if="row.label" class="small muted">{{ statuses[row.status] }}</span><span v-if="stampText(row.created_at)" class="history-time small muted">{{ stampText(row.created_at) }}</span></span></button></nav>
       <div class="sidebar-footer"><span class="local-dot" aria-hidden="true"></span> {{ work.demo ? '模拟数据 · 仅本页内存' : '本机工作空间' }}<p>单条论断，逐条核对。</p></div>
     </aside>
@@ -48,13 +50,15 @@ watch(work.route, () => { if (window.innerWidth < 768) sidebar.value = false })
       </div>
     </header>
       <main id="main-content" ref="main" tabindex="-1">
-        <div v-if="work.message.value" class="page-notice" role="status">{{ work.message.value }}<button class="icon-button" aria-label="关闭提示" @click="work.message.value = ''">×</button></div>
-        <div v-if="work.connectionError.value" class="page-notice" role="status">{{ work.connectionError.value }}<button @click="work.reload">重新读取</button></div>
+        <div v-if="work.message.value" class="page-notice" role="status"><span class="page-notice-text">{{ work.message.value }}</span><button class="icon-button" aria-label="关闭提示" @click="work.message.value = ''">×</button></div>
+        <div v-if="work.connectionError.value" class="page-notice" role="status"><span class="page-notice-text">{{ work.connectionError.value }}</span><button type="button" @click="work.reload">重新读取</button></div>
+        <div v-if="narrow && !sidebar && work.historyError.value" class="page-notice" role="alert"><span class="page-notice-text">本地历史：{{ work.historyError.value }}</span><button type="button" @click="work.refreshHistory">重新读取</button></div>
         <div v-if="work.loading.value" class="reading empty" role="status">正在读取任务…</div>
         <NewCheck v-else-if="work.route.value.view === 'new'" :work="work" />
-        <Diagnostics v-else-if="work.route.value.view === 'diagnostic'" :key="`diagnostic-${work.route.value.id}`" :work="work" />
+        <Diagnostics v-else-if="work.route.value.view === 'diagnostic' && (work.detail.value || work.packet.value)" :key="`diagnostic-${work.route.value.id}`" :work="work" />
+        <div v-else-if="work.route.value.view === 'diagnostic'" class="reading empty"><h1>诊断包暂不可读取</h1><p>检查接口连接后重新读取。</p><button type="button" @click="work.reload">重新读取</button></div>
         <CheckDetail v-else-if="work.detail.value" :key="work.route.value.id!" :work="work" />
-        <div v-else class="reading empty"><h1>任务暂不可读取</h1><p>检查接口连接或任务标识后重新读取。</p><button @click="work.reload">重新读取</button></div>
+        <div v-else class="reading empty"><h1>任务暂不可读取</h1><p>检查接口连接或任务标识后重新读取。</p><button type="button" @click="work.reload">重新读取</button></div>
       </main>
     </div>
   </div>

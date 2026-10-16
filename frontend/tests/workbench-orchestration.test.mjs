@@ -452,6 +452,70 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     } finally { conflict.unmount() }
   })
 
+  test('a hidden page pauses polling, reads on return, and a late response cannot overwrite newer state', async () => {
+    const s = session('#/checks/run')
+    const { api } = s
+    const waiters = []
+    api.tasks.set('run', { doi: '10.1000/run', claim: '论断', detail: taskDetail('run', 'RUNNING') })
+    api.overrides.getCheck = () => new Promise(resolve => waiters.push(resolve))
+    const { work } = s.mount()
+    try {
+      await until(() => waiters.length === 1, 'initial read')
+      waiters[0](taskDetail('run', 'RUNNING', { stage: 'retrieval' }))
+      await until(() => waiters.length === 2, 'first poll')
+      s.host.document.setHidden(true)
+      await new Promise(resolve => setTimeout(resolve, 40))
+      assert.equal(waiters.length, 2)
+      s.host.document.setHidden(false)
+      await until(() => waiters.length === 3, 'immediate read after becoming visible')
+      waiters[2](taskDetail('run', 'RUNNING', { stage: 'decision' }))
+      await until(() => work.detail.value?.stage === 'decision', 'newer state')
+      waiters[1](taskDetail('run', 'RUNNING', { stage: 'fetch' }))
+      await new Promise(resolve => setTimeout(resolve, 40))
+      assert.equal(work.detail.value.stage, 'decision')
+      assert.equal(work.detail.value.status, 'RUNNING')
+      assert.equal(work.connectionError.value, '')
+    } finally { s.unmount() }
+  })
+
+  test('history keeps loading, an empty list, and a failed read apart, and a late list cannot replace a newer one', async () => {
+    const pending = session('')
+    const waiters = []
+    pending.api.overrides.listChecks = () => new Promise(resolve => waiters.push(resolve))
+    const pendingWork = pending.mount()
+    try {
+      assert.equal(pendingWork.work.historyLoading.value, true)
+      assert.equal(pendingWork.work.historyError.value, '')
+      assert.deepEqual(pendingWork.work.history.value, [])
+      await until(() => waiters.length === 1, 'first history read')
+      const retry = pendingWork.work.refreshHistory()
+      await until(() => waiters.length === 2, 'retried history read')
+      const row = { id: 'new', doi: '10.1000/new', status: 'QUEUED', stage: 'wait', label: null, claim_excerpt: '新', created_at: '2026-01-02T00:00:00.000Z' }
+      waiters[1]([row])
+      await retry
+      assert.equal(pendingWork.work.historyLoading.value, false)
+      assert.equal(pendingWork.work.history.value[0].id, 'new')
+      waiters[0]([{ ...row, id: 'old', doi: '10.1000/old', claim_excerpt: '旧' }])
+      await new Promise(resolve => setTimeout(resolve, 20))
+      assert.equal(pendingWork.work.history.value[0].id, 'new')
+      assert.equal(pendingWork.work.historyError.value, '')
+    } finally { pending.unmount() }
+
+    const failed = session('')
+    failed.api.overrides.listChecks = () => { throw new ClientError('network', '连接失败，请检查服务后重新读取。', null) }
+    const failedWork = failed.mount()
+    try {
+      await until(() => failedWork.work.historyError.value.includes('连接失败'), 'history failure')
+      assert.equal(failedWork.work.historyLoading.value, false)
+      assert.deepEqual(failedWork.work.history.value, [])
+      failed.api.overrides.listChecks = () => []
+      await failedWork.work.refreshHistory()
+      assert.equal(failedWork.work.historyError.value, '')
+      assert.deepEqual(failedWork.work.history.value, [])
+      assert.equal(failedWork.work.historyLoading.value, false)
+    } finally { failed.unmount() }
+  })
+
   test('a hidden page does not start polling and a malformed hash is reported', async () => {
     const host = createHost('#/checks/run')
     host.document.hidden = true

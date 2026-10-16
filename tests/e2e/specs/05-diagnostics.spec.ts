@@ -1,6 +1,8 @@
+import fs from 'node:fs'
+
 import { expect, test } from '@playwright/test'
 
-import { DOI, OBSERVER, expectStatus, openDiagnostics, submitCheck } from './helpers'
+import { DOI, OBSERVER, currentId, expectStatus, openDiagnostics, submitCheck } from './helpers'
 
 /**
  * 诊断包与导出预览（测试方案「2. 维度」：书目导出预览）。
@@ -34,6 +36,22 @@ test('脱敏包明示书目未遮盖，语义导出需要针对接收方单独�
   await expect(preview).toContainText('<redacted>')
 
   await expect(page.getByRole('button', { name: '下载脱敏包' })).toBeEnabled()
+  const id = currentId(page)
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: '下载脱敏包' }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe(`${id}-redacted.json`)
+  const savedPath = await download.path()
+  expect(savedPath).toBeTruthy()
+  const saved = JSON.parse(fs.readFileSync(savedPath!, 'utf8'))
+  const previewJson = JSON.parse(await preview.evaluate(node => node.textContent ?? ''))
+  expect(saved).toEqual(previewJson)
+  expect(saved.input.privacy).toBe('redacted')
+  expect(saved.input.claim).toBe('<redacted>')
+  expect(saved.model_calls.length).toBeGreaterThan(0)
+  expect(saved.model_calls[0].attempts[0]).toHaveProperty('provider_model')
+  expect(JSON.stringify(saved)).not.toContain('raw_prompt')
 
   // 语义导出：弹窗里接收方只读，未勾选授权时确认按钮不可用。
   await page.getByRole('button', { name: '预览语义导出范围' }).click()
