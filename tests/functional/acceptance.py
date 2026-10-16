@@ -172,7 +172,8 @@ class ScriptedGateway:
         text = self._resolve(self._transcript.pop(0))
         attempt = ModelAttempt(
             attempt_id=f"{request_id}:1", attempt_index=1, span_id="s", gateway_request_id=None,
-            upstream_response_id=None, configured_model="frozen", deployment_id="frozen", recipient="Agnes",
+            upstream_response_id=None, configured_model="frozen", provider_model="frozen",
+            deployment_id="frozen", recipient="Agnes",
             response_model="agnes", verified_model_version=None, recovery_kind="none",
             recovery_reason=None, status="success", error_code=None, duration_ms=1, usage=None,
         )

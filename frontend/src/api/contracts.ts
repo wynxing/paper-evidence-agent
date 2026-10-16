@@ -185,6 +185,8 @@ export interface ModelAttempt {
   gateway_request_id: string | null
   upstream_response_id: string | null
   configured_model: string | null
+  /** The name the transport dispatched. Null when the transport resolves it (gateway form). */
+  provider_model: string | null
   deployment_id: string | null
   recipient: string | null
   response_model: string | null

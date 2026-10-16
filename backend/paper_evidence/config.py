@@ -187,6 +187,11 @@ def config_snapshot(settings: Settings, authorized_recipients: tuple[str, ...] |
             "transport": settings.model_transport,
             "base_url_class": endpoint_class(settings),
             "configured_model": settings.configured_model,
+            # The name the SDK transport actually dispatches. ``configured_model``
+            # is a constant no environment variable can override, so without this
+            # key two runs against different upstreams would claim the same
+            # effective configuration (Issue #68).
+            "provider_model": settings.provider_model,
             "deployment_id": settings.deployment_id,
             "params": {"temperature": 0, "cache": False},
         },

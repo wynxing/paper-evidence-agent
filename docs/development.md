@@ -73,7 +73,7 @@ backend/.venv/bin/python -m paper_evidence.worker --loop     # 常驻，持续�
 
 数据目录由 `PAPER_EVIDENCE_DATA_DIR` 指定，默认是当前工作目录下的 `.paper-evidence/`；已授权的观测/诊断接收方由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 配置，默认没有，未配置时无法导出 `consented` 诊断包。
 
-模型传输由 `PAPER_EVIDENCE_MODEL_TRANSPORT` 选择，默认 `sdk`：LiteLLM 以库的形式在 API/worker 进程内运行，上游凭据从 `PAPER_EVIDENCE_MODEL_API_KEY` 读取，上游地址可用 `PAPER_EVIDENCE_MODEL_API_BASE` 覆盖，要调用的模型由 `PAPER_EVIDENCE_PROVIDER_MODEL` 指定（默认 `openai/agnes-2.5-flash`），业务代码仍只用别名 `paper-default`。取值为 `gateway` 时改走 OpenAI 兼容客户端连接 `PAPER_EVIDENCE_MODEL_BASE_URL` 指定的本机 Proxy，凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，上游地址与密钥留在 Proxy 一侧。未知取值回落到默认；生效的传输方式与端点类别写入冻结配置快照并计入 `config_digest`，因此预览显示的形态与实际调用一致。两种形态都不把密钥写入配置摘要或日志。
+模型传输由 `PAPER_EVIDENCE_MODEL_TRANSPORT` 选择，默认 `sdk`：LiteLLM 以库的形式在 API/worker 进程内运行，上游凭据从 `PAPER_EVIDENCE_MODEL_API_KEY` 读取，上游地址可用 `PAPER_EVIDENCE_MODEL_API_BASE` 覆盖，要调用的模型由 `PAPER_EVIDENCE_PROVIDER_MODEL` 指定（默认 `openai/agnes-2.5-flash`），业务代码仍只用别名 `paper-default`。取值为 `gateway` 时改走 OpenAI 兼容客户端连接 `PAPER_EVIDENCE_MODEL_BASE_URL` 指定的本机 Proxy，凭据从 `PAPER_EVIDENCE_GATEWAY_TOKEN` 读取，上游地址与密钥留在 Proxy 一侧。未知取值回落到默认；生效的传输方式与端点类别写入冻结配置快照并计入 `config_digest`，因此预览显示的形态与实际调用一致。要调用的模型名也写进快照、计入 `config_digest`：换 `PAPER_EVIDENCE_PROVIDER_MODEL` 必然换摘要，否则调 Agnes 与调 DeepSeek 的两次运行会声称同一份有效配置，跨模型对照实验就无法用它断言两组用的是不同模型。两种形态都不把密钥写入配置摘要或日志。
 
 要真的跑一次核验，最小模型配置只有一项：在**运行 worker 的那个进程**里提供 `PAPER_EVIDENCE_MODEL_API_KEY`。应用不读取 `.env` 文件，配置只来自进程环境，所以要在启动命令的环境里给出（或在服务管理器里配置）：
 

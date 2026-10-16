@@ -41,6 +41,9 @@ def test_success_records_one_attempt_and_keeps_unknown_fields_null():
     attempt = call.attempts[0]
     assert attempt.status == "success"
     assert attempt.response_model == "agnes-2.5-flash"
+    # 网关形态只发别名、由网关解析 provider 侧，本地没有可记录的名字：写 null 而不是
+    # 拿别名或常量顶替（Issue #68）。
+    assert attempt.provider_model is None
     assert attempt.verified_model_version is None  # never the alias
     assert attempt.usage is None  # missing usage is null, not zero
     assert attempt.recipient == "Agnes"

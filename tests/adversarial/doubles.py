@@ -87,7 +87,8 @@ class CapturingGateway:
         text = self._outputs.pop(0)
         attempt = ModelAttempt(
             attempt_id=f"{request_id}:1", attempt_index=1, span_id="s", gateway_request_id=None,
-            upstream_response_id=None, configured_model="captured", deployment_id="captured",
+            upstream_response_id=None, configured_model="captured", provider_model="captured",
+            deployment_id="captured",
             recipient="Agnes", response_model="captured", verified_model_version=None,
             recovery_kind="none", recovery_reason=None, status="success", error_code=None,
             duration_ms=1, usage=None,

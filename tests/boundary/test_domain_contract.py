@@ -49,6 +49,31 @@ def test_the_prompt_version_on_calls_is_the_one_the_frozen_snapshot_pins():
     assert config_snapshot(Settings.from_env())["prompts"]["version"] == PaperPromptBuilder().version
 
 
+def test_the_dispatched_provider_model_is_part_of_the_frozen_digest(monkeypatch):
+    """冻结快照必须钉住真正被派发的模型（Issue #68）。
+
+    `configured_model` 是一个常量（`DEFAULT_CONFIGURED_MODEL`），`from_env()` 里没有
+    任何一行读它的环境变量；换上游只改 `PAPER_EVIDENCE_PROVIDER_MODEL`。只把常量写进
+    快照时，调 Agnes 与调 DeepSeek 的两次运行会声称**同一份有效配置**，`config_digest`
+    也就无法支撑 `docs/evaluation.md` §3 的「固定模型部署」断言。本用例挡住那个形态。
+    """
+
+    from dataclasses import replace
+
+    from paper_evidence.config import DEFAULT_CONFIGURED_MODEL, DEFAULT_PROVIDER_MODEL
+
+    monkeypatch.delenv("PAPER_EVIDENCE_PROVIDER_MODEL", raising=False)
+    settings = Settings.from_env()
+    assert config_snapshot(settings)["model"]["provider_model"] == DEFAULT_PROVIDER_MODEL
+    # 冻结的常量与真正派发的名字是两个值：前者区分不了两次运行。
+    assert settings.configured_model == DEFAULT_CONFIGURED_MODEL != DEFAULT_PROVIDER_MODEL
+
+    switched = replace(settings, provider_model="deepseek/deepseek-flash")
+    assert config_snapshot(switched)["model"]["provider_model"] == "deepseek/deepseek-flash"
+    # 只改这一个字段，摘要必须跟着变。
+    assert switched.config_digest() != settings.config_digest()
+
+
 def test_worker_entry_drains_an_empty_queue(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("PAPER_EVIDENCE_DATA_DIR", str(tmp_path))
     assert main() == 0

@@ -353,6 +353,7 @@ class ModelAttempt(Contract):
     gateway_request_id: str | None
     upstream_response_id: str | None
     configured_model: str | None
+    provider_model: str | None
     deployment_id: str | None
     recipient: str | None
     response_model: str | None

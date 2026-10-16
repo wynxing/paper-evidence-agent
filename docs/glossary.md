@@ -227,6 +227,7 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 | `attempt_id`, `attempt_index`, `span_id` | 本地唯一标识、从 1 开始的序号、关联 span |
 | `gateway_request_id`, `upstream_response_id` | 传输与上游返回标识：进程内 SDK 形态取 LiteLLM 调用标识，Proxy 形态取网关响应头；拿不到为 null |
 | `configured_model`, `deployment_id`, `recipient` | 此次实际路由配置与接收方，来自传输元数据 |
+| `provider_model` | 本次实际派发的 provider 限定模型名：SDK 形态取配置里真正发给上游的那个名字，网关形态只发别名、由网关一侧解析 provider 侧，本地不观察，为 null。不能用别名或常量 `configured_model` 顶替 |
 | `response_model`, `verified_model_version` | 上游声称的模型及可验证版本；不能验证版本则为 null，不能用别名代替 |
 | `recovery_kind`, `recovery_reason` | none/retry/fallback，以及触发本次恢复的错误码；首次 reason 为 null |
 | `status`, `error_code`, `duration_ms` | success/error/cancelled、错误码和耗时；cancelled 表示本地等待停止，不代表上游计算已停止 |
@@ -240,7 +241,7 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 
 criteria 保存可取回的不可变 JSON 判据快照，含证据门槛、四类学术标签及来源/执行展示条件、全部错误码到终态映射、动作合法性与预算判定顺序、文本与摘录比对规则。version 为不可原地重定义的人工版本；digest 为快照摘要；snapshot_ref 为内容寻址的本地引用，不是任意路径或远程 URL。实现提交同时记录在 implementation_revision。规则语义改变必须发布新版本，旧结果继续指向旧快照；快照找不到即明确不可复现，单有哈希不声称能回放。
 
-config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该快照。快照包含 profile、实际授权后的主/备用路由及接收方标识、模型别名和部署/模型配置、模型参数、提示词版本及内容摘要、检索词构造/分词/排序/上下文限制、来源解析器版本、重试/回退/缓存策略、limits、timeouts、观测启用及接收方、criteria.version/digest/implementation_revision。没有显式值的默认参数也须展开。私有地址以不可变的本地部署配置版本标识绑定，不存密钥或凭据。授权预览摘要用于创建前冲突检查；若用户缩小备用接收方范围，任务另存收窄后的有效快照与摘要，绝不能扩大预览范围。
+config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该快照。快照包含 profile、实际授权后的主/备用路由及接收方标识、模型别名和部署/模型配置、模型参数、提示词版本及内容摘要、检索词构造/分词/排序/上下文限制、来源解析器版本、重试/回退/缓存策略、limits、timeouts、观测启用及接收方、criteria.version/digest/implementation_revision。没有显式值的默认参数也须展开。**模型一侧要记的是真正被派发的那个名字**：SDK 形态记配置里发给上游的 provider 限定名，只记别名或常量 `configured_model` 时，换上游后的两次运行会声称同一份有效配置，跨模型对照实验就无法用它断言两组用的是不同模型。私有地址以不可变的本地部署配置版本标识绑定，不存密钥或凭据。授权预览摘要用于创建前冲突检查；若用户缩小备用接收方范围，任务另存收窄后的有效快照与摘要，绝不能扩大预览范围。
 
 两种摘要都对规范 JSON 的 UTF-8 字节计算 SHA-256：对象键按 Unicode 码点升序递归排序，使用紧凑分隔符，不转义非 ASCII，字符串按 JSON 规则转义；数组保留顺序，字符串值不 trim 或归一化。数字仅用整数，非整数参数以无指数的最短十进制字符串保存（去除无意义的尾随零，负零统一为零），禁止 NaN/Infinity/重复键；不额外添加 BOM 或末尾换行。运行 ID、输入 claim/DOI、来源正文、evidence 数组、时间戳、计数、token、结果状态和摘要/引用自身不进入配置或判据摘要；这些通过任务记录和来源哈希另行关联。不可用正文哈希或摘要替代脱敏。
 
@@ -326,6 +327,7 @@ config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该�
           "gateway_request_id": null,
           "upstream_response_id": null,
           "configured_model": "agnes-2.5-flash",
+          "provider_model": null,
           "deployment_id": "agnes-primary",
           "recipient": "Agnes",
           "response_model": null,
@@ -344,6 +346,7 @@ config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该�
           "gateway_request_id": null,
           "upstream_response_id": null,
           "configured_model": "agnes-2.5-flash",
+          "provider_model": null,
           "deployment_id": "agnes-primary",
           "recipient": "Agnes",
           "response_model": null,
