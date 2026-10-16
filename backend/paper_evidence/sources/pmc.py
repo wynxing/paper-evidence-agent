@@ -5,6 +5,10 @@ auto-processed. A missing or conflicting licence is LICENSE_UNKNOWN; a known but
 unsupported licence is LICENSE_UNSUPPORTED. The declared body language is
 cross-checked against the parsed content and a non-English body is
 SOURCE_LANGUAGE_UNSUPPORTED, never "no evidence".
+
+What ``fetch_record`` freezes is the ``<article>`` subtree of the OAI-PMH answer,
+not the answer as a whole: the envelope carries a per-request ``<responseDate>``,
+so a digest over it would name the request instead of the version (Issue #67).
 """
 
 import re
@@ -34,6 +38,35 @@ _FULL_TEXT_PREFIX = "pmc"
 _FRONT_MATTER_PREFIX = "pmc_fm"
 #: The OAI-PMH error PMC returns when a record is outside the Open Access subset.
 _CANNOT_DISSEMINATE = "cannotDisseminateFormat"
+
+#: The ``<article>`` start tag. The lookahead keeps ``<article-meta>``,
+#: ``<article-id>`` and ``<article-title>`` out of the match — they are children
+#: of the element being located, never a second record.
+_ARTICLE_START = re.compile(rb"<article(?=[\s/>])")
+_ARTICLE_END = b"</article>"
+
+
+def _article_bytes(response: bytes) -> bytes:
+    """The ``<article>`` subtree of an OAI-PMH response, byte-exact.
+
+    Sliced out of the response bytes instead of re-serialised. Two reasons:
+    ``version_hash`` is defined over the JATS bytes the upstream served
+    (术语表「文本与定位契约」), and re-serialisation rewrites them (namespace
+    prefixes, attribute quoting, entity forms); and a public digest that already
+    describes a stored source must keep describing the same bytes.
+
+    The slice excludes the XML declaration and the whole OAI envelope — crucially
+    the per-request ``<responseDate>``, which is why hashing the envelope gave a
+    different ``version_hash``, ``source_id`` and ``paragraph_id`` on every fetch
+    (Issue #67). The ``<article>`` element declares the namespaces it uses, so the
+    slice parses on its own.
+    """
+
+    start = _ARTICLE_START.search(response)
+    end = response.rfind(_ARTICLE_END)
+    if start is None or end < start.start():
+        raise ContractError(ErrorCode.CONTENT_INCOMPLETE, "PMC 记录缺少正文")
+    return response[start.start():end + len(_ARTICLE_END)]
 
 
 def classify_license(text: str | None, href: str | None = None) -> str:
@@ -81,6 +114,10 @@ class PmcRecord:
     license: str
     language: str | None
     version: str | None
+    #: The ``<article>`` subtree of the OAI-PMH response — the JATS record itself,
+    #: without the XML declaration or the envelope (``_article_bytes``). Callers may
+    #: hash it as the version-identifying bytes; hashing the envelope would make the
+    #: digest change on every fetch (Issue #67).
     jats_bytes: bytes
 
 
@@ -150,6 +187,9 @@ class PmcClient:
         permissions but **no ``<body>``**, so the caller cannot read it as the
         article. Whether such a record should block instead of being judged on
         an abstract is a product decision, not one this connector can make.
+
+        The returned ``jats_bytes`` is the ``<article>`` subtree, byte-exact
+        (``_article_bytes``); the OAI envelope is deliberately not part of it.
         """
 
         root, content = await self._get_record(pmcid, _FULL_TEXT_PREFIX, deadline)
@@ -184,7 +224,7 @@ class PmcClient:
         version = article.get("version")
         return PmcRecord(
             pmcid=pmcid, doi=doi, title=title, license=license_name, language=language,
-            version=version, jats_bytes=content,
+            version=version, jats_bytes=_article_bytes(content),
         )
 
 
