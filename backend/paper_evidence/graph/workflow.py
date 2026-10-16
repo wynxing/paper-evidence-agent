@@ -324,7 +324,7 @@ class BoundedWorkflow:
             await recorder.fail(Stage.EVIDENCE_VALIDATION, "quote_check", ErrorCode.QUOTE_MISMATCH, started)
             repaired = await self._repair_action(
                 task, deadline, recorder, budget, task.claim, context, round_index=1, final_only=True,
-                note=f"摘录无法在冻结段落中逐字定位：{error}", stage=Stage.EVIDENCE_VALIDATION,
+                note=str(error), stage=Stage.EVIDENCE_VALIDATION,
                 exhausted_code=ErrorCode.QUOTE_MISMATCH,
             )
             if not isinstance(repaired, FinalAction):
@@ -344,13 +344,17 @@ class BoundedWorkflow:
         evidence: list[Evidence] = []
         for item in draft.evidence:
             if item.paragraph_id not in allowed_ids:
-                # Only paragraphs that entered this decision's context may back it.
-                raise QuoteError(f"段落 {item.paragraph_id} 未进入本次判断的上下文")
+                # Only paragraphs that entered this decision's context may back it,
+                # and the id has to match one of them exactly.
+                raise QuoteError(_candidate_id_note(item.paragraph_id, allowed_ids))
             paragraph = await self._db(self._store.read_paragraph, source_id, item.paragraph_id)
             if paragraph is None:
                 raise QuoteError(f"未知段落 {item.paragraph_id}")
             if not quote_spans(paragraph.text, item.quote):
-                raise QuoteError(f"摘录不在段落 {item.paragraph_id} 中")
+                raise QuoteError(
+                    f"段落 {item.paragraph_id} 中没有这段逐字摘录；"
+                    "quote 必须是该候选段落中的逐字精确子串"
+                )
             evidence.append(
                 Evidence(
                     paragraph_id=paragraph.paragraph_id, quote=item.quote, section=paragraph.section,
@@ -438,6 +442,30 @@ def _dedupe(paragraphs):
     for paragraph in paragraphs:
         seen.setdefault(paragraph.paragraph_id, paragraph)
     return list(seen.values())
+
+
+def _candidate_id_note(submitted: str, allowed_ids: set[str]) -> str:
+    """Explain an evidence id that is not one of this decision's candidate ids.
+
+    The check itself is unchanged: an id has to be exactly one of the ids that
+    entered this decision's context (术语表「文本与定位契约」). Only the one repair
+    request's input changes. The observed failure (Issue #74) is a faithful copy
+    that lost the leading ``p:`` of the id the prompt renders inside square
+    brackets; when the submitted id is recoverable from a candidate, the note
+    names the candidate instead of only saying the paragraph never entered the
+    context — that sentence left the model with no way to tell which id it meant.
+    """
+
+    for recovered, reason in (
+        (f"p:{submitted}", "漏掉了开头的 p: 前缀"),
+        (submitted.strip("[]"), "把候选片段里的方括号一起写了进去"),
+    ):
+        if recovered != submitted and recovered in allowed_ids:
+            return (f"段落 ID「{submitted}」与候选片段里的 ID 不一致（{reason}）："
+                    f"候选片段里是「{recovered}」，必须原样照抄")
+    return (f"段落 ID「{submitted}」不在本次判断的候选片段里；"
+            "evidence 的 paragraph_id 必须原样照抄候选片段行首方括号内的 ID，"
+            "连开头的 p: 一起复制，不要带方括号")
 
 
 def _requests_supplement(decision) -> bool:

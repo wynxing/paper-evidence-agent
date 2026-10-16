@@ -501,6 +501,66 @@ def test_a_stray_top_level_field_that_survives_the_repair_is_model_invalid_outpu
     assert detail.accounting.repair_requests_used == 1
 
 
+# ---------------------------- candidate ids copied verbatim (#74)
+
+
+def test_decision_prompt_requires_the_candidate_id_to_be_copied_verbatim(store, settings):
+    """候选 ID 的 `p:` 前缀必须由提示词点名（Issue #74）。
+
+    候选片段按 `[<段落 ID>]（section）原文` 渲染，而 ID 自己带 `p:` 前缀
+    （`domain/text.py:paragraph_id`）。提示词原先只说 `evidence` 每项含 `paragraph_id`，
+    模型忠实照抄却漏掉 `p:`，逐字定位必然失败。本用例钉住两件事：最小形状的占位说明
+    指向候选片段方括号内的 ID，规则句同时说出「原样照抄」「方括号」与 `p:`。
+    """
+
+    _, gateway = run(store, settings, [QUERIES, final_json()])
+    prompt = next(call["prompt"] for call in gateway.calls if call["purpose"] == "decision")
+
+    # 规则的两端：渲染出来的形状，以及 ID 自己带的前缀。
+    assert f"[{PID1}]（" in prompt
+
+    example, _ = json.JSONDecoder().raw_decode(prompt[prompt.index("{", prompt.index("最小形状")):])
+    placeholder = example["decision"]["evidence"][0]["paragraph_id"]
+    assert "原样照抄" in placeholder and "方括号" in placeholder
+
+    rule = prompt[prompt.index("paragraph_id 必须"):][:120]
+    assert "原样照抄" in rule and "方括号" in rule and "p:" in rule
+
+
+def test_an_id_that_lost_the_p_prefix_is_repaired_with_the_candidate_id(store, settings):
+    """ID 漏掉 `p:` 时，修复输入要给出候选片段里的那个 ID（Issue #74）。
+
+    标签与引文都对，唯一的问题是 ID 少了两个字符。旧措辞只说「段落未进入本次判断的
+    上下文」——而那次上下文里明明有这个段落，模型无从知道该抄的是哪一个串。校验本身
+    不放宽：ID 仍须与候选完全一致，这里只改这一次修复的输入。
+    """
+
+    detail, gateway = run(store, settings, [QUERIES, final_json(paragraph_id=PID1[2:]), final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.decision.evidence[0].paragraph_id == PID1
+    assert detail.accounting.repair_requests_used == 1
+    repair = next(call["prompt"] for call in gateway.calls if call["purpose"] == "output_repair")
+    assert "漏掉了开头的 p: 前缀" in repair
+    assert "未进入本次判断的上下文" not in repair
+
+
+def test_a_bracketed_id_is_repaired_with_the_unwrapped_candidate_id(store, settings):
+    """把候选片段的方括号一起照抄的那一类，同样要给出候选里的 ID。
+
+    `#62` 的记录里出现过一例（提示词展示 `[<id>]`，模型连方括号一起写进
+    `paragraph_id`）。它与漏前缀是同一类「忠实复制失败」，修复说明要给可用的那个串。
+    """
+
+    detail, gateway = run(store, settings, [QUERIES, final_json(paragraph_id=f"[{PID1}]"), final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.decision.evidence[0].paragraph_id == PID1
+    assert detail.accounting.repair_requests_used == 1
+    repair = next(call["prompt"] for call in gateway.calls if call["purpose"] == "output_repair")
+    assert "把候选片段里的方括号一起写了进去" in repair
+
+
 # ------------------------------------------- cancel-vs-completion race (round 3)
 
 
