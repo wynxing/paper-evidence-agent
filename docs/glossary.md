@@ -216,10 +216,10 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 
 | 模型调用字段 | 内容 |
 | --- | --- |
-| `request_id`, `purpose`, `round` | 本地逻辑请求 ID；query_generation/decision/output_repair；对应轮次 |
+| `request_id`, `purpose`, `round` | 本地逻辑请求 ID，同一任务内互不相同；query_generation/decision/output_repair；对应轮次（修复请求记的是它所修的那次请求的轮次） |
 | `model_alias`, `prompt_version`, `params_digest` | 模型别名、提示词版本、脱敏参数摘要 |
 | `context_paragraph_ids` | 此次实际进入上下文的段落标识数组 |
-| `repairs_request_id` | 输出修复的目标请求 ID，非修复为 null |
+| `repairs_request_id` | 输出修复的目标请求 ID，非修复为 null；必须指向同一任务调用账中存在的请求 |
 | `attempts[]` | 实际发起的上游尝试，下表定义；未发起则为空 |
 
 | 尝试字段 | 内容 |
@@ -235,7 +235,7 @@ source.version_hash 为取得的 JATS 原始字节 SHA-256；paragraph_hash 为�
 
 ### 调用账与版本归属
 
-调用账来自工作流在派发前持久化的逻辑请求/补读计数及传输的逐次尝试记录（SDK 形态由模型适配层直接写；Proxy 形态取元数据回调），不能只数成功响应；派发未确认也保守占用额度。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。补读轮（第二轮 decision）占用的是主请求额度、计入 main_requests，因此 run_config 里的「主请求 N + 补读 1」不是 N+1 次可用模型调用，有效上限仍是 N。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
+调用账来自工作流在派发前持久化的逻辑请求/补读计数及传输的逐次尝试记录（SDK 形态由模型适配层直接写；Proxy 形态取元数据回调），不能只数成功响应；派发未确认也保守占用额度。逻辑请求 ID 在同一任务内互不相同：主请求取 `{task}:{purpose}:{轮次}`，输出修复取 `{task}:output_repair:{该任务内第几次修复}`——同一个 (purpose, 轮次) 可以被修两次（判断解析失败一次、引文校验失败一次），用轮次当判别式会重号。修复记录的 `round` 记它所修的那次请求的轮次，`repairs_request_id` 指向该请求，两者都在同一任务的调用账里对得上。重复的逻辑请求 ID 是本地故障：写入显式失败并保留先写入的那条，不静默覆盖。上限来自 run_config.limits，上游总尝试上限为 (main_requests + repair_requests) × attempts_per_request。补读轮（第二轮 decision）占用的是主请求额度、计入 main_requests，因此 run_config 里的「主请求 N + 补读 1」不是 N+1 次可用模型调用，有效上限仍是 N。结果页、详情接口与诊断包同时提供已用/上限；尝试缺失时展示「至少 observed_upstream_attempts 次／上限，实际次数未核实」，upstream_attempts_used=null、verification=unverified、reason=attempt_records_missing。完整计数时 verification=verified，不代表语义、模型版本或费用已核实。usage 或模型版本未知单独保持 null，不把调用账误标为缺失。
 
 必须在接入验收中证明所选模型传输能强制执行授权路由和额度；Proxy 形态即是对网关本身的这项要求，不能因最终响应成功而接纳不具备这些控制的网关。若控制仍可靠、只是运行后尝试元数据丢失，已通过证据门槛的学术结果可保持 COMPLETED 并带调用账未核实提示，不伪造失败或证据不足；缺口不改变学术指标分母，另列审计完整率，不能混入“预算已核实”或精确成本统计。发现控制本身无法保证时停止后续请求并按实际执行故障记录，不按本例发布成功。未知故障按错误码节既有 null error_code 规则处理。最终响应不能代表所有尝试；原始元数据先脱敏再落日志。
 
