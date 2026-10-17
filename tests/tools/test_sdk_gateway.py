@@ -11,6 +11,7 @@ import pytest
 # module sets LITELLM_LOCAL_MODEL_COST_MAP before LiteLLM loads, and importing
 # LiteLLM first would make it download a cost map during the test run.
 from paper_evidence.domain import ContractError, ErrorCode
+from paper_evidence.domain.rules import RECOVERY_BACKOFF_SECONDS
 from paper_evidence.models import sdk as sdk_module
 from paper_evidence.models.recording import ModelFailure
 from paper_evidence.models.sdk import LiteLLMSdkGateway, error_code_for
@@ -359,6 +360,31 @@ def test_an_upstream_retry_after_is_waited_out(monkeypatch):
         complete(build(failing(rate_limited(retry_after=0.25))))
     assert requested == [0.25]  # exactly what the upstream asked for
     assert time.monotonic() - started >= 0.2  # and it was really waited out
+
+
+def test_a_retry_without_retry_after_waits_the_documented_minimum(monkeypatch):
+    """The header is optional; its absence is not permission to retry instantly.
+
+    Issue #69 measured the previous behaviour: a 429 with no ``Retry-After`` slept
+    for zero seconds, so the "one recovery" was a second request issued
+    immediately after the first — precisely what a rate limiter is preventing.
+    """
+
+    real_sleep = asyncio.sleep
+    requested = []
+
+    async def observed(delay):
+        requested.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(sdk_module.asyncio, "sleep", observed)
+
+    with pytest.raises(ModelFailure) as raised:
+        complete(build(failing(rate_limited())))
+
+    assert requested == [RECOVERY_BACKOFF_SECONDS]
+    assert len(raised.value.call.attempts) == 2, "退避之后仍只恢复一次"
+    assert raised.value.error_code is ErrorCode.UPSTREAM_RATE_LIMITED, "失败信号不许被退避改写"
 
 
 def test_a_retry_after_longer_than_the_task_does_not_burn_the_remaining_budget():

@@ -19,6 +19,7 @@ __all__ = [
     "CRITERIA_VERSION",
     "DEFINITIVE_LABELS",
     "FAILED_CODES",
+    "RECOVERY_BACKOFF_SECONDS",
     "blocked_label",
     "criteria_reference",
     "criteria_snapshot",
@@ -26,6 +27,14 @@ __all__ = [
 ]
 
 CRITERIA_VERSION = "0.6"
+
+#: 一次恢复至少要等多久（秒），用于上游**没**说等多久的 429 / 5xx。
+#:
+#: 429 最常见的形态就是「只说 too many requests、不给 Retry-After」；此时等 0 秒等于
+#: 没有退避，第二次请求几乎必然再被限流，把「有一次恢复」变成一句空话（Issue #69）。
+#: 来源层的 ``Fetcher`` 与模型侧 SDK 网关共用这一个值，避免两处各写一个数字。
+#: 它不是可配置项：变了就是恢复策略变了，两侧必须同时变。
+RECOVERY_BACKOFF_SECONDS = 1.5
 
 ACADEMIC_LABELS: tuple[AcademicLabel, ...] = ("支持", "部分支持", "相矛盾", "证据不足")
 
