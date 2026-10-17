@@ -156,7 +156,18 @@ class PmcClient:
         return None
 
     async def _get_record(self, pmcid: str, prefix: str, deadline: float | None):
-        """One GetRecord call, returned as ``(root, raw_bytes)``."""
+        """One GetRecord call, returned as ``(root, raw_bytes)``.
+
+        The HTTP status is **not** the authority on failure here: PMC serves its
+        OAI-PMH error bodies with **HTTP 400**. Measured live on 2026-10-15, all
+        ten records outside the Open Access subset answered
+        ``400 cannotDisseminateFormat``. Rejecting non-200 before reading the
+        body therefore turned the one code the caller answers by falling back
+        into dead code, and reported "this record has no full text to serve" as
+        a parameter error (Issue #61). So the body is parsed first; a
+        well-formed OAI-PMH error is returned for the caller to classify by its
+        code, and only a body that carries no such code is judged by status.
+        """
 
         params = {
             "verb": "GetRecord",
@@ -168,12 +179,16 @@ class PmcClient:
         response = await self._fetcher.get(
             self._oai, params=params, deadline=deadline, follow_redirects=True
         )
-        if response.status_code != 200:
-            raise ContractError(ErrorCode.UPSTREAM_INVALID_REQUEST, "PMC OAI 响应无效")
         try:
-            root = ElementTree.fromstring(response.content)
-        except ElementTree.ParseError as error:
-            raise ContractError(ErrorCode.CONTENT_INCOMPLETE, "PMC 返回内容无法解析") from error
+            root: ElementTree.Element | None = ElementTree.fromstring(response.content)
+        except ElementTree.ParseError:
+            root = None
+        if response.status_code != 200:
+            if root is not None and _oai_error_code(root) is not None:
+                return root, response.content
+            raise ContractError(classify_status(response.status_code), "PMC OAI 响应无效")
+        if root is None:
+            raise ContractError(ErrorCode.CONTENT_INCOMPLETE, "PMC 返回内容无法解析")
         return root, response.content
 
     async def fetch_record(self, pmcid: str, deadline: float | None) -> PmcRecord:
@@ -181,8 +196,9 @@ class PmcClient:
 
         Full text (``pmc``) is requested first, because that is the only form a
         judgement may rest on. PMC serves it for records in the Open Access
-        subset; for the rest it answers ``cannotDisseminateFormat``, and only
-        then does the client fall back to ``pmc_fm`` front matter. The fallback
+        subset; for the rest it answers ``cannotDisseminateFormat`` **with HTTP
+        400** (measured live 2026-10-15, 10 of 10), and only then does the
+        client fall back to ``pmc_fm`` front matter. The fallback
         is a degradation, not an equivalent: it carries title, abstract and
         permissions but **no ``<body>``**, so the caller cannot read it as the
         article. Whether such a record should block instead of being judged on
