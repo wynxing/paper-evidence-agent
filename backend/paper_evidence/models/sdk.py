@@ -37,6 +37,7 @@ from litellm import exceptions as litellm_errors  # noqa: E402
 from paper_evidence.domain import ErrorCode  # noqa: E402
 from paper_evidence.domain.contracts import ModelAttempt, ModelCall  # noqa: E402
 from paper_evidence.domain.records import ModelReply  # noqa: E402
+from paper_evidence.domain.rules import RECOVERY_BACKOFF_SECONDS  # noqa: E402
 from paper_evidence.models.recording import (  # noqa: E402
     AttemptRecorder,
     ModelFailure,
@@ -144,12 +145,16 @@ def _call_id(response: object) -> str | None:
     return None
 
 
-def _retry_after_seconds(error: BaseException) -> float:
-    """The wait the upstream asked for, in seconds; 0 when it asked for none.
+def _retry_after_seconds(error: BaseException) -> float | None:
+    """The wait the upstream asked for, in seconds; ``None`` when it asked for none.
 
     Only the delta-seconds form is honoured. An HTTP-date form would need a
     wall-clock comparison inside a deadline that is deliberately monotonic, so it
     is read as no requested wait rather than as an unknown one.
+
+    ``None`` and ``0.0`` are deliberately different: no header means "the caller
+    must choose a wait" (``RECOVERY_BACKOFF_SECONDS``), while ``Retry-After: 0``
+    is the upstream saying "now" and is taken literally (Issue #69).
     """
 
     get = getattr(getattr(error, "response", None), "headers", None)
@@ -157,7 +162,7 @@ def _retry_after_seconds(error: BaseException) -> float:
     try:
         return max(0.0, float(raw))
     except (TypeError, ValueError):
-        return 0.0
+        return None
 
 
 def _content(response: object) -> str:
@@ -260,11 +265,14 @@ class LiteLLMSdkGateway(AttemptRecorder):
                 # Recovery needs a whole attempt of the task's remaining time; a
                 # task that is out of time ends on its own deadline instead.
                 remaining = self.remaining(deadline)
-                wait = _retry_after_seconds(error)
+                requested = _retry_after_seconds(error)
+                # No Retry-After must not mean "immediately" — the upstream is
+                # throttling or failing, so wait the documented minimum (Issue #69).
+                wait = RECOVERY_BACKOFF_SECONDS if requested is None else requested
                 if wait >= remaining:
                     raise ModelFailure(code, call()) from None
                 if wait:
-                    await asyncio.sleep(wait)
+                    await asyncio.sleep(min(wait, remaining))
                 attempt_index += 1
                 recovery_kind, recovery_reason = "retry", code
                 continue

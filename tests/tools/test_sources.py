@@ -7,11 +7,14 @@ connectivity is not covered here.
 
 import asyncio
 import hashlib
+import time
 
 import httpx
 import pytest
 
+import paper_evidence.sources.http as http_module
 from paper_evidence.domain import ContractError, ErrorCode
+from paper_evidence.domain.rules import RECOVERY_BACKOFF_SECONDS
 from paper_evidence.retrieval.jats import parse_jats
 from paper_evidence.sources.crossref import CrossrefClient, DoiResolver
 from paper_evidence.sources.doi import is_valid_doi, normalize_doi, require_valid_doi
@@ -115,6 +118,102 @@ def test_status_classification_matches_the_documented_upstream_codes():
     assert classify_status(429) is ErrorCode.UPSTREAM_RATE_LIMITED
     assert classify_status(503) is ErrorCode.UPSTREAM_UNAVAILABLE
     assert classify_status(400) is ErrorCode.UPSTREAM_INVALID_REQUEST
+
+
+def test_timeouts_are_timeouts_and_404_is_not_one():
+    """408/504 按语义归超时；404 保持「请求不合法」是刻意的（Issue #69）。"""
+
+    assert classify_status(408) is ErrorCode.UPSTREAM_TIMEOUT, "Request Timeout 不是参数错误"
+    assert classify_status(504) is ErrorCode.UPSTREAM_TIMEOUT, "Gateway Timeout 不是「上游不可用」"
+    assert classify_status(502) is ErrorCode.UPSTREAM_UNAVAILABLE, "502 仍是上游不可用"
+    assert classify_status(404) is ErrorCode.UPSTREAM_INVALID_REQUEST, "固定官方端点回 404 = 路由不对"
+
+
+@pytest.mark.parametrize("status,code", [
+    (429, ErrorCode.UPSTREAM_RATE_LIMITED),
+    (503, ErrorCode.UPSTREAM_UNAVAILABLE),
+])
+def test_a_transient_failure_without_retry_after_still_waits(status, code, monkeypatch):
+    """没有 ``Retry-After`` 时的恢复不能是「0 秒后再发一次」。
+
+    Issue #69：429 最常见的形态就是不给该响应头，此时立即重发几乎必然再次被限流，
+    「有一次恢复」就成了空话。这里断言两件事：两次尝试之间**请求了非零等待**，
+    以及退避后仍失败时**保留原始错误码**（不因为「重试过了」就换一个说法）。
+    """
+
+    real_sleep = asyncio.sleep
+    requested = []
+
+    async def observed(delay):
+        requested.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(http_module.asyncio, "sleep", observed)
+
+    seen = []
+
+    def handler(request):
+        seen.append(status)
+        return httpx.Response(status, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    fetcher = Fetcher(client, 15, "test-agent")
+
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(fetcher.get("https://upstream.test/x"))
+
+    assert len(seen) == 2, "瞬断/限流仍只恢复一次"
+    assert requested == [RECOVERY_BACKOFF_SECONDS], "无 Retry-After 时必须按文档下限等待"
+    assert requested[0] > 0
+    assert raised.value.error_code is code, "退避后仍失败要保留原始错误码"
+
+
+def test_a_retry_after_header_still_wins_over_the_default_backoff(monkeypatch):
+    """上游说了等多久就听它的：默认退避不能覆盖 ``Retry-After``。"""
+
+    requested = []
+
+    async def observed(delay):
+        requested.append(delay)
+
+    monkeypatch.setattr(http_module.asyncio, "sleep", observed)
+
+    def handler(request):
+        return httpx.Response(429, headers={"retry-after": "0.25"}, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    fetcher = Fetcher(client, 15, "test-agent")
+
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(fetcher.get("https://upstream.test/x"))
+
+    assert requested == [0.25]
+    assert raised.value.error_code is ErrorCode.UPSTREAM_RATE_LIMITED
+
+
+def test_a_backoff_longer_than_the_remaining_budget_does_not_burn_it(monkeypatch):
+    """退避超出任务剩余时间就以 UPSTREAM_TIMEOUT 结束，不做第二次请求。"""
+
+    requested = []
+
+    async def observed(delay):  # pragma: no cover - must not be reached
+        requested.append(delay)
+
+    monkeypatch.setattr(http_module.asyncio, "sleep", observed)
+
+    def handler(request):
+        return httpx.Response(429, headers={"retry-after": "60"}, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    fetcher = Fetcher(client, 15, "test-agent")
+
+    started = time.monotonic()
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(fetcher.get("https://upstream.test/x", deadline=time.monotonic() + 30))
+
+    assert time.monotonic() - started < 5
+    assert requested == []
+    assert raised.value.error_code is ErrorCode.UPSTREAM_TIMEOUT
 
 
 # -------------------------------------------------------------------- resolve
