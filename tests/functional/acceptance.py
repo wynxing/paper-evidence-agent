@@ -118,6 +118,7 @@ class FrozenFulltext:
             title="frozen", authors=["Ada Lovelace"], year=2026, doi=self._case.doi,
             pmcid="PMC0000001", license="CC BY", version="1", access_url="https://example.org/frozen",
             retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+            retrieval_form="full_text",
         )
         return SourceSnapshot(
             source_id=f"PMC0000001:{VERSION_HASH}", metadata=record, jats_bytes=self._case.jats,
@@ -224,6 +225,7 @@ def run_case(case: FrozenCase, work_dir, *, transcript=None, gateway=None) -> Ac
             title="frozen", authors=["Ada Lovelace"], year=2026, doi=case.doi, pmcid="PMC0000001",
             license="CC BY", version="1", access_url="https://example.org/frozen",
             retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+            retrieval_form="full_text",
         ),
         jats_bytes=case.jats,
     )

@@ -173,6 +173,12 @@ class SourceRecord(Contract):
     access_url: str | None
     retrieved_at: str | None
     version_hash: str | None
+    #: ``full_text`` or ``front_matter`` — what was actually frozen. ``front_matter``
+    #: is a documented degradation (title + abstract only), so a reader of a frozen
+    #: source can tell whether the article body was every retrieved instead of
+    #: guessing from sections; ``null`` only for rows frozen before this field
+    #: existed, which must be read as "not known to be full text" (Issue #60).
+    retrieval_form: str | None
 
 
 class CheckSummary(Contract):

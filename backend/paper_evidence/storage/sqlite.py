@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS sources (
     retrieved_at TEXT,
     version_hash TEXT,
     open_locations TEXT,
-    jats_bytes BLOB
+    jats_bytes BLOB,
+    retrieval_form TEXT
 );
 CREATE TABLE IF NOT EXISTS paragraphs (
     paragraph_id TEXT PRIMARY KEY,
@@ -176,6 +177,9 @@ class SqliteStore:
             ("tasks", "finished_at", "TEXT"),
             ("sources", "authors", "TEXT"),
             ("sources", "year", "INTEGER"),
+            # Rows written before Issue #60 keep NULL: their form was never recorded
+            # and must not be guessed as `full_text`.
+            ("sources", "retrieval_form", "TEXT"),
         ):
             existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
@@ -722,12 +726,14 @@ class SqliteStore:
                      open_locations: tuple[str, ...] = ()) -> None:
         self._write(
             """INSERT OR REPLACE INTO sources (source_id, doi, pmcid, title, authors, year, license,
-                   version, access_url, retrieved_at, version_hash, open_locations, jats_bytes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   version, access_url, retrieved_at, version_hash, open_locations, jats_bytes,
+                   retrieval_form)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (source_id, source.doi, source.pmcid, source.title,
              json.dumps(list(source.authors), ensure_ascii=False), source.year, source.license,
              source.version, source.access_url, source.retrieved_at, source.version_hash,
-             json.dumps(list(open_locations), ensure_ascii=False), jats_bytes),
+             json.dumps(list(open_locations), ensure_ascii=False), jats_bytes,
+             source.retrieval_form),
         )
 
     def index_paragraphs(self, source_id: str, paragraphs: list[Paragraph]) -> None:
@@ -841,11 +847,16 @@ def _source_record(stored: str | None) -> SourceRecord | None:
 
     ``authors`` and ``year`` were added after the first release, so a row written
     by an earlier revision simply has no value for them; that is not an error.
+    ``retrieval_form`` is the same kind of later addition: an old row never
+    recorded what it froze, and ``null`` (unknown) is the only honest answer —
+    never a silent ``full_text`` (Issue #60).
     """
 
     if not stored:
         return None
-    return SourceRecord.model_validate({"authors": [], "year": None, **json.loads(stored)})
+    return SourceRecord.model_validate(
+        {"authors": [], "year": None, "retrieval_form": None, **json.loads(stored)}
+    )
 
 
 def _iso_from_epoch(value: float | None) -> str | None:

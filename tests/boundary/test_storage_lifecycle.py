@@ -61,7 +61,8 @@ def index_source(store, task_id, source_id=f"PMC123:{VERSION_HASH}"):
     record = SourceRecord(title="Demo", authors=["Ada Lovelace"], year=2026, doi="10.1000/xyz",
                           pmcid="PMC123", license="CC BY", version="1",
                           access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
-                          retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH)
+                          retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+                          retrieval_form="full_text")
     snapshot = SourceSnapshot(source_id=source_id, metadata=record, jats_bytes=JATS,
                               open_locations=("https://open.example/x",))
     store.link_task_source(task_id, source_id)
@@ -317,11 +318,13 @@ def test_source_index_keeps_the_bibliographic_identity(store):
     source_id = index_source(store, "t1")
     stored = store.get_source(source_id)
     assert stored["authors"] == ["Ada Lovelace"] and stored["year"] == 2026
+    assert stored["retrieval_form"] == "full_text", "取回形态要随来源一起落库（#60）"
 
     store.update_source("t1", SourceRecord(
         title="Demo", authors=["Ada Lovelace"], year=2026, doi="10.1000/xyz", pmcid="PMC123",
         license="CC BY", version="1", access_url="https://example.org/a",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+        retrieval_form="full_text",
     ))
     record = store.source_record("t1")
     assert record.authors == ["Ada Lovelace"] and record.year == 2026
@@ -337,6 +340,7 @@ def test_a_source_row_written_before_authors_existed_still_reads(store):
     store._write("UPDATE tasks SET source = ? WHERE id = ?", (legacy, "t1"))
     record = store.source_record("t1")
     assert record.title == "Legacy" and record.authors == [] and record.year is None
+    assert record.retrieval_form is None, "旧行没记过取回形态，读作未知，不能默认成正文"
     assert store.get("t1").source.doi == "10.1000/xyz"
 
 

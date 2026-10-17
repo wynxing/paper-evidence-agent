@@ -117,6 +117,7 @@ class FrozenFulltext:
                 title="frozen", authors=["Ada Lovelace"], year=2026, doi=doi, pmcid=PMCID,
                 license="CC BY", version="1", access_url=f"https://pmc.ncbi.nlm.nih.gov/articles/{PMCID}/",
                 retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
+                retrieval_form="full_text",
             ),
             jats_bytes=self._jats,
         )

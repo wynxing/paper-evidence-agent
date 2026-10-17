@@ -232,6 +232,7 @@ def test_fetch_returns_a_licensed_snapshot_with_a_version_hash():
     )
     assert snapshot.source_id == f"PMC123:{snapshot.metadata.version_hash}"
     assert snapshot.jats_bytes == JATS
+    assert snapshot.metadata.retrieval_form == "full_text", "取的是 pmc，冻结形态必须记成正文"
 
 
 def test_stable_identifiers_survive_a_second_fetch_of_the_same_record():
@@ -433,6 +434,7 @@ def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
     assert record.license == "CC BY"
     assert record.jats_bytes == FRONT_MATTER_JATS, "冻结的是 <article> 子树，不含 OAI 信封"
     assert b"<body" not in record.jats_bytes, "回落拿到的只有题录+摘要，不含正文"
+    assert record.retrieval_form == "front_matter", "降级必须被记下来，而不是只留在 docstring 里"
 
 
 @pytest.mark.parametrize("code", ["idDoesNotExist", "badArgument"])

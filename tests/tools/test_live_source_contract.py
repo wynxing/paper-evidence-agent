@@ -93,6 +93,7 @@ def _snapshot(pmcid: str, doi: str, raw: bytes) -> SourceSnapshot:
             access_url=None,
             retrieved_at=None,
             version_hash=hashlib.sha256(raw).hexdigest(),
+            retrieval_form="full_text",
         ),
         jats_bytes=raw,
     )

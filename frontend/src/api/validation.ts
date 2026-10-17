@@ -24,7 +24,7 @@ const evidence = shape({ ...evidenceFields, validation: oneOf('pass') })
 const decision = nullable(shape({ agent: oneOf('paper'), label, rationale: text, supported_parts: strings, scope_differences: strings, limitations: strings, evidence: array(evidence), validation: oneOf('pass') }))
 const timestamp = text
 /** The bibliography the checker resolved for a claim, shared by the detail view and the diagnostic packet. */
-const source = nullable(shape({ title: nullable(text), authors: strings, year: nullable(number), doi: nullable(text), pmcid: nullable(text), license: nullable(text), version: nullable(text), access_url: nullable(text), retrieved_at: nullable(text), version_hash: nullable(text) }))
+const source = nullable(shape({ title: nullable(text), authors: strings, year: nullable(number), doi: nullable(text), pmcid: nullable(text), license: nullable(text), version: nullable(text), access_url: nullable(text), retrieved_at: nullable(text), version_hash: nullable(text), retrieval_form: nullable(text) }))
 const detailFields = { id: text, claim: text, source, status, stage, label: nullable(oneOf('支持', '部分支持', '相矛盾', '证据不足', '无法核验来源')), error_code: errorCode, decision, previous_id: nullable(text), cancel_requested: bool, criteria, accounting, limits, created_at: timestamp, started_at: nullable(timestamp), finished_at: nullable(timestamp) }
 const academicLabels = new Set(['支持', '部分支持', '相矛盾', '证据不足'])
 /** Status, label, decision, and error_code must agree. History rows omit decision and error_code, so those checks run only when the field is present. */
