@@ -508,8 +508,14 @@ def test_pmc_oai_request_prefers_the_full_text_metadata_prefix():
     assert seen[0]["identifier"] == "oai:pubmedcentral.nih.gov:123"
 
 
-def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
-    """只有 PMC 明确回 ``cannotDisseminateFormat`` 时才退到只含题录+摘要的 ``pmc_fm``。"""
+@pytest.mark.parametrize("status", [200, 400], ids=["body-with-200", "body-with-400"])
+def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate(status):
+    """只有 PMC 明确回 ``cannotDisseminateFormat`` 时才退到只含题录+摘要的 ``pmc_fm``。
+
+    两种到达形态都要覆盖：HTTP 200 与 HTTP 400。真实 PMC 走的是后者
+    （2026-10-15 实测：非 OA 记录 10/10 为 ``400 cannotDisseminateFormat``），
+    只测 200 的写法让「先按状态码拒绝」的实现看起来一直是对的（Issue #61）。
+    """
 
     seen = []
 
@@ -517,9 +523,9 @@ def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
         if request.url.host == "pmc.test" and request.url.path == "/oai":
             prefix = dict(request.url.params)["metadataPrefix"]
             seen.append(prefix)
-            return httpx.Response(
-                200, content=CANNOT_DISSEMINATE if prefix == "pmc" else FRONT_MATTER_JATS
-            )
+            if prefix == "pmc":
+                return httpx.Response(status, content=CANNOT_DISSEMINATE)
+            return httpx.Response(200, content=FRONT_MATTER_JATS)
         if request.url.host == "pmc.test" and request.url.path == "/idconv":
             return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
         return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
@@ -536,8 +542,9 @@ def test_pmc_oai_falls_back_to_front_matter_only_after_cannot_disseminate():
     assert record.retrieval_form == "front_matter", "降级必须被记下来，而不是只留在 docstring 里"
 
 
+@pytest.mark.parametrize("status", [200, 400], ids=["body-with-200", "body-with-400"])
 @pytest.mark.parametrize("code", ["idDoesNotExist", "badArgument"])
-def test_pmc_oai_errors_other_than_cannot_disseminate_are_not_retried(code):
+def test_pmc_oai_errors_other_than_cannot_disseminate_are_not_retried(code, status):
     """其它 OAI 错误照旧映射为 SOURCE_UNAVAILABLE，不做第二次请求。"""
 
     seen = []
@@ -551,7 +558,7 @@ def test_pmc_oai_errors_other_than_cannot_disseminate_are_not_retried(code):
                 b'<error code="' + code.encode() + b'">nope</error>'
                 b"</GetRecord></OAI-PMH>"
             )
-            return httpx.Response(200, content=error)
+            return httpx.Response(status, content=error)
         if request.url.host == "pmc.test" and request.url.path == "/idconv":
             return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
         return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
@@ -563,6 +570,34 @@ def test_pmc_oai_errors_other_than_cannot_disseminate_are_not_retried(code):
 
     assert raised.value.error_code is ErrorCode.SOURCE_UNAVAILABLE
     assert seen == ["pmc"], "非 cannotDisseminateFormat 的错误不重试"
+
+
+@pytest.mark.parametrize("status,expected", [(400, ErrorCode.UPSTREAM_INVALID_REQUEST),
+                                             (404, ErrorCode.UPSTREAM_INVALID_REQUEST)])
+def test_a_non_oai_error_body_is_still_judged_by_status(status, expected):
+    """状态码只在「响应体不是 OAI-PMH 错误」时才作准。
+
+    把「凡非 200 一律当参数错误」改成「先看体」之后，这条反向边界必须还在：
+    一个不带 OAI 错误码的错误响应不能被当成「记录不可获取」而回落。
+    """
+
+    seen = []
+
+    def handler(request):
+        if request.url.host == "pmc.test" and request.url.path == "/oai":
+            seen.append(dict(request.url.params)["metadataPrefix"])
+            return httpx.Response(status, content=b"<html><body>Bad Request</body></html>")
+        if request.url.host == "pmc.test" and request.url.path == "/idconv":
+            return httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]})
+        return httpx.Response(200, json={"message": {"title": ["Demo study"]}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    pmc = PmcClient(Fetcher(client, 15, "test-agent"), "https://pmc.test/idconv", "https://pmc.test/oai")
+    with pytest.raises(ContractError) as raised:
+        asyncio.run(pmc.fetch_record("PMC123", None))
+
+    assert raised.value.error_code is expected
+    assert seen == ["pmc"], "非 OAI 错误体不触发回落"
 
 
 def test_pmc_oai_call_follows_redirects():
