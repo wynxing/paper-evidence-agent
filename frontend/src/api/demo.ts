@@ -2,7 +2,7 @@ import type { ApiClient, AcademicLabel, CheckDetail, CheckCreateRequest, Diagnos
 import { ClientError } from './http.ts'
 import { isTerminal } from '../state/model.ts'
 
-export const demoScenarios = ['支持', '部分支持', '相矛盾', '证据不足', '排队中', '执行中', '来源阻断', '执行失败', '已取消', '运行中断'] as const
+export const demoScenarios = ['支持', '部分支持', '相矛盾', '证据不足', '排队中', '执行中', '来源阻断', '执行失败', '已取消', '运行中断', '仅题录摘要'] as const
 export type DemoScenario = typeof demoScenarios[number]
 const copy = <T>(x: T): T => structuredClone(x)
 const limits = { main_requests: 3, repair_requests: 1, attempts_per_request: 2, supplemental_rounds: 1 }
@@ -11,18 +11,19 @@ const config: RunConfigPreview = { profile: 'daily', config_digest: 'demo-config
 const DEMO_CLAIM = '构造论断：该干预在所有人群中均具有持续效果。'
 export function demoSource(doi: string): SourcePreview { return { doi, title: '构造文献 · 干预与观察指标的示例研究', authors: ['模拟作者 A', '模拟作者 B'], year: null } }
 /** Constructed bibliography. The stored record is the identity the checker resolved; nothing here is real. */
-function demoRecord(doi: string): SourceRecord { return { title: demoSource(doi).title, authors: ['模拟作者 A', '模拟作者 B'], year: 2024, doi, pmcid: null, license: null, version: 'constructed', access_url: null, retrieved_at: null, version_hash: 'demo-source', retrieval_form: 'full_text' } }
+function demoRecord(doi: string, retrievalForm: string | null = 'full_text'): SourceRecord { return { title: demoSource(doi).title, authors: ['模拟作者 A', '模拟作者 B'], year: 2024, doi, pmcid: null, license: null, version: 'constructed', access_url: null, retrieved_at: null, version_hash: 'demo-source', retrieval_form: retrievalForm } }
 /** Constructed clock: fixed offsets from the row's creation time, so the timeline is stable across runs. */
 const DEMO_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0)
 const stamp = (offsetSeconds: number) => new Date(DEMO_EPOCH_MS + offsetSeconds * 1000).toISOString()
 function detail(id: string, scenario: DemoScenario, doi: string, claim: string, createdAt: string, previousId: string | null = null): CheckDetail {
-  const mappings: Partial<Record<DemoScenario, TaskStatus>> = { 排队中: 'QUEUED', 执行中: 'RUNNING', 来源阻断: 'BLOCKED', 执行失败: 'FAILED', 已取消: 'CANCELLED', 运行中断: 'INTERRUPTED' }
+  const mappings: Partial<Record<DemoScenario, TaskStatus>> = { 排队中: 'QUEUED', 执行中: 'RUNNING', 来源阻断: 'BLOCKED', 仅题录摘要: 'BLOCKED', 执行失败: 'FAILED', 已取消: 'CANCELLED', 运行中断: 'INTERRUPTED' }
   const status = mappings[scenario] ?? 'COMPLETED'
   const academic = status === 'COMPLETED' ? scenario as AcademicLabel : null
+  const frontMatterOnly = scenario === '仅题录摘要'
   const startedAt = status === 'QUEUED' ? null : new Date(Date.parse(createdAt) + 1000).toISOString()
   const finishedAt = isTerminal(status) ? new Date(Date.parse(createdAt) + 12000).toISOString() : null
-  return { id, claim: claim || DEMO_CLAIM, source: demoRecord(doi), status, stage: status === 'QUEUED' ? 'wait' : status === 'BLOCKED' ? 'license' : status === 'FAILED' ? 'retrieval' : status === 'RUNNING' ? 'retrieval' : 'evidence_validation', label: status === 'BLOCKED' ? '无法核验来源' : academic,
-    error_code: status === 'BLOCKED' ? 'LICENSE_UNKNOWN' : status === 'FAILED' ? 'RETRIEVAL_FAILED' : academic === '证据不足' ? 'RETRIEVAL_EMPTY' : null,
+  return { id, claim: claim || DEMO_CLAIM, source: demoRecord(doi, frontMatterOnly ? 'front_matter' : 'full_text'), status, stage: status === 'QUEUED' ? 'wait' : frontMatterOnly ? 'fetch' : status === 'BLOCKED' ? 'license' : status === 'FAILED' ? 'retrieval' : status === 'RUNNING' ? 'retrieval' : 'evidence_validation', label: status === 'BLOCKED' ? '无法核验来源' : academic,
+    error_code: frontMatterOnly ? 'CONTENT_INCOMPLETE' : status === 'BLOCKED' ? 'LICENSE_UNKNOWN' : status === 'FAILED' ? 'RETRIEVAL_FAILED' : academic === '证据不足' ? 'RETRIEVAL_EMPTY' : null,
     previous_id: previousId, cancel_requested: status === 'CANCELLED', criteria, limits, created_at: createdAt, started_at: startedAt, finished_at: finishedAt,
     accounting: { verification: 'unverified', main_requests_used: status === 'COMPLETED' ? 2 : 0, repair_requests_used: 0, supplemental_rounds_used: academic === '证据不足' ? 1 : 0, upstream_attempts_used: null, observed_upstream_attempts: status === 'COMPLETED' ? 2 : 0, reason: 'attempt_records_missing' },
     decision: academic ? { agent: 'paper', label: academic, rationale: '构造说明：此处展示指定文献与论断的关系及判断依据。演示数据不代表真实学术判断。', supported_parts: academic === '支持' || academic === '部分支持' ? ['构造样本在指定观察条件下存在指标变化。'] : [], scope_differences: academic === '部分支持' ? ['构造原文只涉及短期观察，不能据此推及所有人群或长期效果。'] : [], limitations: ['全部内容为前端构造数据；未经真实文献核验。'], evidence: academic === '证据不足' ? [] : [
@@ -47,7 +48,7 @@ export function createDemoClient(): ApiClient & { selectScenario: (value: DemoSc
     const e = find(id); const d = copy(e.result); const decision = copy(d.decision)
     if (privacy === 'redacted' && decision) { decision.rationale = '<redacted>'; decision.supported_parts = decision.supported_parts.map(() => '<redacted>'); decision.scope_differences = decision.scope_differences.map(() => '<redacted>'); decision.limitations = decision.limitations.map(() => '<redacted>'); decision.evidence.forEach(x => x.quote = '<redacted>') }
     return { schema_version: '2.2', criteria, accounting: d.accounting, case_id: id, run_id: `run-${id}`, trace_id: `trace-${id}`, previous_id: d.previous_id, cancel_requested: d.cancel_requested, status: d.status, label: d.label, error_code: d.error_code,
-      input: { doi: e.doi, claim: privacy === 'redacted' ? '<redacted>' : e.claim, privacy, recipient }, source: demoRecord(e.doi),
+      input: { doi: e.doi, claim: privacy === 'redacted' ? '<redacted>' : e.claim, privacy, recipient }, source: d.source,
       run_config: { profile: 'daily', config_digest: config.config_digest, snapshot_ref: 'demo-memory', authorized_recipients: [config.primary_recipient], limits, timeouts: config.timeouts, observability: config.observability },
       decision, evidence_candidates: (decision?.evidence ?? []).map(({ validation: _validation, ...x }, i) => ({ ...x, round: 0 as const, rank: i + 1, entered_context: true })),
       execution: [{ stage: 'source_identity', span_id: `${id}-source`, tool: 'demo-source', status: 'success', error_code: null, duration_ms: null, round: null, request_id: null }, { stage: d.stage, span_id: `${id}-last`, tool: 'demo-fixture', status: d.status === 'FAILED' ? 'error' : d.status === 'BLOCKED' ? 'blocked' : d.status === 'CANCELLED' ? 'cancelled' : 'success', error_code: d.error_code, duration_ms: null, round: 0, request_id: `${id}-request` }],

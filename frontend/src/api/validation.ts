@@ -27,7 +27,13 @@ const timestamp = text
 const source = nullable(shape({ title: nullable(text), authors: strings, year: nullable(number), doi: nullable(text), pmcid: nullable(text), license: nullable(text), version: nullable(text), access_url: nullable(text), retrieved_at: nullable(text), version_hash: nullable(text), retrieval_form: nullable(text) }))
 const detailFields = { id: text, claim: text, source, status, stage, label: nullable(oneOf('支持', '部分支持', '相矛盾', '证据不足', '无法核验来源')), error_code: errorCode, decision, previous_id: nullable(text), cancel_requested: bool, criteria, accounting, limits, created_at: timestamp, started_at: nullable(timestamp), finished_at: nullable(timestamp) }
 const academicLabels = new Set(['支持', '部分支持', '相矛盾', '证据不足'])
-/** Status, label, decision, and error_code must agree. History rows omit decision and error_code, so those checks run only when the field is present. */
+/**
+ * Status, label, decision, and error_code must agree. History rows omit decision and error_code, so those checks run only when the field is present.
+ *
+ * A source frozen as front matter (retrieval_form = "front_matter") ends BLOCKED / CONTENT_INCOMPLETE,
+ * label 「无法核验来源」, decision null — the same BLOCKED shape `blocked_label()` already requires, so it is accepted.
+ * retrieval_form null is an older frozen row and is not itself a reason to reject the outcome.
+ */
 export function coherentOutcome(value: unknown): boolean {
   if (!record(value)) return false
   const { status, label } = value
