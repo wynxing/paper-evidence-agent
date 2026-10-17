@@ -44,6 +44,8 @@ npm run dev
 
 前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
 
+预览构建产物时，在 `frontend` 目录执行 `npm run build && npm run preview`（同样需要后端已在 8000 运行）。预览默认地址为 <http://127.0.0.1:4173>，`/api` 与 `/health` 同样代理到该后端。
+
 核验任务由单独的 worker 执行，API 进程只入队。要真的调用模型，在 worker 进程里提供上游密钥即可：
 
 ```bash

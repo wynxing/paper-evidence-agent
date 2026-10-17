@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test'
  * 用来产出论文语义结论或性能数字（Issue #26 已写明这条边界）。
  *
  * 端口是硬约束而不是自由参数：
- * - `frontend/vite.config.ts:6` 把 `/api`、`/health` 固定代理到 127.0.0.1:8000；
+ * - `frontend/vite.config.ts` 把 `/api`、`/health` 固定代理到 127.0.0.1:8000；
  * - 前端 dev server 固定 5173，用 `--strictPort` 让占用时直接失败，不要静默换端口。
  * 因此运行前请确保 8000 / 5173 / 8765 / 8001 都没有别的进程占用。
  * `reuseExistingServer` 刻意关掉：复用可能是用户自己的真实后端，那会让用例

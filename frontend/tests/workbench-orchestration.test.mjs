@@ -561,10 +561,10 @@ describe('useWorkbench orchestration', { concurrency: 1 }, () => {
     const host = createHost('')
     const demo = mountWorkbench({ location: host.location, document: host.document, window: host.window, pollIntervalMs: 5, mode: 'demo' })
     try {
-      await until(() => demo.work.history.value.length === 10, 'demo history')
+      await until(() => demo.work.history.value.length === 11, 'demo history')
       assert.equal(demo.work.demo, true)
       // The list renders the server order as given; the newest task is first.
-      assert.equal(demo.work.history.value[0].doi, '10.0000/demo-10')
+      assert.equal(demo.work.history.value[0].doi, '10.0000/demo-11')
       assert.equal(demo.work.history.value.at(-1).doi, '10.0000/demo-1')
       assert.ok(demo.work.history.value[0].claim_excerpt)
       assert.match(demo.work.history.value[0].created_at, /^\d{4}-\d{2}-\d{2}T/)

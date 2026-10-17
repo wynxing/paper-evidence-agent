@@ -1,4 +1,4 @@
-import type { Accounting, CheckDetail, ContextParagraph, DiagnosticExportRequest, DiagnosticPacket, EvidenceContext, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
+import type { Accounting, CheckDetail, ContextParagraph, DiagnosticExportRequest, DiagnosticPacket, ErrorCode, EvidenceContext, RunConfigPreview, SourcePreview, TaskStatus } from '../api/contracts.ts'
 
 export interface Draft {
   claim: string; doi: string; source: SourcePreview | null; config: RunConfigPreview | null
@@ -53,6 +53,30 @@ export const errors: Record<string, string> = {
   SOURCE_LANGUAGE_UNSUPPORTED: '正文语言暂不支持', CONTENT_INCOMPLETE: '内容不完整或无法解析；具体原因尚未知', RETRIEVAL_FAILED: '证据检索执行失败', RETRIEVAL_EMPTY: '本次未获得足够证据',
   UPSTREAM_TIMEOUT: '单次上游请求超时', UPSTREAM_RATE_LIMITED: '上游请求受到限流', UPSTREAM_AUTH_FAILED: '上游认证失败', UPSTREAM_INVALID_REQUEST: '上游请求不兼容', UPSTREAM_UNAVAILABLE: '上游服务暂不可用',
   TASK_TIMEOUT: '任务总执行时限已到', BUDGET_EXCEEDED: '授权调用预算已耗尽；调整配置后重新授权新任务', MODEL_INVALID_OUTPUT: '模型输出无效', QUOTE_MISMATCH: '摘录与原文校验不一致',
+}
+/** Shown only when a front-matter-only source is blocked. Other CONTENT_INCOMPLETE stays on `errors`. */
+export const FRONT_MATTER_BLOCK_TEXT = '只取得题录和摘要，没有正文，按规则不做判定。'
+/** True for the #28 terminal state: BLOCKED / CONTENT_INCOMPLETE, no judgment, source frozen as front matter. */
+export function frontMatterOnlyBlock(status: string, errorCode: string | null, retrievalForm: string | null | undefined): boolean {
+  return status === 'BLOCKED' && errorCode === 'CONTENT_INCOMPLETE' && retrievalForm === 'front_matter'
+}
+/** Detail-page heading. The front-matter block replaces the generic CONTENT_INCOMPLETE line; every other code keeps `errors`. */
+export function detailStopHeading(status: TaskStatus, errorCode: ErrorCode | null, retrievalForm: string | null | undefined): string {
+  if (frontMatterOnlyBlock(status, errorCode, retrievalForm)) return FRONT_MATTER_BLOCK_TEXT
+  return errorCode ? errors[errorCode] : statuses[status]
+}
+/** Diagnostic stop line. A missing error stays 「无已记录错误」; the front-matter block uses the same plain sentence as the detail page. */
+export function diagnosticStopText(status: TaskStatus, errorCode: ErrorCode | null, retrievalForm: string | null | undefined): string {
+  if (frontMatterOnlyBlock(status, errorCode, retrievalForm)) return FRONT_MATTER_BLOCK_TEXT
+  if (!errorCode) return '无已记录错误'
+  return errors[errorCode] ?? errorCode
+}
+/** `full_text` / `front_matter` / null (a row frozen before the field existed). */
+export function retrievalFormText(value: string | null | undefined): string {
+  if (value === 'full_text') return '正文'
+  if (value === 'front_matter') return '仅题录+摘要'
+  if (value == null) return '未记录'
+  return value
 }
 export function attemptText(a: Accounting) { return a.verification === 'verified' && a.upstream_attempts_used !== null ? `${a.upstream_attempts_used} 次` : `至少 ${a.observed_upstream_attempts} 次，实际次数未知` }
 export function safeSourceUrl(value: string): string | null { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
