@@ -49,6 +49,25 @@ def test_the_prompt_version_on_calls_is_the_one_the_frozen_snapshot_pins():
     assert config_snapshot(Settings.from_env())["prompts"]["version"] == PaperPromptBuilder().version
 
 
+def test_the_decision_prompt_carries_the_label_criteria_not_just_the_names():
+    """四个标签的**判据**必须进提示词（Issue #78）。
+
+    术语表把「数量、对象、因果性或范围有重要差异」划给部分支持，把相矛盾定义为「对应条件下
+    有明确相反证据」；提示词此前只列了四个名字，模型只能用自己的先验去切，而它的先验在这条
+    边界上与项目判据不一致——两轮实测 10 次最终标签里有 3 次越界，且**全部同向**
+    （期望部分支持 → 答相矛盾）。判据不在提示词里，换上游也修不好，所以这里直接钉住它：
+    删掉判据（回到只列四个名字）就变红，而不是等下一轮付费复测才发现。
+    """
+
+    prompt = PaperPromptBuilder().decision("论断原句", [], final_only=True)
+
+    assert "部分支持＝" in prompt and "相矛盾＝" in prompt, "四个标签名之外必须有判据"
+    assert "数量、对象、因果性或范围" in prompt, "部分支持的判据要写明四个维度"
+    assert "没搜到支持证据不能推出相矛盾" in prompt, "相矛盾不能被「未检索到」冒充"
+    assert "数量或范围上的出入归部分支持" in prompt, "边界规则要写成一句可照做的优先级"
+    assert "证据不足＝" in prompt and "检索已完成" in prompt, "证据不足要有可判定的条件"
+
+
 def test_the_dispatched_provider_model_is_part_of_the_frozen_digest(monkeypatch):
     """冻结快照必须钉住真正被派发的模型（Issue #68）。
 
