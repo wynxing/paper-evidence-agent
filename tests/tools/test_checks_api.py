@@ -51,6 +51,7 @@ def record_source(services, task_id):
         license="CC BY", version="1",
         access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash="a" * 64,
+        retrieval_form="full_text",
     ))
 
 
@@ -63,6 +64,7 @@ def index_context_source(services, task_id, version_hash="a" * 64, jats=CONTEXT_
         license="CC BY", version="1",
         access_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/",
         retrieved_at="2026-10-01T00:00:00+00:00", version_hash=version_hash,
+        retrieval_form="full_text",
     )
     snapshot = SourceSnapshot(source_id=source_id, metadata=record, jats_bytes=jats)
     paragraphs = parse_jats(snapshot)

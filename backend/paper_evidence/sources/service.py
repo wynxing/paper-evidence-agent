@@ -106,6 +106,7 @@ class SourceService:
             access_url=access_url,
             retrieved_at=datetime.now(timezone.utc).isoformat(),
             version_hash=version_hash,
+            retrieval_form=record.retrieval_form,
         )
         return SourceSnapshot(
             source_id=f"{pmcid}:{version_hash}", metadata=source, jats_bytes=record.jats_bytes,

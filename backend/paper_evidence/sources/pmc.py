@@ -39,6 +39,17 @@ _FRONT_MATTER_PREFIX = "pmc_fm"
 #: The OAI-PMH error PMC returns when a record is outside the Open Access subset.
 _CANNOT_DISSEMINATE = "cannotDisseminateFormat"
 
+#: What the frozen record actually contains, recorded rather than inferred.
+#:
+#: ``pmc_fm`` is a degradation, and until Issue #60 the only trace of it was the
+#: ``<request metadataPrefix>`` echoed inside the stored bytes — a BLOB nothing reads.
+#: Nothing downstream could tell a body from an abstract, so the "judge on the
+#: article, never on the abstract" rule had no reliable predicate to enforce. The
+#: values are part of the public ``SourceRecord`` contract, so they are written out
+#: literally and may not drift.
+RETRIEVAL_FULL_TEXT = "full_text"
+RETRIEVAL_FRONT_MATTER = "front_matter"
+
 #: The ``<article>`` start tag. The lookahead keeps ``<article-meta>``,
 #: ``<article-id>`` and ``<article-title>`` out of the match — they are children
 #: of the element being located, never a second record.
@@ -119,6 +130,10 @@ class PmcRecord:
     #: hash it as the version-identifying bytes; hashing the envelope would make the
     #: digest change on every fetch (Issue #67).
     jats_bytes: bytes
+    #: ``full_text`` or ``front_matter`` — what ``jats_bytes`` actually contains.
+    #: ``front_matter`` means title + abstract + permissions and no ``<body>``, so a
+    #: judgement must not rest on it as if it were the article (Issue #60).
+    retrieval_form: str
 
 
 class PmcClient:
@@ -192,8 +207,10 @@ class PmcClient:
         (``_article_bytes``); the OAI envelope is deliberately not part of it.
         """
 
+        retrieval_form = RETRIEVAL_FULL_TEXT
         root, content = await self._get_record(pmcid, _FULL_TEXT_PREFIX, deadline)
         if _oai_error_code(root) == _CANNOT_DISSEMINATE:
+            retrieval_form = RETRIEVAL_FRONT_MATTER
             root, content = await self._get_record(pmcid, _FRONT_MATTER_PREFIX, deadline)
         if _oai_error_code(root) is not None:
             raise ContractError(ErrorCode.SOURCE_UNAVAILABLE, "PMC 未返回该标识的记录")
@@ -222,9 +239,14 @@ class PmcClient:
         license_name = classify_license(license_text, href)
         language = article.get(_XML_LANG) or article.get("lang")
         version = article.get("version")
+        jats = _article_bytes(content)
         return PmcRecord(
             pmcid=pmcid, doi=doi, title=title, license=license_name, language=language,
-            version=version, jats_bytes=_article_bytes(content),
+            version=version, jats_bytes=jats,
+            # Recorded from which request actually produced the bytes, not inferred
+            # from the parsed sections: a short real article and a front-matter-only
+            # record look alike once parsed, so `section` is not a predicate (Issue #60).
+            retrieval_form=retrieval_form,
         )
 
 

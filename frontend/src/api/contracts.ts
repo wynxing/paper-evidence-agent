@@ -145,6 +145,8 @@ export interface SourceRecord {
   access_url: string | null
   retrieved_at: string | null
   version_hash: string | null
+  /** What was frozen: `full_text`, or `front_matter` (title + abstract only, a documented degradation). Null only for rows frozen before the field existed. */
+  retrieval_form: string | null
 }
 export interface EvidenceCandidate extends Omit<Evidence, 'validation'> { round: 0 | 1; rank: number; entered_context: boolean }
 export interface ContextParagraph {

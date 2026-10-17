@@ -11,7 +11,7 @@ const config: RunConfigPreview = { profile: 'daily', config_digest: 'demo-config
 const DEMO_CLAIM = '构造论断：该干预在所有人群中均具有持续效果。'
 export function demoSource(doi: string): SourcePreview { return { doi, title: '构造文献 · 干预与观察指标的示例研究', authors: ['模拟作者 A', '模拟作者 B'], year: null } }
 /** Constructed bibliography. The stored record is the identity the checker resolved; nothing here is real. */
-function demoRecord(doi: string): SourceRecord { return { title: demoSource(doi).title, authors: ['模拟作者 A', '模拟作者 B'], year: 2024, doi, pmcid: null, license: null, version: 'constructed', access_url: null, retrieved_at: null, version_hash: 'demo-source' } }
+function demoRecord(doi: string): SourceRecord { return { title: demoSource(doi).title, authors: ['模拟作者 A', '模拟作者 B'], year: 2024, doi, pmcid: null, license: null, version: 'constructed', access_url: null, retrieved_at: null, version_hash: 'demo-source', retrieval_form: 'full_text' } }
 /** Constructed clock: fixed offsets from the row's creation time, so the timeline is stable across runs. */
 const DEMO_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0)
 const stamp = (offsetSeconds: number) => new Date(DEMO_EPOCH_MS + offsetSeconds * 1000).toISOString()

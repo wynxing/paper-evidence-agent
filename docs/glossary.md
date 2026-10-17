@@ -125,7 +125,7 @@ API 的 `decision` 与诊断包的 `decision` 使用同一结构，取对象或 
 
 保存作者提交的 claim 原字符串；仅以去除首尾空白的临时副本检查是否为空，不改写持久化输入。冻结正文解析器版本：解析 JATS 实体并按文档顺序展开段内文本，段内 Unicode 空白连续串变成一个 U+0020 并去除段首尾空白；不改大小写、引号、连字符或 Unicode 规范形式。保存得到的段落文本作为逐字校验基准，不宣称它等同 XML 字节序列。section 取段落外层 `<sec>` 的标题；没有外层 `<sec>` 的段落取所在容器的名字——`abstract` 或 `body`，摘要里的段落不得标成 `body`。quote 不再 trim 或模糊归一化，必须是该冻结段落文本的精确子串；位置以 Unicode 码点的半开区间表示，重复匹配保存全部区间并在界面消歧。
 
-source.version_hash 为取得的 JATS 记录原始字节 SHA-256，取的是 OAI-PMH 响应里 `<article>` 子树的字节，不含 XML 声明与整层 OAI 信封（信封带每次请求都不同的 `<responseDate>`，对它取哈希得到的是「这一次请求」而不是「这个版本」，见 Issue #67）；paragraph_hash 为冻结段落文本 UTF-8 字节 SHA-256。本地 paragraph_id 统一为 `p:<source-key>:<version-hash>:<parser-version>:<ordinal>`：source-key 为标准化 PMCID，parser-version 使用无冒号的不可变版本标识，ordinal 为冻结解析器按正文文档顺序输出段落的从 1 开始序号（包括未进入索引的正文段落）。原生 JATS id 另存为来源定位提示，不能替代本地版本绑定。无原生定位链接时打开保存的获许可版本并定位，limitations 提示本地定位不保证远端网页锚点。
+source.version_hash 为取得的 JATS 记录原始字节 SHA-256，取的是 OAI-PMH 响应里 `<article>` 子树的字节，不含 XML 声明与整层 OAI 信封（信封带每次请求都不同的 `<responseDate>`，对它取哈希得到的是「这一次请求」而不是「这个版本」，见 Issue #67）；source.retrieval_form 记录本次冻结的是哪种形态，取 `full_text`（含 `<body>` 正文）或 `front_matter`（题录 + 摘要 + 许可，含 PMC 对非 OA 记录回落 `pmc_fm` 的情形），没有记录的旧行取 `null`，读作「未知、不得当作正文」，不看 `section` 反推（短正文与仅有摘要的记录解析后长得一样）；paragraph_hash 为冻结段落文本 UTF-8 字节 SHA-256。本地 paragraph_id 统一为 `p:<source-key>:<version-hash>:<parser-version>:<ordinal>`：source-key 为标准化 PMCID，parser-version 使用无冒号的不可变版本标识，ordinal 为冻结解析器按正文文档顺序输出段落的从 1 开始序号（包括未进入索引的正文段落）。原生 JATS id 另存为来源定位提示，不能替代本地版本绑定。无原生定位链接时打开保存的获许可版本并定位，limitations 提示本地定位不保证远端网页锚点。
 
 同一来源字节和解析器版本须得到同一序列；来源字节、段落顺序或解析器变化产生新的命名空间，旧 ID 只能解析到旧快照，快照不存在则明确无法复现，不重定向到新段落。解析器版本不允许原地重定义；重复 ID 或相同哈希对应不同内容时阻止索引并报 CONTENT_INCOMPLETE。多个证据各自验证，evidence 数组的展示顺序不改变逐项校验门槛，不用一条真实摘录替其他证据背书。
 
