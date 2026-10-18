@@ -91,3 +91,7 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 - [协作规范](AGENTS.md)
 
 [研究评测](docs/evaluation.md)属于后续研究，运行时代码不得依赖其中的数据集。
+
+## 许可证
+
+本项目以 [MIT 许可证](LICENSE) 发布。选择与生效日期记在[决策记录](docs/decisions.md#交稿期补充2026-10-18)。

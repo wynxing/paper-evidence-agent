@@ -12,7 +12,7 @@
 | `frontend/src/` | Vue 静态页面和 API 客户端类型声明。 |
 | `tests/tools/`、`tests/boundary/`、`tests/retrieval/`、`tests/session/` | HTTP 接口与契约、领域规则与存储生命周期、检索与切分、有界工作流的检查。 |
 
-模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型传输和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`），Langfuse 导出尚未接入。
+模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型传输和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`）；轨迹只写本地，Langfuse 出站导出不接入（见[决策记录](decisions.md#交稿期补充2026-10-18)）。
 
 存储、检索、提示词和轨迹端口是同步接口。异步 worker 通过 `asyncio.to_thread` 调用它们，不在事件循环上直接执行 SQLite 或 FTS5。来源、模型和工作流的进程内 `deadline` 是 `time.monotonic()` 的绝对时刻；写入任务的 `claimed_at`/`deadline_at` 用墙钟 UTC 秒，因为这两个值会由 API 进程读取，进程内单调时钟跨重启没有意义。
 
@@ -45,6 +45,15 @@ OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应
 前端在 `frontend/src/api/contracts.ts` 声明 API 类型，并由 `frontend/src/api/http.ts` 的 `createHttpClient`（基于 `fetch`，对每个响应按 `validation.ts` 校验契约）实现真实调用；工作台据此提交任务、轮询进度，并按需读取原始输入与证据上下文。另有一条 `--mode demo`（`npm run dev:demo`）的构造数据客户端 `frontend/src/api/demo.ts`，仅供离线演示，界面明确标注「模拟数据 · 仅本页内存」，不与真实接口混用。
 
 `POST /api/checks` 与 `POST /api/checks/{id}/retry` 的 `authorized_recipients` 必须是已配置接收方（主接收方加 `PAPER_EVIDENCE_FALLBACK_RECIPIENTS`）的子集，越界返回 `400`；范围内的名单只能收窄，收窄后的授权随其摘要写入任务快照，不会扩大预览范围。诊断导出不复用模型接收方：`recipient` 必须等于运行配置里的已授权观测/诊断接收方，否则返回 `400`；该标识由 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`（兼容旧名 `PAPER_EVIDENCE_LANGFUSE_RECIPIENT`）配置，未配置时不产生 `consented` 导出。来源使用范围不允许时仍返回 `409`。
+
+## 本地轨迹与诊断包
+
+交稿与验收只用本地轨迹和诊断包，不做 Langfuse 出站导出（见[决策](decisions.md#交稿期补充2026-10-18)）。
+
+- **轨迹写在哪**：`tracing/local.py` 的 `LocalTraceRecorder` 把每个阶段的 `ExecutionRecord`（阶段、工具名、状态、耗时、轮次、错误码）写进任务同一个 SQLite；它就是诊断包里的 `execution`。模型侧每次请求另表记账，出现在诊断包的 `model_calls` 里。两者按任务与 `request_id` 对账，不需要外部服务。
+- **怎么取**：`GET /api/checks/{id}/diagnostic-packet` 返回 `redacted` 包（`quote` 换成占位符，公开书目字段保留）；`POST /api/checks/{id}/diagnostic-export` 返回 `consented` 包，要求运行配置里已授权 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`，未配置时返回 `400`。
+- **为什么没有 Langfuse**：`config_snapshot().observability.langfuse_enabled` 与 `diagnosis/projector.py` 的 `_default_observability` 都是 `false`，`tracing/` 只有本地实现。接出站导出要改 `config_digest`、观测授权面并单独处理导出失败告警，属功能定型之外的新增功能。
+- **留档截图取哪三处**：详情页的执行记录（阶段 / 工具 / 耗时 / 错误码）、诊断包的 `run_config.observability`（其中 `langfuse_enabled` 为 `false`）、诊断包的 `model_calls`（每次请求的 `request_id`、轮次与修复归属）。三处都是本地记录，截图不依赖外部账号或服务。
 
 ## Worker 入口
 
