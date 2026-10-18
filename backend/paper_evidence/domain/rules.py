@@ -19,7 +19,10 @@ __all__ = [
     "CRITERIA_VERSION",
     "DEFINITIVE_LABELS",
     "FAILED_CODES",
+    "FRONT_MATTER_BLOCK_CODE",
     "RECOVERY_BACKOFF_SECONDS",
+    "RETRIEVAL_FRONT_MATTER",
+    "RETRIEVAL_FULL_TEXT",
     "blocked_label",
     "criteria_reference",
     "criteria_snapshot",
@@ -62,6 +65,20 @@ BLOCKED_PROCESSING_CODES = frozenset({
 })
 
 BLOCKED_CODES = BLOCKED_SOURCE_CODES | BLOCKED_PROCESSING_CODES
+
+#: ``SourceRecord.retrieval_form`` 的两个取值（Issue #60）。定义在领域层而不是连接器里：
+#: 判定前的完整性守卫要读它，而 ``graph`` 不该依赖 ``sources``。取值是对外契约的一部分，
+#: 写在这里的字面量就是唯一来源，不得在别处再写一份。
+RETRIEVAL_FULL_TEXT = "full_text"
+RETRIEVAL_FRONT_MATTER = "front_matter"
+
+#: 只取回到题录+摘要时，任务以哪个错误码阻断（Issue #28 方案 A）。
+#:
+#: PRD 把「基于摘要判定全文不支持」列为明令禁止的负例，摘要里的缺失与否定都不是正文的
+#: 缺失与否定，所以这种来源不进检索与判定。复用 ``CONTENT_INCOMPLETE`` 而不是新开一个码：
+#: 它已在 ``BLOCKED_PROCESSING_CODES`` 里，语义就是「已取得内容但不完整」；新码要同步
+#: 术语表、前端文案与导出白名单，而这里没有新语义。
+FRONT_MATTER_BLOCK_CODE = ErrorCode.CONTENT_INCOMPLETE
 
 FAILED_CODES = frozenset({
     ErrorCode.RETRIEVAL_FAILED,

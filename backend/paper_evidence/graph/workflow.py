@@ -26,9 +26,16 @@ from paper_evidence.agents.output import (
     parse_query_output,
 )
 from paper_evidence.domain import ContractError, ErrorCode, ResultLabel, Stage, TaskStatus
-from paper_evidence.domain.contracts import Decision, Evidence, EvidenceCandidate
+from paper_evidence.domain.contracts import Decision, Evidence, EvidenceCandidate, SourceRecord
 from paper_evidence.domain.records import Paragraph, TaskInput
-from paper_evidence.domain.rules import DEFINITIVE_LABELS, BudgetState, blocked_label, terminal_status
+from paper_evidence.domain.rules import (
+    DEFINITIVE_LABELS,
+    FRONT_MATTER_BLOCK_CODE,
+    RETRIEVAL_FRONT_MATTER,
+    BudgetState,
+    blocked_label,
+    terminal_status,
+)
 from paper_evidence.domain.text import quote_spans
 from paper_evidence.graph.support import StageRecorder
 from paper_evidence.models.gateway import ModelFailure
@@ -107,6 +114,9 @@ class BoundedWorkflow:
                        snapshot.open_locations)
         await self._db(self._store.update_source, task.id, snapshot.metadata)
         await self._db(self._store.index_paragraphs, snapshot.source_id, paragraphs)
+        # Freeze first, refuse to judge second: the frontend shows the retrieval form
+        # of a blocked task, which requires the source row to exist (Issue #92).
+        await self._refuse_front_matter(recorder, snapshot.metadata)
         return snapshot.source_id, preview
 
     async def _stage(self, recorder, stage: Stage, tool: str, coro):
@@ -119,6 +129,27 @@ class BoundedWorkflow:
             raise
         await recorder.ok(stage, tool, started)
         return result
+
+    async def _refuse_front_matter(self, recorder, source: SourceRecord) -> None:
+        """A front-matter-only record blocks instead of being judged (Issue #28).
+
+        PMC answers ``cannotDisseminateFormat`` for records outside its Open Access
+        subset and the connector then falls back to ``pmc_fm``, which carries title,
+        abstract and licence but **no ``<body>``**. Judging on that abstract is the
+        negative example 产品需求 forbids ("用摘要代替全文来声称全文没有相关证据"),
+        and an abstract's silence is not the article's silence. So the task stops
+        here: ``BLOCKED`` with ``CONTENT_INCOMPLETE``, no model call, no label.
+
+        The gate runs *after* the source is frozen on purpose: the frozen row keeps
+        the ``retrieval_form`` that says why the task stopped, and the detail view
+        renders「仅题录+摘要」from it instead of guessing from sections.
+        """
+
+        if source.retrieval_form != RETRIEVAL_FRONT_MATTER:
+            return
+        started = time.monotonic()
+        await recorder.fail(Stage.FETCH, "retrieval_form_gate", FRONT_MATTER_BLOCK_CODE, started)
+        raise ContractError(FRONT_MATTER_BLOCK_CODE, "来源只返回题录与摘要，没有正文，按规则不做判定")
 
     # ------------------------------------------------------------------ verify
 
