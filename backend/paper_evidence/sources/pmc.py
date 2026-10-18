@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 
 from paper_evidence.domain import ContractError, ErrorCode
+from paper_evidence.domain.rules import RETRIEVAL_FRONT_MATTER, RETRIEVAL_FULL_TEXT
 from paper_evidence.sources.http import Fetcher, classify_status
 
 __all__ = ["PmcRecord", "PmcClient", "classify_license"]
@@ -39,16 +40,15 @@ _FRONT_MATTER_PREFIX = "pmc_fm"
 #: The OAI-PMH error PMC returns when a record is outside the Open Access subset.
 _CANNOT_DISSEMINATE = "cannotDisseminateFormat"
 
-#: What the frozen record actually contains, recorded rather than inferred.
-#:
-#: ``pmc_fm`` is a degradation, and until Issue #60 the only trace of it was the
-#: ``<request metadataPrefix>`` echoed inside the stored bytes — a BLOB nothing reads.
-#: Nothing downstream could tell a body from an abstract, so the "judge on the
-#: article, never on the abstract" rule had no reliable predicate to enforce. The
-#: values are part of the public ``SourceRecord`` contract, so they are written out
-#: literally and may not drift.
-RETRIEVAL_FULL_TEXT = "full_text"
-RETRIEVAL_FRONT_MATTER = "front_matter"
+# What the frozen record actually contains is recorded, not inferred (Issue #60).
+#
+# ``pmc_fm`` is a degradation, and until #60 the only trace of it was the
+# ``<request metadataPrefix>`` echoed inside the stored bytes — a BLOB nothing reads.
+# Nothing downstream could tell a body from an abstract, so the "judge on the
+# article, never on the abstract" rule had no reliable predicate to enforce.
+# ``RETRIEVAL_FULL_TEXT`` / ``RETRIEVAL_FRONT_MATTER`` now live in ``domain.rules``:
+# the workflow's pre-judgement gate reads the same two names, so a literal here
+# would be a second source of truth (Issue #28).
 
 #: The ``<article>`` start tag. The lookahead keeps ``<article-meta>``,
 #: ``<article-id>`` and ``<article-title>`` out of the match — they are children
@@ -216,8 +216,10 @@ class PmcClient:
         client fall back to ``pmc_fm`` front matter. The fallback
         is a degradation, not an equivalent: it carries title, abstract and
         permissions but **no ``<body>``**, so the caller cannot read it as the
-        article. Whether such a record should block instead of being judged on
-        an abstract is a product decision, not one this connector can make.
+        article. The record is still returned — with ``retrieval_form`` set to
+        ``front_matter`` — because the workflow has to freeze it before it can
+        report why the task stopped; refusing to judge on it is the workflow's
+        gate (Issue #28), not this connector's.
 
         The returned ``jats_bytes`` is the ``<article>`` subtree, byte-exact
         (``_article_bytes``); the OAI envelope is deliberately not part of it.

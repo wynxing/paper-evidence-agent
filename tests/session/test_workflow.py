@@ -10,7 +10,7 @@ import pytest
 from paper_evidence.agents.output import OutputError, parse_decision_output
 from paper_evidence.agents.prompts import PaperPromptBuilder
 from paper_evidence.config import Settings
-from paper_evidence.domain import ContractError, ErrorCode, TaskStatus
+from paper_evidence.domain import ContractError, ErrorCode, Stage, TaskStatus
 from paper_evidence.domain.contracts import (
     Limits,
     ModelAttempt,
@@ -71,8 +71,9 @@ class FakeResolver:
 
 
 class FakeFulltext:
-    def __init__(self, error=None):
+    def __init__(self, error=None, retrieval_form="full_text"):
         self.error = error
+        self.retrieval_form = retrieval_form
 
     async def fetch(self, doi, deadline):
         if self.error:
@@ -80,7 +81,7 @@ class FakeFulltext:
         record = SourceRecord(title="Demo", authors=["Ada Lovelace"], year=2026, doi=doi, pmcid="PMC123",
                               license="CC BY", version="1", access_url="https://example.org/a",
                               retrieved_at="2026-10-01T00:00:00+00:00", version_hash=VERSION_HASH,
-                              retrieval_form="full_text")
+                              retrieval_form=self.retrieval_form)
         return SourceSnapshot(source_id=f"PMC123:{VERSION_HASH}", metadata=record, jats_bytes=JATS)
 
 
@@ -348,6 +349,47 @@ def test_source_block_is_a_blocked_task_with_the_compatible_label(store, setting
     assert detail.label == "无法核验来源"
     assert detail.error_code is ErrorCode.SOURCE_UNAVAILABLE
     assert detail.decision is None
+
+
+def test_a_front_matter_only_source_blocks_before_retrieval_and_judgement(store, settings):
+    """只取回到题录+摘要时阻断，不进检索、不进判定（Issue #28 方案 A）。
+
+    ``pmc_fm`` 只有题录、摘要与许可，没有 ``<body>``；据摘要判「不支持」正是产品需求
+    明令禁止的负例。判据取「**一条模型请求都没发**」，而不是「最终标签恰好是证据不足」：
+    后者与被攻破的实现无法区分，因为摘要里搜不到证据也会落成证据不足。
+
+    这个替身故意让 ``jats_bytes`` 仍带完整 ``<body>``，只改记录的取回形态：守卫要看的是
+    **这次请求实际拿到什么**（``retrieval_form``），不能由解析结果反推——短正文与仅题录
+    的记录解析后长得一样（#60 同一条理由）。
+    """
+
+    detail, gateway = run(store, settings, [QUERIES, final_json()],
+                          fulltext=FakeFulltext(retrieval_form="front_matter"))
+
+    assert detail.status is TaskStatus.BLOCKED
+    assert detail.error_code is ErrorCode.CONTENT_INCOMPLETE
+    assert detail.label == "无法核验来源"
+    assert detail.decision is None
+    assert detail.stage is Stage.FETCH
+    assert gateway.calls == [], "阻断必须发生在生成检索词之前"
+
+
+def test_a_blocked_front_matter_source_keeps_its_retrieval_form(store, settings):
+    """阻断也要先把来源冻结下来：详情页据 ``retrieval_form`` 说明「仅题录+摘要」（#92）。
+
+    先冻结、后拒绝判定是有意为之：若在连接器里直接抛错，来源不落在任何任务上，
+    界面与诊断包就没有字段可读，只剩一句错误文案。
+    """
+
+    detail, _ = run(store, settings, [QUERIES, final_json()],
+                    fulltext=FakeFulltext(retrieval_form="front_matter"))
+
+    assert detail.source is not None, "来源必须随任务落库，否则取回形态无处可读"
+    assert detail.source.retrieval_form == "front_matter"
+    assert detail.source.version_hash == VERSION_HASH, "冻结的仍是这个版本，不是这次请求"
+    steps = store.execution("t1")
+    assert (steps[-1].stage, steps[-1].tool, steps[-1].status) == (
+        Stage.FETCH, "retrieval_form_gate", "error")
 
 
 def test_total_deadline_fails_as_task_timeout(store, settings):

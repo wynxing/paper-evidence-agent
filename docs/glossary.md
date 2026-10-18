@@ -27,7 +27,7 @@
 | 无法核验来源 | 来源身份、可用范围、许可或内容完整性阻断 | `BLOCKED` |
 | 执行失败 | 外部请求、模型输出或执行预算导致任务未能完成，不是学术判断 | `FAILED` |
 
-BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案和报告按 error_code 显示具体原因。除下述三个处理类错误码外，其余映射为 BLOCKED 的 DOI/元数据、来源身份/许可/全文可用性问题列为来源阻断；REGISTRATION_AGENCY_UNSUPPORTED、SOURCE_LANGUAGE_UNSUPPORTED、CONTENT_INCOMPLETE 列为处理范围或内容阻断。后者分别显示「注册机构暂不支持」「正文语言暂不支持」「内容不完整或无法解析」，不能暗示来源身份错误或一律要求换论文。CONTENT_INCOMPLETE 还须在本地诊断区分源内容缺失、解析失败、图表能力不足；无法确定时明确未知，不猜成程序缺陷。
+BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案和报告按 error_code 显示具体原因。除下述三个处理类错误码外，其余映射为 BLOCKED 的 DOI/元数据、来源身份/许可/全文可用性问题列为来源阻断；REGISTRATION_AGENCY_UNSUPPORTED、SOURCE_LANGUAGE_UNSUPPORTED、CONTENT_INCOMPLETE 列为处理范围或内容阻断。后者分别显示「注册机构暂不支持」「正文语言暂不支持」「内容不完整或无法解析」，不能暗示来源身份错误或一律要求换论文。CONTENT_INCOMPLETE 还须在本地诊断区分源内容缺失、解析失败、图表能力不足；无法确定时明确未知，不猜成程序缺陷。只取得题录与摘要（PMC 的 `pmc_fm` 回落）同属此码：PRD 明令禁止用摘要代替全文，所以这种来源不进入检索与判定，诊断里靠 `SourceRecord.retrieval_form` 区分（「文本与定位契约」），不靠文案猜。
 
 首次检索为空只是中间观察，不直接生成最终标签。外部评审意见不改写任务状态；模型标签不等于客观真值。
 
@@ -82,7 +82,7 @@ BLOCKED 的 label 保留兼容的「无法核验来源」，但界面主文案�
 | `LICENSE_UNKNOWN` | 许可缺失或冲突，无法确认 | `BLOCKED` |
 | `LICENSE_UNSUPPORTED` | 许可已知但不在首版 CC0/CC BY 支持范围，不代表该许可非法 | `BLOCKED` |
 | `SOURCE_LANGUAGE_UNSUPPORTED` | 正文不是可确认的英文版本，或必要内容混有未支持语言；不翻译全文补结论 | `BLOCKED` |
-| `CONTENT_INCOMPLETE` | 已取得内容但 JATS 不完整、解析失败，或所需图表无法可靠读取 | `BLOCKED` |
+| `CONTENT_INCOMPLETE` | 已取得内容但 JATS 不完整、解析失败，或所需图表无法可靠读取；或只取回到题录+摘要、没有正文（`retrieval_form=front_matter`，不进检索与判定） | `BLOCKED` |
 | `RETRIEVAL_FAILED` | 程序构造 MATCH 后仍发生数据库/索引查询错误，立即停止，不消耗模型修复预算 | `FAILED` |
 | `RETRIEVAL_EMPTY` | 完成允许的补充检索仍无候选，生成「证据不足」及检索限制 | `COMPLETED` |
 | `UPSTREAM_TIMEOUT` | 请求超时，恢复未成功 | `FAILED` |
