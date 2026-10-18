@@ -35,7 +35,7 @@ DEFAULT_MODEL_BASE_URL = "http://127.0.0.1:4000"
 # 提示词版本：冻结配置快照的 ``prompts.version`` 与每次模型调用记账的
 # ``ModelCall.prompt_version`` 都取本常量（``agents`` 从这里导入）。改提示词文本
 # 只需在这里发布新版本，不会出现记账版本与真实提示词不符（Issue #62）。
-PROMPT_VERSION = "paper-prompt-0.2.1"
+PROMPT_VERSION = "paper-prompt-0.2.3"
 PARSER_VERSION = "jats-0.1.0"
 RETRIEVAL_CONTEXT_LIMIT = 12
 DATA_SCOPE = ["claim_text", "candidate_open_paragraphs"]

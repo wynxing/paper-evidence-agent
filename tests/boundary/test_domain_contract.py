@@ -1,9 +1,11 @@
 """Keep the declared vocabulary aligned with the authoritative glossary."""
 
 import importlib
+import json
 import re
 import sys
 import tomllib
+from xml.etree import ElementTree
 
 import pytest
 from importlib.metadata import PackageNotFoundError, requires
@@ -12,12 +14,13 @@ from pathlib import Path
 from paper_evidence.agents.prompts import PaperPromptBuilder
 from paper_evidence.config import Settings, config_snapshot
 from paper_evidence.domain import ContractError, ErrorCode, ResultLabel, Stage, TaskStatus
-from paper_evidence.domain.contracts import default_limits, default_timeouts
+from paper_evidence.domain.contracts import SourcePreview, default_limits, default_timeouts
 from paper_evidence.domain.records import Paragraph, TaskInput
 from paper_evidence.storage.ports import TaskRepository
 from paper_evidence.worker.__main__ import main
 
 ROOT = Path(__file__).resolve().parents[2]
+SAMPLES = ROOT / "tests/functional/samples"
 
 
 def test_enums_match_glossary():
@@ -47,6 +50,103 @@ def test_the_prompt_version_on_calls_is_the_one_the_frozen_snapshot_pins():
     """
 
     assert config_snapshot(Settings.from_env())["prompts"]["version"] == PaperPromptBuilder().version
+
+
+def test_the_decision_prompt_carries_the_label_criteria_not_just_the_names():
+    """四个标签的**判据**必须进提示词（Issue #78）。
+
+    术语表把「数量、对象、因果性或范围有重要差异」划给部分支持，把相矛盾定义为「对应条件下
+    有明确相反证据」；提示词此前只列了四个名字，模型只能用自己的先验去切，而它的先验在这条
+    边界上与项目判据不一致——两轮实测 10 次最终标签里有 3 次越界，且**全部同向**
+    （期望部分支持 → 答相矛盾）。判据不在提示词里，换上游也修不好，所以这里直接钉住它：
+    删掉判据（回到只列四个名字）就变红，而不是等下一轮付费复测才发现。
+    """
+
+    prompt = PaperPromptBuilder().decision("论断原句", [], final_only=True)
+
+    assert "部分支持＝" in prompt and "相矛盾＝" in prompt, "四个标签名之外必须有判据"
+    assert "数量、对象、因果性或范围" in prompt, "部分支持的判据要写明四个维度"
+    assert "没搜到支持证据不能推出相矛盾" in prompt, "相矛盾不能被「未检索到」冒充"
+    assert "方向一致、只在数量或范围上有出入时，归部分支持" in prompt, (
+        "边界规则要写成一句可照做的优先级，且必须带上「方向一致」这个前提："
+        "只写「数量或范围的出入归部分支持」会把「论断说降一半、原文说没有下降」也判成部分支持"
+    )
+    assert "明确否定论断的对象或因果关系时，取相矛盾" in prompt, (
+        "部分支持的判据把对象、因果性也算进去了，相矛盾必须有一条对称的出口，"
+        "否则漂移只会从一边挪到另一边"
+    )
+    assert "证据不足＝" in prompt and "检索已完成" in prompt, "证据不足要有可判定的条件"
+
+
+def _shared_run(left: str, right: str, size: int = 5) -> str:
+    """返回 ``left`` 与 ``right`` 共有的任意一段 ``size`` 字连续文本，没有则返回空串。"""
+    left = " ".join(left.split())
+    right = " ".join(right.split())
+    if len(left) < size or len(right) < size:
+        return ""
+    windows = {right[index : index + size] for index in range(len(right) - size + 1)}
+    for index in range(len(left) - size + 1):
+        window = left[index : index + size]
+        if window in windows:
+            return window
+    return ""
+
+
+def _rendered_prompts() -> dict[str, str]:
+    """用中立占位材料渲染全部提示词模板，避免把被测样本的话自己带进来。"""
+
+    builder = PaperPromptBuilder()
+    paragraph = Paragraph(
+        paragraph_id="p:prompt-guard:0000000:jats-0.0.0:1",
+        source_id="prompt-guard",
+        section="结果",
+        ordinal=1,
+        text="占位段落正文，只用来观察模板本身。",
+        paragraph_hash="0" * 64,
+        source_url="https://example.org/prompt-guard",
+    )
+    source = SourcePreview(doi="10.1000/prompt.guard", title="占位文献", authors=["占位作者"], year=2020)
+    return {
+        "decision": builder.decision("占位论断", [paragraph], final_only=False),
+        "decision_final_only": builder.decision("占位论断", [paragraph], final_only=True),
+        "query_generation": builder.query_generation("占位论断", source),
+    }
+
+
+def _sample_texts(sample: dict) -> set[str]:
+    """样本里凡是被拿来当「题面」的话：论断、期望摘录、以及冻结正文的每个段落。"""
+
+    texts = {sample["claim"], *sample.get("quotes", {}).values()}
+    for paragraph in ElementTree.fromstring(sample["jats"]).iter("p"):
+        texts.add("".join(paragraph.itertext()))
+    return {text for text in texts if text}
+
+
+def test_the_prompt_examples_are_not_taken_from_the_functional_samples():
+    """提示词里的示例不得取自功能样本（Issue #78 的评审意见）。
+
+    提示词示例与被测样本重合时，复测答对有两种解释同时成立：判据生效，或模型认出了例子。
+    PR #89 的第一版正是这个形态——示例里的「所有年龄组」「约 50%」逐项对应
+    `partial_population_scope` / `partial_quantity`，而这两例恰好是第三轮复测里仅剩的
+    两条失败点，于是那一轮复测对「判据有没有用」没有解释力。判据本身也没法证明：模型照着
+    例子认题同样能答对。
+
+    判据取「连续 5 个字符相同」。中文里 5 字重合几乎不可能是巧合，而当时的污染形态
+    「所有年龄组」正好 5 字，这条能挡住；同时不会因为「证据」「论断」这类两三个字的
+    通用词误报。改动提示词示例或改动样本都会重新触发它，逼两边不要互相抄。
+    """
+
+    prompts = _rendered_prompts()
+    collisions = []
+    for path in sorted(SAMPLES.glob("*.json")):
+        sample = json.loads(path.read_text(encoding="utf-8"))
+        for name, prompt in prompts.items():
+            for text in _sample_texts(sample):
+                shared = _shared_run(prompt, text)
+                if shared:
+                    collisions.append(f"{path.name} ↔ {name}: 「{shared}」")
+
+    assert not collisions, "提示词与功能样本重合，那一轮复测会失去解释力：\n" + "\n".join(collisions)
 
 
 def test_the_dispatched_provider_model_is_part_of_the_frozen_digest(monkeypatch):
