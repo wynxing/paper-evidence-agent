@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Workbench } from '../state/workbench.ts'
-import { anchorWindow, attemptText, elapsedText, errors, evidenceContextNotice, evidenceContextSummary, isTerminal, originalClaim, originalDoi, paragraphRole, safeSourceUrl, stampText, stages, statuses } from '../state/model.ts'
+import { anchorWindow, attemptText, detailStopHeading, elapsedText, evidenceContextNotice, evidenceContextSummary, isTerminal, originalClaim, originalDoi, paragraphRole, retrievalFormText, safeSourceUrl, stampText, stages, statuses } from '../state/model.ts'
 import StatusBadge from '../components/StatusBadge.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 const { work } = defineProps<{ work: Workbench }>()
@@ -35,7 +35,7 @@ function quoteContext(paragraphId: string) {
       <div class="section-heading"><p class="eyebrow">核验记录</p><button class="text-button desktop-panel-toggle" :aria-expanded="panel" @click="panel = !panel">{{ panel ? '收起证据' : '查看证据' }}</button></div>
       <h1>核验意见</h1><div class="result-line"><StatusBadge :status="d.status" :label="d.status === 'COMPLETED' ? d.label : null" /><span class="small muted">{{ statuses[d.status] }} · {{ stages[d.stage] }}</span></div>
       <section class="form-section"><h2>论断原句</h2><p class="claim-text">{{ claim || '该任务未记录论断原句。' }}</p>
-        <h3>被引文献</h3><template v-if="bibliography"><p>{{ bibliography.title ?? '题名未提供' }}</p><p class="small muted">{{ bibliography.authors.join('、') || '作者未提供' }} · {{ bibliography.year ?? '年份未知' }}</p><p v-if="d.source?.pmcid || d.source?.license" class="small muted">{{ d.source?.pmcid ? `PMC ${d.source.pmcid}` : '' }}<template v-if="d.source?.pmcid && d.source?.license"> · </template>{{ d.source?.license ? `许可 ${d.source.license}` : '' }}</p></template><p v-else class="muted">该任务未记录文献信息。</p><p class="mono small muted">{{ doi || 'DOI 暂未提供' }}</p>
+        <h3>被引文献</h3><template v-if="bibliography"><p>{{ bibliography.title ?? '题名未提供' }}</p><p class="small muted">{{ bibliography.authors.join('、') || '作者未提供' }} · {{ bibliography.year ?? '年份未知' }}</p><p v-if="d.source?.pmcid || d.source?.license" class="small muted">{{ d.source?.pmcid ? `PMC ${d.source.pmcid}` : '' }}<template v-if="d.source?.pmcid && d.source?.license"> · </template>{{ d.source?.license ? `许可 ${d.source.license}` : '' }}</p><p v-if="d.source" class="small muted">取回形态：{{ retrievalFormText(d.source.retrieval_form) }}</p></template><p v-else class="muted">该任务未记录文献信息。</p><p class="mono small muted">{{ doi || 'DOI 暂未提供' }}</p>
       </section>
       <details class="disclosure" @toggle="opened($event, work.loadSubmittedInput)"><summary>原始提交</summary>
         <p v-if="work.submittedInputLoading.value" class="help">正在读取原始提交…</p>
@@ -44,7 +44,7 @@ function quoteContext(paragraphId: string) {
         <p v-else-if="!work.submittedInputLoading.value" class="help">尚未读取。<button class="text-button" @click="work.loadSubmittedInput(true)">读取原始提交</button></p>
       </details>
       <section v-if="!terminal" class="form-section"><h2>{{ d.cancel_requested ? '正在取消' : statuses[d.status] }}</h2><p>当前阶段：{{ stages[d.stage] }}</p><p class="small muted">创建于 {{ stampText(d.created_at) || '未知' }} · 开始于 {{ stampText(d.started_at) || '尚未开始' }}</p><p class="small muted">排队用时：{{ queued }} · 执行用时：{{ ran }}</p><p v-if="d.status === 'QUEUED'" class="help">排队中的任务需要后端 worker 常驻运行才会开始执行，例如 python -m paper_evidence.worker --loop。</p><button :disabled="work.busy.value || d.cancel_requested" @click="work.cancel">取消任务</button><p class="help">取消不保证撤回已发出的请求或费用。</p></section>
-      <section v-else-if="d.status !== 'COMPLETED'" class="form-section"><h2>{{ d.error_code ? errors[d.error_code] : statuses[d.status] }}</h2><p class="muted">{{ d.status === 'BLOCKED' ? '核验在来源或处理阶段停止，尚未形成学术判断。' : '这是执行状态，不能据此判断文献是否支持论断。' }}</p><p v-if="d.error_code" class="mono small">{{ d.error_code }}</p><p class="small muted">停止阶段：{{ stages[d.stage] }}</p></section>
+      <section v-else-if="d.status !== 'COMPLETED'" class="form-section"><h2>{{ detailStopHeading(d.status, d.error_code, d.source?.retrieval_form) }}</h2><p class="muted">{{ d.status === 'BLOCKED' ? '核验在来源或处理阶段停止，尚未形成学术判断。' : '这是执行状态，不能据此判断文献是否支持论断。' }}</p><p v-if="d.error_code" class="mono small">{{ d.error_code }}</p><p class="small muted">停止阶段：{{ stages[d.stage] }}</p></section>
       <section v-if="d.status === 'COMPLETED' && d.decision" class="form-section decision-section"><h2>{{ d.label === '证据不足' ? '本次未获得足够证据' : 'Paper agent 的核验意见' }}</h2><p>{{ d.decision.rationale }}</p>
         <template v-if="d.decision.supported_parts.length"><h3>支持的部分</h3><ul><li v-for="(part, i) in d.decision.supported_parts" :key="i">{{ part }}</li></ul></template>
         <template v-if="d.decision.scope_differences.length"><h3>范围差异</h3><ul><li v-for="(part, i) in d.decision.scope_differences" :key="i">{{ part }}</li></ul></template>

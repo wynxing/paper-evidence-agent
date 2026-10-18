@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHttpClient, ClientError, pollingShouldStop } from '../src/api/http.ts'
 import { createDemoClient } from '../src/api/demo.ts'
-import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute, originalClaim, originalDoi, elapsedText, stampText } from '../src/state/model.ts'
+import { createDraft, invalidateDraft, canSubmit, isTerminal, attemptText, safeSourceUrl, parseRoute, originalClaim, originalDoi, elapsedText, stampText, errors, detailStopHeading, diagnosticStopText, retrievalFormText, FRONT_MATTER_BLOCK_TEXT, frontMatterOnlyBlock } from '../src/state/model.ts'
 import { createPoller, POLL_INTERVAL_MS } from '../src/state/poller.ts'
-import { validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel, validateCheckInput, validateEvidenceContext } from '../src/api/validation.ts'
+import { coherentOutcome, validateDetail, validatePacket, validateConfig, validateSource, validateHistory, validateCancel, validateCheckInput, validateEvidenceContext } from '../src/api/validation.ts'
 import { projectPacket } from '../src/api/export.ts'
 
 test('invalid successful responses and transport failures remain distinct', async () => {
@@ -248,6 +248,61 @@ test('schema 2.2 packets exported before provider_model still validate', async (
   assert.equal(validatePacket(packet), true)
   packet.model_calls[0].attempts[0].provider_model = 1
   assert.equal(validatePacket(packet), false)
+})
+test('a front-matter block is an accepted terminal state, and an unrecorded retrieval form still validates', async () => {
+  const c = createDemoClient()
+  const rows = await c.listChecks()
+  let front = null
+  let license = null
+  for (const row of rows) {
+    const detail = await c.getCheck(row.id)
+    if (detail.error_code === 'CONTENT_INCOMPLETE' && detail.source?.retrieval_form === 'front_matter') front = detail
+    if (detail.error_code === 'LICENSE_UNKNOWN') license = detail
+  }
+  assert.ok(front)
+  assert.equal(front.status, 'BLOCKED')
+  assert.equal(front.label, '无法核验来源')
+  assert.equal(front.decision, null)
+  assert.equal(frontMatterOnlyBlock(front.status, front.error_code, front.source.retrieval_form), true)
+  assert.equal(coherentOutcome(front), true)
+  assert.equal(validateDetail(front), true)
+  assert.equal(detailStopHeading(front.status, front.error_code, front.source.retrieval_form), FRONT_MATTER_BLOCK_TEXT)
+  assert.equal(diagnosticStopText(front.status, front.error_code, front.source.retrieval_form), FRONT_MATTER_BLOCK_TEXT)
+  assert.equal(retrievalFormText('front_matter'), '仅题录+摘要')
+  assert.equal(retrievalFormText('full_text'), '正文')
+  const packet = await c.getDiagnosticPacket(front.id)
+  assert.equal(packet.source.retrieval_form, 'front_matter')
+  assert.equal(packet.decision, null)
+  assert.equal(packet.label, '无法核验来源')
+  assert.equal(coherentOutcome(packet), true)
+  assert.equal(validatePacket(packet), true)
+  assert.equal(projectPacket(packet).source.retrieval_form, 'front_matter')
+  // Other CONTENT_INCOMPLETE, including a row that never recorded the form, keeps the glossary line.
+  assert.equal(errors.CONTENT_INCOMPLETE, '内容不完整或无法解析；具体原因尚未知')
+  const other = structuredClone(front)
+  other.source.retrieval_form = 'full_text'
+  assert.equal(validateDetail(other), true)
+  assert.equal(detailStopHeading(other.status, other.error_code, other.source.retrieval_form), errors.CONTENT_INCOMPLETE)
+  const legacy = structuredClone(front)
+  legacy.source.retrieval_form = null
+  assert.equal(coherentOutcome(legacy), true)
+  assert.equal(validateDetail(legacy), true)
+  assert.equal(retrievalFormText(legacy.source.retrieval_form), '未记录')
+  assert.equal(detailStopHeading(legacy.status, legacy.error_code, legacy.source.retrieval_form), errors.CONTENT_INCOMPLETE)
+  const legacyPacket = structuredClone(packet)
+  legacyPacket.source.retrieval_form = null
+  assert.equal(coherentOutcome(legacyPacket), true)
+  assert.equal(validatePacket(legacyPacket), true)
+  assert.equal(retrievalFormText(null), '未记录')
+  // The blocked label is not an academic judgment, and a decision is not part of this terminal state.
+  assert.equal(coherentOutcome({ ...front, label: '证据不足' }), false)
+  assert.equal(coherentOutcome({ ...front, label: '支持' }), false)
+  assert.equal(coherentOutcome({ status: 'BLOCKED', label: '无法核验来源', error_code: 'CONTENT_INCOMPLETE', decision: { label: '支持' } }), false)
+  assert.equal(coherentOutcome({ status: 'BLOCKED', label: '无法核验来源', error_code: 'CONTENT_INCOMPLETE', decision: null }), true)
+  assert.ok(license)
+  assert.equal(license.source.retrieval_form, 'full_text')
+  assert.equal(detailStopHeading(license.status, license.error_code, license.source.retrieval_form), errors.LICENSE_UNKNOWN)
+  assert.equal(diagnosticStopText('COMPLETED', null, 'full_text'), '无已记录错误')
 })
 test('the bibliography reaches the exported packet', async () => {
   const c = createDemoClient()
