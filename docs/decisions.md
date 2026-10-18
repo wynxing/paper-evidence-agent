@@ -12,3 +12,12 @@
 | 第二轮评审 | [评论](https://github.com/wynxing/paper-evidence-agent/pull/2#issuecomment-5870514101) 中的预算互斥、判据归属、报告对账、具体阻断文案纳入契约；不新增预算终态，不复制其他项目的回放状态机。 |
 
 PR #1 的旧设计保留供追溯，不能混入本 PR 的实现规范。本次不关闭旧 PR、不选择项目许可证、不自动合并；整合后由维护者处理旧 PR 归属。版本快照必须可取回，不能只留哈希。
+
+## 交稿期补充（2026-10-18）
+
+本节记录交稿期（#93）做出的两项范围决定，与上表的历史选择并存：上表写「本次不选择项目许可证」记录的是 PR #1 合并时的处置，已被本节取代。
+
+| 决策 | 选择与原因 |
+| --- | --- |
+| 许可证 | 采用 **MIT**。仓库根目录新增 `LICENSE`，README 的「许可证」一节指向它。理由：交稿要求包含开源许可证；MIT 最短、最常见，与「本机运行、作者自行部署」的定位一致，不引入专利授权等需要额外说明的条款。版权行写「Paper Evidence Agent contributors」，不写个人真名。 |
+| 观测范围 | 交稿与验收**只使用本地轨迹与诊断包**，不接入 Langfuse 出站导出。`tracing/local.py` 只写本地 `ExecutionRecord`；`config_snapshot().observability.langfuse_enabled` 与 `diagnosis/projector.py` 的默认值都是 `false`。理由：出站导出属功能定型之后的新增功能，会改 `config_digest`、观测授权与配置面，且导出失败要单独告警；而诊断包（`execution` + `model_calls`）已经能回答「哪一步观察到什么」。要接 Langfuse 时另开决策，不在本次交稿范围内。 |
