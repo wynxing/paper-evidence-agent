@@ -1,0 +1,475 @@
+{
+  "schema": 2,
+  "case_id": "PMC13648980",
+  "provenance": {
+    "doi": "10.1371/journal.pone.0360355",
+    "pmcid": "PMC13648980",
+    "title": "Comparison of two repetitive peripheral magnetic stimulation protocols for upper trapezius myofascial pain syndrome: A randomized trial",
+    "authors": [
+      "Thitirut Jongutchariya",
+      "Surapa Hangsaphruek",
+      "Thawisak Wongkiratimethawi",
+      "Jittima Saengsuwan"
+    ],
+    "year": 2026,
+    "license": "CC BY",
+    "version": "1",
+    "access_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13648980/"
+  },
+  "article_sha256": "0f499e84af1c2c881885150f7612533f64a4d1f41eeda25edf3bfa57caf2dddd",
+  "response_sha256": "0f499e84af1c2c881885150f7612533f64a4d1f41eeda25edf3bfa57caf2dddd",
+  "version_hash": "0f499e84af1c2c881885150f7612533f64a4d1f41eeda25edf3bfa57caf2dddd",
+  "response_bytes": 190535,
+  "paragraph_count": 56,
+  "paragraphs": [
+    {
+      "ordinal": 1,
+      "section": "Background",
+      "paragraph_hash": "e67a8a523fef912e7a529ae21616e74ff43af134f5618622e81df63b780a14a3",
+      "text_length": 409,
+      "native_jats_id": null,
+      "preview": "Upper trapezius myofascial pain syndrome (MPS) is a common contributor to chronic neck pain and functional limitations. "
+    },
+    {
+      "ordinal": 2,
+      "section": "Methods",
+      "paragraph_hash": "903ce558ac4516c19998f443e1bcb38cae2b71d614ae60e8ec7fb6811d5c22ac",
+      "text_length": 824,
+      "native_jats_id": null,
+      "preview": "This single-centre, assessor-blinded randomized trial enrolled adults aged 18–55 years with chronic (≥ 3 months) upper t"
+    },
+    {
+      "ordinal": 3,
+      "section": "Results",
+      "paragraph_hash": "1fc68671b24a483d48b5a78f4d3fb409a91d8a7682bd6086bf0fd9672abf11a0",
+      "text_length": 816,
+      "native_jats_id": null,
+      "preview": "Of 83 individuals screened, 66 were randomized (33 per group) and included in the ITT analysis. Baseline characteristics"
+    },
+    {
+      "ordinal": 4,
+      "section": "Conclusions",
+      "paragraph_hash": "19147c1def26804b777a9eaab454681f1b839698675575f42cc4f80d492c62cf",
+      "text_length": 378,
+      "native_jats_id": null,
+      "preview": "Both treatment durations were associated with significant short-term improvements in pain intensity, pressure pain thres"
+    },
+    {
+      "ordinal": 5,
+      "section": "Trial registration",
+      "paragraph_hash": "baa5febfee008d0e2172688327dba0df7d3e8e4635578349093e8e100f363c19",
+      "text_length": 159,
+      "native_jats_id": null,
+      "preview": "This trial was prospectively registered with the Thai Clinical Trials Registry (Ref: TCTR20250929011; https://www.thaicl"
+    },
+    {
+      "ordinal": 6,
+      "section": "Introduction",
+      "paragraph_hash": "33b19ffd0b1aee9f4176f884a63515e5f5c5b28db7810a7cc8f59659598d11fb",
+      "text_length": 1073,
+      "native_jats_id": null,
+      "preview": "Neck pain is one of the leading causes of years lived with disability (YLDs) worldwide, with Global Burden of Disease an"
+    },
+    {
+      "ordinal": 7,
+      "section": "Introduction",
+      "paragraph_hash": "3ed437954fd21c68d436d10d212511f82e11db2efb7b422ee90c689e5b9795e1",
+      "text_length": 1348,
+      "native_jats_id": null,
+      "preview": "The upper trapezius muscle is particularly vulnerable to overload because of its continuous low-level activation during "
+    },
+    {
+      "ordinal": 8,
+      "section": "Introduction",
+      "paragraph_hash": "db7fbc03a1dc734d2ac9c4d8a18071947a65bb8e896614d62f95142ebd9ac141",
+      "text_length": 843,
+      "native_jats_id": null,
+      "preview": "Current management of upper trapezius MPS primarily focuses on trigger-point deactivation and correction of contributing"
+    },
+    {
+      "ordinal": 9,
+      "section": "Introduction",
+      "paragraph_hash": "97ca07bf02419f77e711807b63842ecc0005a98d590b0311cc3eaca2c31aadc5",
+      "text_length": 1447,
+      "native_jats_id": null,
+      "preview": "Given the inconsistent and often transient benefits of conventional therapies, increasing attention has been directed to"
+    },
+    {
+      "ordinal": 10,
+      "section": "Introduction",
+      "paragraph_hash": "c33442daefd0459d635524ae0ef675bb36230cb338d7a9ebef32e039e5038edd",
+      "text_length": 1340,
+      "native_jats_id": null,
+      "preview": "Despite accumulating evidence supporting the clinical utility of rPMS, implementation in routine rehabilitation remains "
+    },
+    {
+      "ordinal": 11,
+      "section": "Study design",
+      "paragraph_hash": "2a0b671703c7116415c4a74d690e6865e888b2928f10d7d2ee32f5e4ee1bdbd3",
+      "text_length": 1692,
+      "native_jats_id": null,
+      "preview": "This single-centre, single-assessor–blinded randomized trial was conducted at the Department of Rehabilitation Medicine,"
+    },
+    {
+      "ordinal": 12,
+      "section": "Ethics statement",
+      "paragraph_hash": "5e4368473e0d12be3820be62f917220f4909462c3bb585c67c238356d5b7e744",
+      "text_length": 431,
+      "native_jats_id": null,
+      "preview": "The study protocol was approved by the Hat Yai Hospital Research Ethics Committee (approval No. HYH EC 061-68-01) on 14 "
+    },
+    {
+      "ordinal": 13,
+      "section": "Participants",
+      "paragraph_hash": "7b6e7a84afcddfb0feafb65f534bed642ac86d97e0063daf621b1c3be7c08070",
+      "text_length": 753,
+      "native_jats_id": null,
+      "preview": "Participants diagnosed with upper trapezius MPS according to the diagnostic criteria described by Simons et al. [6,11,31"
+    },
+    {
+      "ordinal": 14,
+      "section": "Participants",
+      "paragraph_hash": "3066c7726bf00f4eee5d93f798804079161addde509138d9ad7e9332ce55182c",
+      "text_length": 733,
+      "native_jats_id": null,
+      "preview": "Inclusion criteria were: (1) men or women aged 18–55 years; (2) chronic pain duration ≥ 3 months; (3) baseline pain inte"
+    },
+    {
+      "ordinal": 15,
+      "section": "Sample size",
+      "paragraph_hash": "01fce9246068f11af78ac9df6717f5f302f95647669ca0a1d4f5f8394dba0a12",
+      "text_length": 2334,
+      "native_jats_id": null,
+      "preview": "Sample size was determined for a two-arm randomized trial using an analysis of covariance (ANCOVA) model with baseline a"
+    },
+    {
+      "ordinal": 16,
+      "section": "Randomization and blinding",
+      "paragraph_hash": "4855ad30a5d485b2702adc6fcc88c6ecd1832248dcb7aa37d51504924bdce36c",
+      "text_length": 1226,
+      "native_jats_id": null,
+      "preview": "Participants were randomly assigned in a 1:1 ratio to two intervention groups using permuted block randomization with a "
+    },
+    {
+      "ordinal": 17,
+      "section": "Interventions",
+      "paragraph_hash": "47585fb5a7914a41a43f8ba7b170af77ed1a4b7fd21bc1313aa7ecfd76a852dd",
+      "text_length": 172,
+      "native_jats_id": null,
+      "preview": "All participants received standardized conservative management in addition to their assigned rPMS protocol to ensure con"
+    },
+    {
+      "ordinal": 18,
+      "section": "Standard treatment.",
+      "paragraph_hash": "198242ac6a465c09e8c05e807751ba58831d58b2b3bf11d90f1c4b39b1ff0b25",
+      "text_length": 305,
+      "native_jats_id": null,
+      "preview": "Participants received ergonomic education focused on daily activity modification and were instructed in a standardized b"
+    },
+    {
+      "ordinal": 19,
+      "section": "Repetitive peripheral magnetic stimulation (rPMS).",
+      "paragraph_hash": "0c351ff49a4f9ca71a16a9d6f35b66f402259e0c7f20843cba361edec6c160fb",
+      "text_length": 299,
+      "native_jats_id": null,
+      "preview": "rPMS was administered once weekly for four consecutive weeks using a high-intensity peripheral magnetic stimulator (Salu"
+    },
+    {
+      "ordinal": 20,
+      "section": "Repetitive peripheral magnetic stimulation (rPMS).",
+      "paragraph_hash": "e33801a2a53d7cd58da7d2755f3bc9c3a5feed7d6b367a9deb0afd4c83555348",
+      "text_length": 796,
+      "native_jats_id": null,
+      "preview": "Participants assigned to Protocol A (15 minutes) received a two-phase stimulation sequence with progressive intensity ti"
+    },
+    {
+      "ordinal": 21,
+      "section": "Repetitive peripheral magnetic stimulation (rPMS).",
+      "paragraph_hash": "4e305fdb9a99e199cf74a27668792246ea124f3e052adffd1c3a81c6bc234505",
+      "text_length": 417,
+      "native_jats_id": null,
+      "preview": "Participants assigned to Protocol B (10 minutes) received an identical stimulation sequence with a shorter scanning phas"
+    },
+    {
+      "ordinal": 22,
+      "section": "Rescue medication.",
+      "paragraph_hash": "2a8e647cf79100af18263d724c465984daaa256470fe383bf391e7c6861a0925",
+      "text_length": 343,
+      "native_jats_id": null,
+      "preview": "Participants were instructed to use nonpharmacological strategies, including stretching or cold application, to manage a"
+    },
+    {
+      "ordinal": 23,
+      "section": "Adverse event monitoring.",
+      "paragraph_hash": "6d9865b054c01ccf405be8af2509a44fc120d7ed8581ea8d95c7cf8402ba836c",
+      "text_length": 229,
+      "native_jats_id": null,
+      "preview": "Participants were routinely asked about treatment-related symptoms during each treatment session, including discomfort d"
+    },
+    {
+      "ordinal": 24,
+      "section": "Baseline data collection",
+      "paragraph_hash": "21d69f5c10466ab15620bab2a8002a011cb3b5fe33ebc9689b8c6dada24410d0",
+      "text_length": 752,
+      "native_jats_id": null,
+      "preview": "After enrolment, comprehensive baseline demographic and clinical data were recorded. A board-certified rehabilitation ph"
+    },
+    {
+      "ordinal": 25,
+      "section": "Primary outcome.",
+      "paragraph_hash": "a6005a93fa7035356ccb5458eb7cd8610b8a6a3840b60e08d9ec628d78365b93",
+      "text_length": 904,
+      "native_jats_id": null,
+      "preview": "1. Pain Intensity (Visual Analog Scale, VAS); Pain intensity was assessed using the VAS, a validated instrument consisti"
+    },
+    {
+      "ordinal": 26,
+      "section": "Secondary outcomes.",
+      "paragraph_hash": "f276b1ba9809be73c57278fb5100ceb5dd4343bdf50faa80208729760082dd29",
+      "text_length": 872,
+      "native_jats_id": null,
+      "preview": "2. Pressure Pain Threshold (PPT); PPT was used to quantify mechanical pain sensitivity and was defined as the minimum pr"
+    },
+    {
+      "ordinal": 27,
+      "section": "Secondary outcomes.",
+      "paragraph_hash": "1e64ef684f5ea38fb66ee2ca71a17ef11a5935660e57121e690a35cf7ef43bca",
+      "text_length": 720,
+      "native_jats_id": null,
+      "preview": "3. Neck Disability Index (NDI); Neck-related disability was assessed using the Thai version of the Neck Disability Index"
+    },
+    {
+      "ordinal": 28,
+      "section": "Data collection and follow-up",
+      "paragraph_hash": "ddfe4c6848463d5d8bfffa033a437746420c72b0635392d5d4ff7fd05923e552",
+      "text_length": 424,
+      "native_jats_id": null,
+      "preview": "Pain-related outcomes, including the VAS, PPT, and the NDI, were assessed by a blinded outcome assessor who was not invo"
+    },
+    {
+      "ordinal": 29,
+      "section": "Statistical analysis",
+      "paragraph_hash": "7ee581f07948c867db013a0b6be5feadae6a66006e036a4a34d145cd2c8ee019",
+      "text_length": 2840,
+      "native_jats_id": null,
+      "preview": "All analyses were conducted using Stata version 18.0 (StataCorp LLC, College Station, TX, USA) according to the ITT prin"
+    },
+    {
+      "ordinal": 30,
+      "section": "Participant flow",
+      "paragraph_hash": "976859c93cda9522a576d1cf03c662632de381c389b40f79ee2b9d851ceb4132",
+      "text_length": 1621,
+      "native_jats_id": null,
+      "preview": "A total of 83 individuals were screened for eligibility, of whom 17 were excluded (10 were unable to complete consecutiv"
+    },
+    {
+      "ordinal": 31,
+      "section": "Baseline characteristics",
+      "paragraph_hash": "7cc27f5c082ca8f58ab1bd552bed5355454be8148e6d1b99978825439a27c835",
+      "text_length": 993,
+      "native_jats_id": null,
+      "preview": "Baseline sociodemographic and clinical characteristics were comparable between groups, with no significant differences o"
+    },
+    {
+      "ordinal": 32,
+      "section": "Baseline characteristics",
+      "paragraph_hash": "181c20546788c9be9335a77a46d2623290ee8f0566f3d21d564f7c71ef34f38a",
+      "text_length": 236,
+      "native_jats_id": null,
+      "preview": "BMI, body mass index; IQR, interquartile range; MPS, myofascial pain syndrome; NDI, Neck Disability Index; PPT, pressure"
+    },
+    {
+      "ordinal": 33,
+      "section": "Baseline characteristics",
+      "paragraph_hash": "0298cd8438da8bbb3cb90916b64b3b2b70f88dd194c1d8178ffc3692c7298ab1",
+      "text_length": 43,
+      "native_jats_id": null,
+      "preview": "aFisher’s exact test. bMann–Whitney U test."
+    },
+    {
+      "ordinal": 34,
+      "section": "Pain intensity (VAS).",
+      "paragraph_hash": "3d5a432dbc0d8aad3a79f62645af0c162026482380c1ec2a951727a8706b8776",
+      "text_length": 1134,
+      "native_jats_id": null,
+      "preview": "There was no significant between-group difference at baseline (β = −0.12, 95% CI −0.74–0.50; p = 0.70) (Table 2). The gr"
+    },
+    {
+      "ordinal": 35,
+      "section": "Pain intensity (VAS).",
+      "paragraph_hash": "cc5e7d3990f5ac2959f654c515ed42a7c81bdf7d0b7a0dc8396d54c17e068e3c",
+      "text_length": 337,
+      "native_jats_id": null,
+      "preview": "β coefficients were estimated from linear mixed-effects models (LMMs) with restricted maximum likelihood (REML) estimati"
+    },
+    {
+      "ordinal": 36,
+      "section": "Pain intensity (VAS).",
+      "paragraph_hash": "20a5b66a224f4b910086c440cf6bdf9df80a795402ff01aa0ee96432311eee05",
+      "text_length": 252,
+      "native_jats_id": null,
+      "preview": "Values are adjusted marginal means (95% CI) estimated from LMMs with REML estimation. Models included fixed effects for "
+    },
+    {
+      "ordinal": 37,
+      "section": "Pain intensity (VAS).",
+      "paragraph_hash": "2bb793d05a52a1917aedb4e045c7c4344f55d6133d20ffaef0f83423fbfb8459",
+      "text_length": 298,
+      "native_jats_id": null,
+      "preview": "Values represent adjusted between-group contrasts derived from model-based marginal means estimated from LMMs with REML "
+    },
+    {
+      "ordinal": 38,
+      "section": "Pain intensity (VAS).",
+      "paragraph_hash": "a30145f85c05479c6ece45d7cc862715ca7aa1d9f47c2e20fe244a6d13262303",
+      "text_length": 564,
+      "native_jats_id": null,
+      "preview": "Adjusted marginal means were estimated from LMMs with REML estimation under the intention-to-treat (ITT) principle. Erro"
+    },
+    {
+      "ordinal": 39,
+      "section": "Pressure pain threshold (PPT).",
+      "paragraph_hash": "8c176c1d60e08fde6a4af210cb55e6c141a08f5ae9d794b09e34943f5edc3faf",
+      "text_length": 937,
+      "native_jats_id": null,
+      "preview": "There was no significant between-group difference at baseline (β = 0.17, 95% CI −0.66–1.00; p = 0.69) (Table 2). The gro"
+    },
+    {
+      "ordinal": 40,
+      "section": "Neck disability index (NDI).",
+      "paragraph_hash": "44c73c19cb7df07d9025795e8dfb5e409ee55682fcb9b2f543cdff39fc106117",
+      "text_length": 993,
+      "native_jats_id": null,
+      "preview": "There was no significant between-group difference at baseline (β = 0.39, 95% CI −2.12–2.91; p = 0.76) (Table 2). The gro"
+    },
+    {
+      "ordinal": 41,
+      "section": "Overall treatment effects",
+      "paragraph_hash": "07a6012f7c212696b1b128c1be6c926b781d4061b3914ebdcc388372b3d44c83",
+      "text_length": 617,
+      "native_jats_id": null,
+      "preview": "Across VAS, PPT, and NDI, LMMs demonstrated significant time effects, indicating substantial clinical improvements over "
+    },
+    {
+      "ordinal": 42,
+      "section": "Overall findings",
+      "paragraph_hash": "c47d98649e343ebb6cecfcce655f52f83af5388952878643f4ced8d294dc2b2f",
+      "text_length": 907,
+      "native_jats_id": null,
+      "preview": "This randomized trial evaluated whether extending rPMS session duration from 10 to 15 minutes improves clinical outcomes"
+    },
+    {
+      "ordinal": 43,
+      "section": "Overall findings",
+      "paragraph_hash": "ff78bd611999b354d972f90361ebdba15c1051cbf35c0c37c85d5efae110196a",
+      "text_length": 1269,
+      "native_jats_id": null,
+      "preview": "To our knowledge, this is the first randomized trial to directly compare two rPMS session durations for upper trapezius "
+    },
+    {
+      "ordinal": 44,
+      "section": "Overall findings",
+      "paragraph_hash": "4add7dc248efea05beca245e5400244a1a46101eb547119114c8bce185f92925",
+      "text_length": 2460,
+      "native_jats_id": null,
+      "preview": "The comparable outcomes observed between protocols may be explained by the shared structure of the focused TrP stimulati"
+    },
+    {
+      "ordinal": 45,
+      "section": "Overall findings",
+      "paragraph_hash": "f1de885c6f9e502fe245984bc906ec074e265ce7675662c80e264cd92de030b6",
+      "text_length": 915,
+      "native_jats_id": null,
+      "preview": "Irrespective of between-protocol differences, both treatment durations were associated with substantial and clinically m"
+    },
+    {
+      "ordinal": 46,
+      "section": "Implications for research.",
+      "paragraph_hash": "a7ea598851741c87df9bc9bc274ffc8bff235bfdf974bb3c9fbb9622201a0f45",
+      "text_length": 909,
+      "native_jats_id": null,
+      "preview": "The present findings suggest that extending total stimulation duration beyond a focused trigger-point stimulation phase "
+    },
+    {
+      "ordinal": 47,
+      "section": "Implications for clinical practice.",
+      "paragraph_hash": "2d9dbbe2a22ead27b587a949c1b25a0b0cf83c7d2964bc0f00dbcf8ab88e0d31",
+      "text_length": 1235,
+      "native_jats_id": null,
+      "preview": "In the broader context of non-invasive, nonpharmacological therapies for chronic pain [51], the findings of this study s"
+    },
+    {
+      "ordinal": 48,
+      "section": "Strengths and limitations.",
+      "paragraph_hash": "7492bd73d4ba3fa63ef074c66286cb9a96194eb6895200e2115c2ef402e0117d",
+      "text_length": 657,
+      "native_jats_id": null,
+      "preview": "This study employed a randomized trial design with assessor blinding, enhancing internal validity and minimizing detecti"
+    },
+    {
+      "ordinal": 49,
+      "section": "Strengths and limitations.",
+      "paragraph_hash": "8b2c37932ec47c01770ecfc022c883a42153492ed9cba0316e374d301a4004b9",
+      "text_length": 1798,
+      "native_jats_id": null,
+      "preview": "Several limitations should be acknowledged. First, a sham-controlled group was not included. Although a recent randomize"
+    },
+    {
+      "ordinal": 50,
+      "section": "Conclusions",
+      "paragraph_hash": "fb6a3c60b1de3b5e8c7ff4327abb9d9a809b63231f4711f02984763c4a9bd73b",
+      "text_length": 654,
+      "native_jats_id": null,
+      "preview": "Both treatment durations were associated with significant short-term improvements in pain intensity, pressure pain thres"
+    },
+    {
+      "ordinal": 51,
+      "section": "Supporting information",
+      "paragraph_hash": "e9a67bacc1bfad30a4ee4913ed9c012c24ceed1cf4a4eb79c3416e9b3139554a",
+      "text_length": 121,
+      "native_jats_id": null,
+      "preview": "This file contains the completed CONSORT checklist used to ensure transparent reporting of the randomized clinical trial"
+    },
+    {
+      "ordinal": 52,
+      "section": "Supporting information",
+      "paragraph_hash": "344bbb1ea889b2323f7442b4c14fa618380c984d636a3d663269db6f5c9b5c38",
+      "text_length": 6,
+      "native_jats_id": null,
+      "preview": "(DOCX)"
+    },
+    {
+      "ordinal": 53,
+      "section": "Supporting information",
+      "paragraph_hash": "8301ab12923c0d40f9e912255979a82930003892fdc81c6a964cb1fa8cb1a541",
+      "text_length": 163,
+      "native_jats_id": null,
+      "preview": "This document outlines the original protocol approved by the institutional ethics committee, including study design, int"
+    },
+    {
+      "ordinal": 54,
+      "section": "Supporting information",
+      "paragraph_hash": "344bbb1ea889b2323f7442b4c14fa618380c984d636a3d663269db6f5c9b5c38",
+      "text_length": 6,
+      "native_jats_id": null,
+      "preview": "(DOCX)"
+    },
+    {
+      "ordinal": 55,
+      "section": "Supporting information",
+      "paragraph_hash": "61ed1350bac034f1f6207eb74d2603578c6dd06471b11a32f02945248bd50aaf",
+      "text_length": 168,
+      "native_jats_id": null,
+      "preview": "This file contains the study protocol registered with the Thai Clinical Trials Registry (Ref: TCTR20250929011; https://w"
+    },
+    {
+      "ordinal": 56,
+      "section": "Supporting information",
+      "paragraph_hash": "e5eeb53147d99008359c271b86262c617f187255271b00423206511fe4efa2ce",
+      "text_length": 5,
+      "native_jats_id": null,
+      "preview": "(PDF)"
+    }
+  ],
+  "claims": []
+}
