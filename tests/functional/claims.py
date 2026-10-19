@@ -24,8 +24,10 @@ Two modes
 ``--live`` re-fetches each source and compares against the text the product would
 actually read. Without it the checker works from the committed inventory, which
 stores only a 120-character preview — so a quote that falls inside a *complete*
-preview is verified, and one that would land beyond the preview is reported as
-"cannot be checked offline" rather than silently passed.
+preview is verified, and one that may land beyond the preview is reported as a
+warning ("cannot be checked offline"), never as a pass and never as an error.
+An exit status of 0 therefore means "no structural or locational problem", not
+"every quote was verified"; only ``--live`` can say the latter.
 
 Usage::
 
@@ -52,7 +54,7 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from freeze_sources import PREVIEW_CHARS, SOURCES, load_all  # noqa: E402
 from paper_evidence.domain import ResultLabel  # noqa: E402
-from paper_evidence.domain.text import normalize_paragraph_text  # noqa: E402
+from paper_evidence.domain.text import normalize_paragraph_text, paragraph_hash  # noqa: E402
 
 #: The four labels a claim may carry, in the order reports print them.
 #:
@@ -82,6 +84,12 @@ DIMENSIONS = {
 CLAIM_KINDS = {"natural", "constructed"}
 
 DEADLINE_SECONDS = 120.0
+
+#: Marks a warning that means "offline, this quote was neither confirmed nor
+#: condemned". Warnings are plain strings like everything else here, so the count
+#: that the summary line prints is derived from this phrase; it is a constant so
+#: the producing and the counting side cannot drift apart.
+OFFLINE_UNCHECKED = "离线无法判定"
 
 
 def entry_claims(entry: dict) -> list | None:
@@ -232,20 +240,26 @@ def _check_dimensions(where: str, dimensions) -> list[str]:
     return problems
 
 
-def check_quotes(entry: dict, paragraphs: dict[int, str] | None = None) -> list[str]:
+def check_quotes(
+    entry: dict, paragraphs: dict[int, str] | None = None
+) -> tuple[list[str], list[str]]:
     """Locate every quote, against the live text when given, else against the inventory.
 
     ``paragraphs`` maps ``ordinal`` to the *normalised* paragraph text the parser
     produced from a fresh fetch. With ``None`` the check falls back to the committed
     inventory, where only a 120-character preview survives — enough to verify a quote
     inside a complete preview, never enough to declare one wrong just because it
-    lands past the cut.
+    lands past the cut. Those come back as warnings, not as an empty list: a run
+    that skipped a quote must not read as a run that checked it.
+
+    Returns ``(problems, warnings)``, like :func:`check_shape`.
     """
 
     case_id = entry.get("case_id", "<未命名来源>")
     claims = entry_claims(entry) or []
     by_ordinal = {item["ordinal"]: item for item in entry.get("paragraphs", [])}
     problems: list[str] = []
+    warnings: list[str] = []
 
     for index, claim in enumerate(claims, 1):
         if not isinstance(claim, dict):
@@ -269,7 +283,9 @@ def check_quotes(entry: dict, paragraphs: dict[int, str] | None = None) -> list[
             continue
 
         if paragraphs is None:
-            problems.extend(_locate_offline(where, ordinal, frozen, stored))
+            found, unsure = _locate_offline(where, ordinal, frozen, stored)
+            problems.extend(found)
+            warnings.extend(unsure)
             continue
 
         text = paragraphs.get(ordinal)
@@ -288,27 +304,40 @@ def check_quotes(entry: dict, paragraphs: dict[int, str] | None = None) -> list[
                 f"（最长可定位前缀 {found}/{len(frozen)} 字；改写过的句子不算定位）"
             )
 
-    return problems
+    return problems, warnings
 
 
-def _locate_offline(where: str, ordinal: int, quote: str, stored: dict) -> list[str]:
-    """What can be concluded from a preview, and nothing more."""
+def _locate_offline(
+    where: str, ordinal: int, quote: str, stored: dict
+) -> tuple[list[str], list[str]]:
+    """What can be concluded from a preview, and nothing more.
+
+    Three outcomes, kept apart on purpose: a miss inside a complete preview is a
+    definite error; a hit is a definite pass; anything the cut could have hidden is
+    an explicit "unchecked", because the one result this must never produce is a
+    silent pass.
+    """
 
     preview = stored.get("preview") or ""
     length = stored.get("text_length")
     if isinstance(length, int) and len(quote) > length:
         return [
             f"{where}: 引文（{len(quote)} 字）比 ordinal {ordinal} 整段（{length} 字）还长"
-        ]
+        ], []
     if isinstance(length, int) and length <= PREVIEW_CHARS:
         # The whole paragraph is inside the preview: this is a complete check.
         if quote not in preview:
-            return [f"{where}: 引文不能在 ordinal {ordinal} 里逐字定位（清单存了整段预览）"]
-        return []
+            return [f"{where}: 引文不能在 ordinal {ordinal} 里逐字定位（清单存了整段预览）"], []
+        return [], []
     if quote in preview:
-        return []
-    # The quote may straddle the 120-character cut; only --live can tell.
-    return []
+        return [], []
+    # The quote may straddle the character cut (or the inventory does not record a
+    # length at all); only --live can tell, so say so instead of passing.
+    size = f"整段 {length} 字" if isinstance(length, int) else "整段长度未记录"
+    return [], [
+        f"{where}: 引文不在清单的 {PREVIEW_CHARS} 字预览内（{size}），"
+        f"{OFFLINE_UNCHECKED}，用 --live 才能核对"
+    ]
 
 
 def _locatable_prefix(text: str, quote: str) -> int:
@@ -457,7 +486,9 @@ def check_entry(entry: dict, paragraphs: dict[int, str] | None = None):
     """Everything the checker can say about one source: (errors, warnings)."""
 
     errors, warnings = check_shape(entry)
-    errors.extend(check_quotes(entry, paragraphs))
+    quote_errors, quote_warnings = check_quotes(entry, paragraphs)
+    errors.extend(quote_errors)
+    warnings.extend(quote_warnings)
 
     if paragraphs is not None:
         by_ordinal = {item["ordinal"]: item for item in entry.get("paragraphs", [])}
@@ -469,19 +500,50 @@ def check_entry(entry: dict, paragraphs: dict[int, str] | None = None):
                     "先跑 freeze_sources.py --check 重新冻结"
                 )
                 continue
-            from paper_evidence.domain.text import paragraph_hash
-
             if paragraph_hash(text) != stored["paragraph_hash"]:
                 errors.append(
                     f"{entry.get('case_id')}: ordinal {ordinal} 的正文哈希与清单不一致"
                     "（正文漂移）；旧 claims 针对的是旧正文，先重新核对"
                 )
+        # The live text may also have *lost* a paragraph. Comparing only the live
+        # ordinals would stay quiet about it unless some claim happened to cite it.
+        for ordinal in by_ordinal:
+            if ordinal not in paragraphs:
+                errors.append(
+                    f"{entry.get('case_id')}: 清单里有 ordinal {ordinal}，线上没有"
+                    "（正文少了这一段）；引用它的 claim 指向了已不存在的段落，先重新核对"
+                )
     return errors, warnings
 
 
-def main() -> int:
+def _status(errors: list[str], warnings: list[str]) -> str:
+    """The word in the brackets of the per-source line.
+
+    "通过" alone must mean every quote was actually checked. Offline that is often
+    not true, so the count of unchecked quotes is printed in the same line rather
+    than left to a footnote the reader may skip.
+    """
+
+    if errors:
+        return f"{len(errors)} 处问题"
+    unchecked = _offline_unchecked(warnings)
+    return f"通过（含 {unchecked} 条{OFFLINE_UNCHECKED}）" if unchecked else "通过"
+
+
+def _offline_unchecked(warnings: list[str]) -> int:
+    return sum(OFFLINE_UNCHECKED in line for line in warnings)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="校验 #86 的人工 claims：形状、引文定位、覆盖")
-    parser.add_argument("--out", type=Path, default=SOURCES)
+    parser.add_argument(
+        "--sources",
+        "--out",
+        dest="sources",
+        type=Path,
+        default=SOURCES,
+        help="清单目录（--out 是旧名，与 freeze_sources.py 的写法保持一致）",
+    )
     parser.add_argument("--source", action="append", default=[], help="只校验指定 case_id，可重复")
     parser.add_argument("--live", action="store_true", help="重新取回来源，逐段验证引文")
     parser.add_argument(
@@ -489,11 +551,15 @@ def main() -> int:
         action="store_true",
         help="四类标签与五个维度任一为 0 即失败（验收门禁用，撰写期不要开）",
     )
-    args = parser.parse_args()
+    return parser
 
-    entries = load_all(args.out)
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    entries = load_all(args.sources)
     if not entries:
-        print(f"{args.out} 下没有清单", file=sys.stderr)
+        print(f"{args.sources} 下没有清单", file=sys.stderr)
         return 2
     if args.source:
         wanted = set(args.source)
@@ -503,31 +569,42 @@ def main() -> int:
             print(f"清单里没有：{'、'.join(sorted(missing))}", file=sys.stderr)
             return 2
 
-    work = Path(tempfile.mkdtemp(prefix="claims-check-"))
     failed = 0
-    for entry in entries:
-        paragraphs = None
-        if args.live:
-            try:
-                paragraphs = _fetch_paragraphs(entry["provenance"]["doi"], work)
-            except Exception as error:  # noqa: BLE001 - a fetch failure is a result too
-                print(f"[取回失败] {entry.get('case_id')}: {type(error).__name__}: {error}",
-                      file=sys.stderr)
+    unchecked_total = 0
+    # A TemporaryDirectory, not mkdtemp: the fetch leaves a database behind per
+    # source, and nothing outside this function reads it.
+    with tempfile.TemporaryDirectory(prefix="claims-check-") as work:
+        for entry in entries:
+            paragraphs = None
+            if args.live:
+                try:
+                    paragraphs = _fetch_paragraphs(
+                        entry["provenance"]["doi"], Path(work)
+                    )
+                except Exception as error:  # noqa: BLE001 - a fetch failure is a result too
+                    print(f"[取回失败] {entry.get('case_id')}: {type(error).__name__}: {error}",
+                          file=sys.stderr)
+                    failed += 1
+                    continue
+            errors, warnings = check_entry(entry, paragraphs)
+            count = len(entry_claims(entry) or [])
+            unchecked_total += _offline_unchecked(warnings)
+            print(f"[{_status(errors, warnings)}] {entry.get('case_id')}（{count} 条 claims）")
+            for line in errors:
+                print(f"    ✗ {line}")
+            for line in warnings:
+                print(f"    ! {line}")
+            if errors:
                 failed += 1
-                continue
-        errors, warnings = check_entry(entry, paragraphs)
-        count = len(entry_claims(entry) or [])
-        status = "通过" if not errors else f"{len(errors)} 处问题"
-        print(f"[{status}] {entry.get('case_id')}（{count} 条 claims）")
-        for line in errors:
-            print(f"    ✗ {line}")
-        for line in warnings:
-            print(f"    ! {line}")
-        if errors:
-            failed += 1
 
     print()
     print(render_coverage(entries))
+
+    if unchecked_total:
+        print(
+            f"\n注意：{unchecked_total} 条引文落在清单预览之外，离线模式下{OFFLINE_UNCHECKED}；"
+            "这些条目要跑 --live 才算核对过，不能用离线绿灯当验收依据。"
+        )
 
     gaps = coverage_gaps(entries) if args.require_coverage else []
     if gaps:

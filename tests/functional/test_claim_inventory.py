@@ -11,7 +11,10 @@ import pytest
 
 from claims import (
     JUDGEMENT_LABELS,
+    OFFLINE_UNCHECKED,
     SOURCES,
+    _status,
+    build_parser,
     check_entry,
     check_quotes,
     check_shape,
@@ -23,6 +26,13 @@ from claims import (
 from paper_evidence.domain.text import paragraph_hash
 
 TEXT = "The treatment reduced mortality by 20 percent in the adult cohort."
+
+
+def quotes(item, paragraphs=None) -> list[str]:
+    """The errors only: most cases ask whether a quote was condemned, not why not."""
+
+    problems, _ = check_quotes(item, paragraphs)
+    return problems
 
 
 def entry(claims, *, paragraphs=None, case_id="PMC_TEST") -> dict:
@@ -128,34 +138,34 @@ def test_a_paraphrased_quote_is_not_locatable():
     """This is the check the handwritten pass cannot do for itself."""
 
     paraphrased = claim(evidence={"ordinal": 1, "quote": "the treatment cut death rates by 20%"})
-    problems = check_quotes(entry([paraphrased]), {1: TEXT})
+    problems = quotes(entry([paraphrased]), {1: TEXT})
     assert any("逐字定位" in line for line in problems)
 
 
 def test_a_quote_that_differs_only_in_whitespace_is_locatable():
     wrapped = claim(evidence={"ordinal": 1, "quote": "reduced  mortality\nby 20 percent"})
-    assert not check_quotes(entry([wrapped]), {1: TEXT})
+    assert not quotes(entry([wrapped]), {1: TEXT})
 
 
 def test_a_quote_for_a_missing_ordinal_is_rejected():
-    problems = check_quotes(entry([claim(evidence={"ordinal": 9, "quote": TEXT})]), {1: TEXT})
+    problems = quotes(entry([claim(evidence={"ordinal": 9, "quote": TEXT})]), {1: TEXT})
     assert any("没有 ordinal 9" in line for line in problems)
 
 
 def test_a_quote_longer_than_its_paragraph_is_rejected():
-    problems = check_quotes(entry([claim(evidence={"ordinal": 1, "quote": TEXT * 2})]), {1: TEXT})
+    problems = quotes(entry([claim(evidence={"ordinal": 1, "quote": TEXT * 2})]), {1: TEXT})
     assert any("还长" in line for line in problems)
 
 
 def test_offline_a_complete_preview_is_a_complete_check():
     """When the paragraph fits in the stored preview, a miss is definitive."""
 
-    problems = check_quotes(entry([claim(evidence={"ordinal": 1, "quote": "mortality by 30 percent"})]))
+    problems = quotes(entry([claim(evidence={"ordinal": 1, "quote": "mortality by 30 percent"})]))
     assert any("清单存了整段预览" in line for line in problems)
 
 
-def test_offline_a_truncated_preview_never_condemns_a_quote():
-    """A quote past the 120-character cut may be correct; only ``--live`` can say."""
+def _truncated(quote: str = "B" * 10) -> dict:
+    """An entry whose single paragraph is longer than the stored preview."""
 
     long_text = "A" * 200
     paragraphs = [{
@@ -166,8 +176,59 @@ def test_offline_a_truncated_preview_never_condemns_a_quote():
         "native_jats_id": "p1",
         "preview": long_text[:120],
     }]
-    assert not check_quotes(entry([claim(evidence={"ordinal": 1, "quote": "B" * 10})],
-                                  paragraphs=paragraphs))
+    return entry([claim(evidence={"ordinal": 1, "quote": quote})], paragraphs=paragraphs)
+
+
+def test_offline_a_truncated_preview_never_condemns_a_quote():
+    """A quote past the 120-character cut may be correct; only ``--live`` can say."""
+
+    problems, warnings = check_quotes(_truncated())
+    assert not problems, "截断预览不能把一条可能正确的引文判错"
+    assert any(OFFLINE_UNCHECKED in line and "--live" in line for line in warnings)
+
+
+def test_offline_a_truncated_preview_never_passes_a_quote_silently():
+    """The failure this guards: an empty result reads as "checked and fine".
+
+    The quote is not condemned (it may straddle the cut), but it must be named as
+    unchecked — both by the per-source line and by the checker's own return value.
+    """
+
+    errors, warnings = check_entry(_truncated())
+    assert not errors
+    assert _status(errors, warnings) == f"通过（含 1 条{OFFLINE_UNCHECKED}）"
+
+    _, quiet = check_quotes(entry([claim()]))
+    assert _status([], quiet) == "通过", "整段在预览内的引用应当就是「通过」"
+
+
+def test_a_quote_found_inside_the_preview_counts_as_checked():
+    """A hit is a hit even when the paragraph continues past the cut."""
+
+    problems, warnings = check_quotes(_truncated("A" * 40))
+    assert not problems
+    assert not warnings
+
+
+def test_a_live_fetch_that_lost_a_paragraph_is_reported():
+    """Inventory drift has two directions; comparing only live ordinals sees one."""
+
+    two = [
+        {"ordinal": 1, "section": "body", "paragraph_hash": paragraph_hash(TEXT),
+         "text_length": len(TEXT), "native_jats_id": "p1", "preview": TEXT},
+        {"ordinal": 2, "section": "body", "paragraph_hash": paragraph_hash("Second."),
+         "text_length": 7, "native_jats_id": "p2", "preview": "Second."},
+    ]
+    errors, _ = check_entry(entry([claim()], paragraphs=two), {1: TEXT})
+    assert any("线上没有" in line and "ordinal 2" in line for line in errors)
+
+
+def test_the_directory_option_keeps_its_old_name_as_an_alias():
+    """``--out`` mirrors ``freeze_sources.py``; ``--sources`` says what it is."""
+
+    parser = build_parser()
+    assert parser.parse_args(["--sources", "x"]).sources == Path("x")
+    assert parser.parse_args(["--out", "x"]).sources == Path("x")
 
 
 def test_a_drifted_paragraph_hash_is_reported_as_drift():
