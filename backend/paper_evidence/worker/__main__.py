@@ -50,6 +50,7 @@ def build_worker(services: Services) -> SingleTaskWorker:
         return BoundedWorkflow(
             store=services.store, resolver=source, fulltext=source, retriever=retriever,
             prompts=services.prompts, gateway=gateway, settings=services.settings,
+            tracing=services.tracing,
         )
 
     return SingleTaskWorker(services.store, factory, services.settings)

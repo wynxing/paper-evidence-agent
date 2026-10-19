@@ -7,6 +7,7 @@ handled by the caller, which writes the narrowed snapshot per task rather than
 widening the preview.
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,8 @@ from .domain.digest import digest_of
 from .domain.rules import criteria_reference
 
 __all__ = ["Settings", "config_snapshot", "endpoint_class", "narrowed_snapshot"]
+
+logger = logging.getLogger(__name__)
 
 MODEL_ALIAS = "paper-default"
 MODEL_TRANSPORT_SDK = "sdk"
@@ -85,6 +88,11 @@ class Settings:
     limits: Limits = field(default_factory=default_limits)
     timeouts: Timeouts = field(default_factory=default_timeouts)
     observability: Observability = field(default_factory=lambda: Observability(langfuse_enabled=False, recipient=None))
+    # Langfuse 的 OTLP 端点（如 https://cloud.langfuse.com）。密钥只从环境变量读，
+    # 名字可配置是为了让部署方沿用既有命名；值本身不进快照、摘要或日志。
+    langfuse_host: str = ""
+    langfuse_public_key_env: str = "PAPER_EVIDENCE_LANGFUSE_PUBLIC_KEY"
+    langfuse_secret_key_env: str = "PAPER_EVIDENCE_LANGFUSE_SECRET_KEY"
     crossref_base_url: str = "https://api.crossref.org"
     doi_resolver_base_url: str = "https://doi.org"
     pmc_id_converter_url: str = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
@@ -105,13 +113,33 @@ class Settings:
                 _clean(part) for part in os.environ.get("PAPER_EVIDENCE_FALLBACK_RECIPIENTS", "").split(",")
             ) if item
         )
-        langfuse = os.environ.get("PAPER_EVIDENCE_LANGFUSE_ENABLED", "").lower() in {"1", "true", "yes"}
+        langfuse_requested = os.environ.get("PAPER_EVIDENCE_LANGFUSE_ENABLED", "").lower() in {"1", "true", "yes"}
         # 已授权观测/诊断接收方，与模型接收方分开。它与 langfuse_enabled 解耦：
         # 否则不开启观测导出就无法授权任何诊断接收方。
         recipient = _clean(
             os.environ.get("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT")
             or os.environ.get("PAPER_EVIDENCE_LANGFUSE_RECIPIENT")
         )
+        host = _clean(os.environ.get("PAPER_EVIDENCE_LANGFUSE_HOST")) or ""
+        # ``langfuse_enabled`` 写的是**会不会真的导出**，不是「有没有人填过开关」：
+        # 端点、两把密钥、已授权观测接收方缺一，导出就不成立。否则快照会声称在导出
+        # 而进程一个 span 都没发出去，前后读的人会得出不同结论（#96 同族教训）。
+        missing = [
+            name
+            for name, value in (
+                ("PAPER_EVIDENCE_LANGFUSE_HOST", host),
+                (cls.langfuse_public_key_env, os.environ.get(cls.langfuse_public_key_env, "")),
+                (cls.langfuse_secret_key_env, os.environ.get(cls.langfuse_secret_key_env, "")),
+                ("PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT", recipient or ""),
+            )
+            if not value
+        ]
+        langfuse = langfuse_requested and not missing
+        if langfuse_requested and missing:
+            logger.warning(
+                "Langfuse 已请求启用但缺少 %s，本次不导出（本地轨迹照常记录）",
+                "、".join(missing),
+            )
         # 未知取值按既有的 profile 处理方式回落到默认值；生效的传输方式会写进
         # 冻结快照，因此预览显示的是实际使用的那一种，不会与实际调用不符。
         transport = (os.environ.get("PAPER_EVIDENCE_MODEL_TRANSPORT") or "").strip().lower()
@@ -125,6 +153,7 @@ class Settings:
             model_api_base=_clean(os.environ.get("PAPER_EVIDENCE_MODEL_API_BASE")) or "",
             model_base_url=_clean(os.environ.get("PAPER_EVIDENCE_MODEL_BASE_URL")) or DEFAULT_MODEL_BASE_URL,
             contact_email=os.environ.get("PAPER_EVIDENCE_CONTACT_EMAIL", ""),
+            langfuse_host=host,
             observability=Observability(langfuse_enabled=langfuse, recipient=recipient),
         )
 

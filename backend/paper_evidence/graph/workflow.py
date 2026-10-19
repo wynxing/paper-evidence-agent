@@ -60,7 +60,7 @@ class _Outcome:
 
 
 class BoundedWorkflow:
-    def __init__(self, *, store, resolver, fulltext, retriever, prompts, gateway, settings) -> None:
+    def __init__(self, *, store, resolver, fulltext, retriever, prompts, gateway, settings, tracing=None) -> None:
         self._store = store
         self._resolver = resolver
         self._fulltext = fulltext
@@ -68,6 +68,8 @@ class BoundedWorkflow:
         self._prompts = prompts
         self._gateway = gateway
         self._settings = settings
+        # Optional span sink (``tracing/otel.py``). ``None`` means local-only.
+        self._tracing = tracing
 
     # ------------------------------------------------------------------ utils
 
@@ -87,8 +89,10 @@ class BoundedWorkflow:
     # -------------------------------------------------------------------- run
 
     async def run(self, task: TaskInput, deadline: float) -> "CheckDetail":  # noqa: F821
-        recorder = StageRecorder(self._store, task.id, self._db)
+        recorder = StageRecorder(self._store, task.id, self._db, sink=self._tracing)
         budget = BudgetState(limits=self._settings.limits)
+        if self._tracing is not None:
+            self._tracing.begin(task)
         try:
             await self._check_cancel(task.id)
             source_id, preview = await self._prepare_source(task, deadline, recorder)
@@ -98,6 +102,11 @@ class BoundedWorkflow:
             return await self._cancel(task, recorder, recorder.stage or Stage.WAIT)
         except ContractError as error:
             return await self._terminal(task, recorder, error.error_code, recorder.stage or Stage.WAIT)
+        finally:
+            # Close the trace on every exit path, including the ones that return a
+            # blocked or cancelled result; otherwise the root span outlives the task.
+            if self._tracing is not None:
+                self._tracing.finish(task.id)
 
     # ------------------------------------------------------------- source prep
 

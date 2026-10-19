@@ -1,6 +1,7 @@
 # Combined lock for runtime, test, and build dependencies in pyproject.toml, including
-# their transitive dependencies. opentelemetry-api is required by fastapi; this scaffold
-# does not import it. litellm brings the largest transitive set here (openai, aiohttp,
+# their transitive dependencies. opentelemetry-api arrives with fastapi and is now also
+# that SDK's base; the OTel SDK and the OTLP/HTTP exporter are direct runtime deps of
+# the optional Langfuse export. litellm brings the largest transitive set here (openai, aiohttp,
 # tiktoken, tokenizers, boto3), which is what its in-process SDK form costs to install.
 # Regenerate from those declarations rather than adding an unrelated pin. Platform-only
 # conditional extras are omitted, as with the existing pins.
@@ -22,6 +23,7 @@ fastuuid==0.14.0
 filelock==3.32.7
 frozenlist==1.8.0
 fsspec==2026.9.0
+googleapis-common-protos==1.75.5
 h11==0.16.0
 h2==4.4.1
 hf-xet==1.7.0
@@ -42,10 +44,18 @@ litellm==1.105.0
 MarkupSafe==3.0.4
 multidict==7.1.0
 openai==2.54.0
-opentelemetry-api==1.45.0
+opentelemetry-api==1.45.1
+opentelemetry-exporter-http-transport==0.66b1
+opentelemetry-exporter-otlp-common==0.66b1
+opentelemetry-exporter-otlp-proto-common==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-proto==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-semantic-conventions==0.66b1
 packaging==26.3
 pluggy==1.6.0
 propcache==0.5.4
+protobuf==7.36.2
 pydantic-settings==2.15.0
 pydantic==2.13.5
 pydantic_core==2.46.5

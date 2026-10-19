@@ -14,6 +14,11 @@ dependencies = [
   # dev extra could not start.
   "httpx==0.28.1",
   "litellm==1.105.0",
+  # Runtime, not test-only: the worker builds the OpenTelemetry provider when
+  # observability export is configured, and the tests exercise the exporter itself.
+  # Pinned together because the SDK and the exporter share the API version.
+  "opentelemetry-exporter-otlp-proto-http==1.45.1",
+  "opentelemetry-sdk==1.45.1",
   "pydantic==2.13.5",
   "uvicorn==0.54.0",
 ]

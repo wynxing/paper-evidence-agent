@@ -1,9 +1,8 @@
 """Local trace recorder.
 
-The first version keeps a local OpenTelemetry-shaped trace in SQLite. Optional
-Langfuse export is off by default and is not wired here: enabling it requires a
-configured endpoint, credentials and a separately authorized observability
-recipient, and its failures must never change a task result.
+The diagnostic record lives in SQLite; this recorder writes it and nothing else.
+Export is a separate concern in ``tracing/otel.py`` and stays off unless Langfuse
+is configured, because its failures must never change a task result.
 """
 
 from paper_evidence.domain.contracts import ExecutionRecord

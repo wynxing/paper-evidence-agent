@@ -199,7 +199,7 @@ source.version_hash 为取得的 JATS 记录原始字节 SHA-256，取的是 OAI
 | `run_config.authorized_recipients` | 本次允许的模型服务接收方标识，不含密钥 |
 | `run_config.limits` | main_requests=3、repair_requests=1、attempts_per_request=2、supplemental_rounds=1 |
 | `run_config.timeouts` | model_attempt_seconds=45、source_request_seconds=15、task_seconds=180；实际采用值入配置摘要 |
-| `run_config.observability` | langfuse_enabled 默认 false；recipient 为已授权观测接收方或 null，不含凭据 |
+| `run_config.observability` | langfuse_enabled 为**有效**启用状态（端点、两把密钥、已授权接收方齐备才为 true），默认 false；recipient 为已授权观测接收方或 null；不含凭据与端点地址 |
 | `evidence_candidates[]` | 候选段落记录，字段见下表 |
 | `decision` | 上节的最终判断或 null；与尝试记录分开 |
 | `execution[]` | 所有已执行步骤，包括失败/阻断前的步骤，字段见下表 |

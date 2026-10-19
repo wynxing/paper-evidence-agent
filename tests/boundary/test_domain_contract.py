@@ -392,10 +392,12 @@ def _distribution_name(requirement: str) -> str:
 
     Metadata renders a requirement either as ``name<1`` or, from older
     setuptools — which botocore still uses — as ``name (<1,>=x)``. Splitting on
-    the first space, bracket or version operator covers both.
+    the first space, bracket or version operator covers both. ``~=`` is a
+    version operator too: without the tilde the name would keep it and never
+    match the lock (``googleapis-common-protos~``), which reads as a missing pin.
     """
 
-    return re.split(r"[<>=;\[\s(]", requirement, maxsplit=1)[0].strip().lower().replace("_", "-")
+    return re.split(r"[<>=;\[\s(~]", requirement, maxsplit=1)[0].strip().lower().replace("_", "-")
 
 
 def _requested_extras(requirement: str) -> set[str]:
