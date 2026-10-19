@@ -22,6 +22,7 @@ from claims import (
     coverage_gaps,
     load_all,
     render_coverage,
+    review_gaps,
 )
 from paper_evidence.domain.text import paragraph_hash
 
@@ -59,7 +60,7 @@ def claim(**overrides) -> dict:
         "claim_kind": "natural",
         "expected_label": "支持",
         "evidence": {"ordinal": 1, "quote": "reduced mortality by 20 percent"},
-        "dimensions": ["quantity"],
+        "variations": ["quantity"],
     }
     payload.update(overrides)
     return payload
@@ -239,13 +240,13 @@ def test_a_drifted_paragraph_hash_is_reported_as_drift():
     assert any("哈希与清单不一致" in line for line in errors)
 
 
-def test_coverage_counts_labels_and_dimensions_and_names_the_gaps():
+def test_coverage_counts_labels_and_variations_and_names_the_gaps():
     entries = [
-        entry([claim(expected_label="支持", dimensions=["object"]),
-               claim(claim_id="c2", expected_label="相矛盾", dimensions=["causality"],
+        entry([claim(expected_label="支持", variations=["object"]),
+               claim(claim_id="c2", expected_label="相矛盾", variations=["causality"],
                      evidence={"ordinal": 1, "quote": "reduced mortality"})],
               case_id="PMC_A"),
-        entry([claim(expected_label="证据不足", evidence=None, dimensions=[])],
+        entry([claim(expected_label="证据不足", evidence=None, variations=[])],
               case_id="PMC_B"),
     ]
 
@@ -253,16 +254,89 @@ def test_coverage_counts_labels_and_dimensions_and_names_the_gaps():
     assert report["total"] == 3
     assert report["labels"]["支持"] == 1
     assert report["labels"]["证据不足"] == 1
-    assert report["dimensions"]["object"] == 1
+    assert report["variations"]["object"] == 1
     assert report["untagged"] == 1
 
     gaps = coverage_gaps(entries)
     assert "标签「部分支持」0 条" in gaps
-    assert "维度「数量」0 条" in gaps
+    assert "变体「数量」0 条" in gaps
 
     table = render_coverage(entries)
     assert "PMC_A" in table and "PMC_B" in table
     assert "未覆盖的标签：部分支持" in table
+
+
+def test_a_missing_review_warns_while_the_key_is_being_written():
+    """撰写期：还没复核是正常的，但必须说出来，不能静默当成已核。"""
+
+    errors, warnings = check_shape(entry([claim()]))
+    assert not errors
+    assert any("尚未复核" in line for line in warnings), warnings
+
+
+def test_the_gate_refuses_an_unsigned_claim():
+    """验收门禁：同一份数据，``--require-review`` 下必须红。"""
+
+    errors, _ = check_shape(entry([claim()]), require_review=True)
+    assert any("缺 review" in line for line in errors), errors
+
+
+@pytest.mark.parametrize(
+    "review, needle",
+    [
+        ({"by": "", "at": "2026-10-20", "outcome": "agree"}, "review.by"),
+        ({"by": "评审者", "at": "", "outcome": "agree"}, "review.at"),
+        ({"by": "评审者", "at": "2026-10-20", "outcome": "ok"}, "review.outcome"),
+        ({"by": "评审者", "at": "2026-10-20", "outcome": "agree", "score": 5}, "review 里的"),
+        ("agree", "review 必须是对象"),
+    ],
+)
+def test_a_present_review_is_shape_checked(review, needle):
+    """填了就得填对：签核字段残缺与「还没签」不是一回事。"""
+
+    errors, _ = check_shape(entry([claim(review=review)]))
+    assert any(needle in line for line in errors), errors
+
+
+def test_a_disputed_claim_stays_in_the_file_but_out_of_the_denominator():
+    """分歧未解决：留在清单里（可复查），但不算真值、不进覆盖。"""
+
+    disputed = claim(
+        claim_id="c1",
+        expected_label="相矛盾",
+        review={"by": "评审者", "at": "2026-10-20", "outcome": "disputed"},
+    )
+    agreed = claim(
+        claim_id="c2",
+        expected_label="支持",
+        review={"by": "评审者", "at": "2026-10-20", "outcome": "agree"},
+    )
+
+    report = coverage([entry([disputed, agreed])])
+    assert report["total"] == 2
+    assert report["disputed"] == 1
+    assert report["labels"]["相矛盾"] == 0, "disputed 不应计入标签覆盖"
+    assert report["labels"]["支持"] == 1
+    assert "不计入覆盖与真值分母" in render_coverage([entry([disputed, agreed])])
+
+
+def test_review_gaps_names_every_unsigned_or_disputed_entry():
+    entries = [
+        entry([claim(claim_id="c1")], case_id="PMC_A"),
+        entry(
+            [
+                claim(
+                    claim_id="c2",
+                    review={"by": "评审者", "at": "2026-10-20", "outcome": "disputed"},
+                )
+            ],
+            case_id="PMC_B",
+        ),
+    ]
+
+    gaps = review_gaps(entries)
+    assert "PMC_A 第 1 条未复核" in gaps
+    assert "PMC_B 第 1 条仍 disputed" in gaps
 
 
 def test_empty_claims_are_reported_as_incomplete_not_as_passing():
