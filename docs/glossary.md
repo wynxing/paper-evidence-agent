@@ -435,3 +435,26 @@ config_digest 对冻结的有效配置快照求摘要；snapshot_ref 定位该�
 | --- | --- | --- |
 | paper agent | 本仓库实现的唯一 agent，包在 `agents/` | 在已确认的来源片段上提出判断和摘录。在预算内生成查询、提出判断或申请一次补充检索；必要时修复输出。 |
 | 外部评审 agent | 不在本仓库实现。例如 Claude、Cursor | 按 [测试方案](test-plan.md) 阅读诊断包和轨迹，并返回上一节的结构。不是 `agents/` 里的模块，也不进入用户核验流程。 |
+
+## 8. claims 字段（真实来源集）
+
+`tests/functional/sources/*.json` 的 `claims` 是人工核对的考卷：一条论断、它在该文献里应得的标签、以及支撑这个标签的原文位置。字段名以本表为准，`tests/functional/claims.py` 是本表的可执行副本。`freeze_sources.py` 只写来源侧，脚本不得填 `claims`。
+
+| 字段 | 必填 | 取值与判据 |
+| --- | --- | --- |
+| `claim_id` | 否 | 全集唯一，建议 `<case_id>-c<n>`；给了就必须唯一 |
+| `claim` | 是 | 一句话、可被该文献核验、限定明确 |
+| `claim_kind` | 是 | `natural` / `constructed`。改写原文的句子仍算 `constructed`，在 `claim_note` 写明改了什么 |
+| `claim_note` | 否 | 一句话说明「改了原文的什么」；非 `natural` 必填 |
+| `expected_label` | 是 | `支持` / `部分支持` / `相矛盾` / `证据不足`。`无法核验来源` 是任务终态，不是对论文的判断 |
+| `evidence` | 视标签 | `{ordinal, quote}`；除 `证据不足` 外必填。`quote` 必须是该段**全文**的逐字子串，不得拼接、不得跨段 |
+| `variations` | 否 | 论断被改动的方面：`object` / `quantity` / `condition` / `causality` / `negation`。**不叫 `dimension`**：`tests/functional/samples/*.json` 的 `dimension` 指测试维度（`功能准确性`），同名会让人误读 |
+| `rationale` | 否 | 按第 1 节的四类判据，一句话说明为什么是这个标签 |
+| `limits` | 否 | 这条 claim 不能被外推到什么 |
+| `review` | 验收必填 | 第二人签核：`{by, at, outcome, note?}`；`outcome` 取 `agree` / `disagree` / `disputed` |
+
+三条相关规则：
+
+- **`disputed` 留在清单里，但不进覆盖与真值分母**，直到两位标注人达成一致（`test-plan` 的「分歧解决前不计为确定真值」）。
+- **`review` 缺失在撰写期只是告警**（还没人复核是正常的）；验收时 `claims.py --require-review` 把它升级为错误，`--require-coverage` 同样只看结构不看标签对错。
+- 只有 `claims.py --live` 会重新取回正文逐字核对 `quote`；离线模式只核对落在 120 字预览内的引文，其余明确标为「离线无法判定」，**离线绿灯不等于引文已核**。

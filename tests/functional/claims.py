@@ -7,13 +7,20 @@ script can do, and only that part:
 
 * **shape** — the fields #86 asks for are present, and the values use vocabulary the
   repository already uses: ``expected_label`` from :class:`ResultLabel`, ``claim_kind``
-  as spelled in ``tests/functional/samples/``;
+  as spelled in ``tests/functional/samples/``. The field names themselves are written
+  down once, in ``docs/glossary.md``「claims 字段」, because two independent guesses at
+  them had already diverged (#86); this module is the executable copy of that table;
 * **location** — a quote must be a contiguous run of the *frozen* paragraph at the
   ordinal it names, compared after the same whitespace normalisation the parser
   applies (``normalize_paragraph_text``);
-* **coverage** — labels and dimensions counted, uncovered cells printed. Coverage is
+* **coverage** — labels and variations counted, uncovered cells printed. Coverage is
   a description of the set; ``--require-coverage`` turns it into a pass/fail rule for
   the acceptance gate.
+* **review** — the second person's sign-off is shape-checked, not content-checked:
+  a missing ``review`` is a warning while the set is being written and an error under
+  ``--require-review`` (the acceptance gate). ``review.outcome == "disputed"`` keeps
+  the entry in the file but out of the coverage denominator, which is how
+  「分歧解决前不计为确定真值」is implemented.
 
 It deliberately does **not** decide whether a label is right. That is the
 annotator's judgement and the reviewer's; a script claiming to check it would be
@@ -33,7 +40,8 @@ Usage::
 
     python tests/functional/claims.py                     # shape + coverage, no network
     python tests/functional/claims.py --live              # also re-fetch and locate quotes
-    python tests/functional/claims.py --require-coverage  # acceptance gate
+    python tests/functional/claims.py --require-coverage  # coverage gate
+    python tests/functional/claims.py --require-review    # second-person sign-off gate
     python tests/functional/claims.py --source PMC7461750
 """
 
@@ -68,9 +76,14 @@ JUDGEMENT_LABELS = (
     ResultLabel.INSUFFICIENT_EVIDENCE.value,
 )
 
-#: ``docs/test-plan.md:46`` asks for one claim per dimension. The keys are the tags a
-#: claim may carry; the values are only what the coverage table prints.
-DIMENSIONS = {
+#: ``docs/test-plan.md:46`` asks for one claim per variation of the claim. The keys
+#: are the tags a claim may carry; the values are only what the coverage table prints.
+#:
+#: Not called ``dimensions``: ``tests/functional/samples/*.json`` already has a
+#: ``dimension`` key meaning the *test* dimension (``功能准确性``), not the aspect of
+#: the claim that was varied. Two plurals of the same word with different meanings is
+#: exactly the confusion this name exists to avoid (#86).
+VARIATIONS = {
     "object": "对象",
     "quantity": "数量",
     "condition": "条件",
@@ -80,8 +93,13 @@ DIMENSIONS = {
 
 #: The vocabulary ``tests/functional/samples/*.json`` already uses. Reused rather
 #: than invented: a constructed variant must be marked as such (#86), and a natural
-#: claim must not be mistaken for one.
+#: claim must not be mistaken for one. ``paraphrase`` is not a third kind: a rewritten
+#: sentence is still a constructed input, and ``claim_note`` says what was rewritten.
 CLAIM_KINDS = {"natural", "constructed"}
+
+#: ``review.outcome``: agreed, disagreed, or left open. ``disputed`` entries stay in
+#: the file and out of the coverage denominator (test-plan:48「分歧解决前不计为确定真值」).
+REVIEW_OUTCOMES = {"agree", "disagree", "disputed"}
 
 DEADLINE_SECONDS = 120.0
 
@@ -104,12 +122,16 @@ def _is_ordinal(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def check_shape(entry: dict) -> tuple[list[str], list[str]]:
+def check_shape(entry: dict, *, require_review: bool = False) -> tuple[list[str], list[str]]:
     """Validate one entry's claims without touching the article text.
 
     Returns ``(errors, warnings)``. Errors mean the claim cannot be used as a
     reviewed truth value; warnings mean a human should look, but the record is
     still well-formed.
+
+    ``require_review`` upgrades a missing ``review`` from warning to error. It is
+    off while the answer key is being written (nobody can review an unwritten
+    claim) and on at the acceptance gate, where an unsigned entry must not count.
     """
 
     case_id = entry.get("case_id", "<未命名来源>")
@@ -167,7 +189,23 @@ def check_shape(entry: dict) -> tuple[list[str], list[str]]:
             )
 
         errors.extend(_check_evidence(where, label, claim.get("evidence")))
-        errors.extend(_check_dimensions(where, claim.get("dimensions")))
+        errors.extend(_check_variations(where, claim.get("variations")))
+        for key in ("claim_note", "rationale", "limits"):
+            value = claim.get(key)
+            if value is not None and not isinstance(value, str):
+                errors.append(f"{where}: {key} 必须是字符串")
+        if claim.get("claim_kind") != "natural" and not str(claim.get("claim_note") or "").strip():
+            # Not an error: the claim can still be judged. But a constructed input
+            # that does not say what it changed invites the reviewer to read it as a
+            # natural quotation, which is the one thing `claim_kind` exists to prevent.
+            warnings.append(
+                f"{where}: 非 natural 的 claim 没有 claim_note，复核时看不出改了什么"
+            )
+        review_errors, review_warnings = _check_review(
+            where, claim.get("review"), required=require_review
+        )
+        errors.extend(review_errors)
+        warnings.extend(review_warnings)
         for key in claim:
             if key not in _KNOWN_KEYS:
                 warnings.append(f"{where}: 未识别字段 {key!r}，不参与校验")
@@ -188,10 +226,13 @@ _KNOWN_KEYS = {
     "claim_id",
     "claim",
     "claim_kind",
+    "claim_note",
     "expected_label",
     "evidence",
-    "dimensions",
-    "note",
+    "variations",
+    "rationale",
+    "limits",
+    "review",
 }
 
 
@@ -221,23 +262,59 @@ def _check_evidence(where: str, label, evidence) -> list[str]:
     return problems
 
 
-def _check_dimensions(where: str, dimensions) -> list[str]:
-    """``dimensions`` is optional, but a tag that is not in the vocabulary is a typo."""
+def _check_variations(where: str, variations) -> list[str]:
+    """``variations`` is optional, but a tag that is not in the vocabulary is a typo."""
 
-    if dimensions is None:
+    if variations is None:
         return []
-    if not isinstance(dimensions, list):
-        return [f"{where}: dimensions 必须是数组"]
+    if not isinstance(variations, list):
+        return [f"{where}: variations 必须是数组"]
     problems: list[str] = []
     seen: set[str] = set()
-    for item in dimensions:
-        if item not in DIMENSIONS:
-            problems.append(f"{where}: dimensions 里的 {item!r} 不在 {list(DIMENSIONS)} 内")
+    for item in variations:
+        if item not in VARIATIONS:
+            problems.append(f"{where}: variations 里的 {item!r} 不在 {list(VARIATIONS)} 内")
         elif item in seen:
-            problems.append(f"{where}: dimensions 重复了 {item!r}")
+            problems.append(f"{where}: variations 重复了 {item!r}")
         else:
             seen.add(item)
     return problems
+
+
+def _check_review(where: str, review, *, required: bool) -> tuple[list[str], list[str]]:
+    """Shape of the second person's sign-off, never its substance.
+
+    A missing ``review`` is only a warning unless ``required``: while the answer key
+    is being written, every entry is by definition unreviewed, and failing the whole
+    file for that would make the checker useless during authoring. A ``review`` that
+    exists but is malformed is always an error — "someone signed" and "someone
+    signed with an outcome nobody can act on" are different states.
+    """
+
+    if review is None:
+        if required:
+            return [f"{where}: 缺 review——验收门禁要求第二人已签核"], []
+        return [], [f"{where}: 尚未复核（缺 review），不计入真值分母"]
+    if not isinstance(review, dict):
+        return [f"{where}: review 必须是对象，当前是 {type(review).__name__}"], []
+
+    problems: list[str] = []
+    for key in ("by", "at"):
+        value = review.get(key)
+        if not isinstance(value, str) or not value.strip():
+            problems.append(f"{where}: review.{key} 必须是非空字符串")
+    outcome = review.get("outcome")
+    if outcome not in REVIEW_OUTCOMES:
+        problems.append(
+            f"{where}: review.outcome 必须是 {sorted(REVIEW_OUTCOMES)} 之一，当前 {outcome!r}"
+        )
+    note = review.get("note")
+    if note is not None and (not isinstance(note, str) or not note.strip()):
+        problems.append(f"{where}: review.note 给了就必须是非空字符串")
+    for key in review:
+        if key not in {"by", "at", "outcome", "note"}:
+            problems.append(f"{where}: review 里的 {key!r} 不是本校验器认识的字段")
+    return problems, []
 
 
 def check_quotes(
@@ -360,13 +437,20 @@ def _short(text: str, limit: int = 24) -> str:
 
 
 def coverage(entries: list[dict]) -> dict:
-    """Count labels and dimensions over the set, per source and in total."""
+    """Count labels and variations over the set, per source and in total.
+
+    ``disputed`` entries are counted in ``total`` but not in the label or variation
+    tallies: they stay in the file, and they do not enter the truth denominator
+    until the two annotators agree.
+    """
 
     report = {
         "total": 0,
         "constructed": 0,
+        "reviewed": 0,
+        "disputed": 0,
         "labels": {label: 0 for label in JUDGEMENT_LABELS},
-        "dimensions": {dim: 0 for dim in DIMENSIONS},
+        "variations": {tag: 0 for tag in VARIATIONS},
         "untagged": 0,
         "per_source": {},
     }
@@ -378,18 +462,24 @@ def coverage(entries: list[dict]) -> dict:
             if not isinstance(claim, dict):
                 continue
             report["total"] += 1
+            review = claim.get("review")
+            if isinstance(review, dict) and isinstance(review.get("by"), str) and review["by"].strip():
+                report["reviewed"] += 1
+            if isinstance(review, dict) and review.get("outcome") == "disputed":
+                report["disputed"] += 1
+                continue
             label = claim.get("expected_label")
             if label in row:
                 row[label] += 1
                 report["labels"][label] += 1
             if claim.get("claim_kind") == "constructed":
                 report["constructed"] += 1
-            tags = claim.get("dimensions") or []
+            tags = claim.get("variations") or []
             if not tags:
                 report["untagged"] += 1
             for tag in tags:
-                if tag in report["dimensions"]:
-                    report["dimensions"][tag] += 1
+                if tag in report["variations"]:
+                    report["variations"][tag] += 1
         report["per_source"][case_id] = row
     return report
 
@@ -398,9 +488,11 @@ def render_coverage(entries: list[dict]) -> str:
     """A table a reviewer can read, including what is *not* covered."""
 
     report = coverage(entries)
+    counted = report["total"] - report["disputed"]
     lines = [
         f"覆盖：{len(entries)} 个来源，{report['total']} 条 claims"
-        f"（其中构造输入 {report['constructed']} 条，未标维度 {report['untagged']} 条）",
+        f"（其中构造输入 {report['constructed']} 条，未标变体 {report['untagged']} 条，"
+        f"已复核 {report['reviewed']} 条，disputed {report['disputed']} 条）",
         "",
         "| 来源 | " + " | ".join(JUDGEMENT_LABELS) + " | 合计 |",
         "| --- | " + " | ".join("---" for _ in JUDGEMENT_LABELS) + " | --- |",
@@ -413,33 +505,38 @@ def render_coverage(entries: list[dict]) -> str:
     lines.append(
         "| **合计** | "
         + " | ".join(str(report["labels"][label]) for label in JUDGEMENT_LABELS)
-        + f" | {report['total']} |"
+        + f" | {counted} |"
     )
     lines.append("")
-    lines.append("| 维度 | " + " | ".join(DIMENSIONS.values()) + " |")
-    lines.append("| --- | " + " | ".join("---" for _ in DIMENSIONS) + " |")
+    lines.append("| 变体 | " + " | ".join(VARIATIONS.values()) + " |")
+    lines.append("| --- | " + " | ".join("---" for _ in VARIATIONS) + " |")
     lines.append(
         "| 条数 | "
-        + " | ".join(str(report["dimensions"][tag]) for tag in DIMENSIONS)
+        + " | ".join(str(report["variations"][tag]) for tag in VARIATIONS)
         + " |"
     )
 
     missing_labels = [label for label in JUDGEMENT_LABELS if not report["labels"][label]]
-    missing_dims = [DIMENSIONS[tag] for tag in DIMENSIONS if not report["dimensions"][tag]]
+    missing_vars = [VARIATIONS[tag] for tag in VARIATIONS if not report["variations"][tag]]
     lines.append("")
     if report["total"] == 0:
         lines.append(
             "**claims 全为空**：这是 #86 的现状，不是通过。真实的来源侧已冻结，人的那一半还没写。"
         )
     else:
+        if report["disputed"]:
+            lines.append(
+                f"disputed {report['disputed']} 条留在清单里，但**不计入覆盖与真值分母**"
+                "（分歧解决前不计为确定真值）。"
+            )
         lines.append(
             "未覆盖的标签：" + ("无" if not missing_labels else "、".join(missing_labels))
         )
         lines.append(
-            "未覆盖的维度：" + ("无" if not missing_dims else "、".join(missing_dims))
+            "未覆盖的变体：" + ("无" if not missing_vars else "、".join(missing_vars))
         )
-        if missing_labels or missing_dims:
-            lines.append("（#86 / `test-plan.md:46` 要求四类标签、五个维度各至少一例）")
+        if missing_labels or missing_vars:
+            lines.append("（#86 / `test-plan.md:46` 要求四类标签、五个变体各至少一例）")
     return "\n".join(lines)
 
 
@@ -449,10 +546,27 @@ def coverage_gaps(entries: list[dict]) -> list[str]:
     report = coverage(entries)
     gaps = [f"标签「{label}」0 条" for label in JUDGEMENT_LABELS if not report["labels"][label]]
     gaps += [
-        f"维度「{DIMENSIONS[tag]}」0 条"
-        for tag in DIMENSIONS
-        if not report["dimensions"][tag]
+        f"变体「{VARIATIONS[tag]}」0 条"
+        for tag in VARIATIONS
+        if not report["variations"][tag]
     ]
+    return gaps
+
+
+def review_gaps(entries: list[dict]) -> list[str]:
+    """Entries the acceptance gate must not count: unsigned or left disputed."""
+
+    gaps: list[str] = []
+    for entry in entries:
+        case_id = entry.get("case_id", "<未命名来源>")
+        for index, claim in enumerate(entry_claims(entry) or [], 1):
+            if not isinstance(claim, dict):
+                continue
+            review = claim.get("review")
+            if not isinstance(review, dict) or not str(review.get("by") or "").strip():
+                gaps.append(f"{case_id} 第 {index} 条未复核")
+            elif review.get("outcome") == "disputed":
+                gaps.append(f"{case_id} 第 {index} 条仍 disputed")
     return gaps
 
 
@@ -482,10 +596,12 @@ def _fetch_paragraphs(doi: str, work: Path) -> dict[int, str]:
     return {item.ordinal: item.text for item in parse_jats(snapshot)}
 
 
-def check_entry(entry: dict, paragraphs: dict[int, str] | None = None):
+def check_entry(
+    entry: dict, paragraphs: dict[int, str] | None = None, *, require_review: bool = False
+):
     """Everything the checker can say about one source: (errors, warnings)."""
 
-    errors, warnings = check_shape(entry)
+    errors, warnings = check_shape(entry, require_review=require_review)
     quote_errors, quote_warnings = check_quotes(entry, paragraphs)
     errors.extend(quote_errors)
     warnings.extend(quote_warnings)
@@ -549,7 +665,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--require-coverage",
         action="store_true",
-        help="四类标签与五个维度任一为 0 即失败（验收门禁用，撰写期不要开）",
+        help="四类标签与五个变体任一为 0 即失败（验收门禁用，撰写期不要开）",
+    )
+    parser.add_argument(
+        "--require-review",
+        action="store_true",
+        help="缺 review 或仍为 disputed 即失败（验收门禁用，撰写期不要开）",
     )
     return parser
 
@@ -586,7 +707,9 @@ def main() -> int:
                           file=sys.stderr)
                     failed += 1
                     continue
-            errors, warnings = check_entry(entry, paragraphs)
+            errors, warnings = check_entry(
+                entry, paragraphs, require_review=args.require_review
+            )
             count = len(entry_claims(entry) or [])
             unchecked_total += _offline_unchecked(warnings)
             print(f"[{_status(errors, warnings)}] {entry.get('case_id')}（{count} 条 claims）")
@@ -607,8 +730,10 @@ def main() -> int:
         )
 
     gaps = coverage_gaps(entries) if args.require_coverage else []
+    if args.require_review:
+        gaps += review_gaps(entries)
     if gaps:
-        print("\n覆盖不达门禁：" + "、".join(gaps), file=sys.stderr)
+        print("\n覆盖或复核不达门禁：" + "、".join(gaps), file=sys.stderr)
 
     if failed:
         print(f"\n{failed}/{len(entries)} 个来源有结构或定位问题", file=sys.stderr)
