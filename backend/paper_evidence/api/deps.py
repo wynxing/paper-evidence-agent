@@ -33,6 +33,8 @@ class Services:
         self.prompts = PaperPromptBuilder()
         self._store: SqliteStore | None = None
         self._client: httpx.AsyncClient | None = None
+        self._tracing = None
+        self._tracing_built = False
 
     @property
     def store(self) -> SqliteStore:
@@ -50,6 +52,22 @@ class Services:
     @property
     def projector(self) -> SqliteDiagnosticProjector:
         return SqliteDiagnosticProjector(self.store, self.settings.criteria())
+
+    @property
+    def tracing(self):
+        """The span sink for this process, or ``None`` when export is off.
+
+        Built once: a second provider would open a second exporter thread and split
+        one task's spans across two traces. ``None`` is a real answer (export off),
+        so the build is guarded by a flag rather than by testing for ``None``.
+        """
+
+        if not self._tracing_built:
+            from paper_evidence.tracing.otel import build_recorder
+
+            self._tracing = build_recorder(self.settings)
+            self._tracing_built = True
+        return self._tracing
 
     def _fetcher(self) -> Fetcher:
         user_agent = USER_AGENT
@@ -111,6 +129,12 @@ class Services:
         self.close()
 
     def close(self) -> None:
+        if self._tracing is not None:
+            # Flush what is queued before the store closes; shutdown is bounded by
+            # the exporter timeout and never raises.
+            self._tracing.shutdown()
+            self._tracing = None
+            self._tracing_built = True
         if self._store is not None:
             self._store.close()
             self._store = None

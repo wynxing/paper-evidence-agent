@@ -12,7 +12,7 @@
 | `frontend/src/` | Vue 静态页面和 API 客户端类型声明。 |
 | `tests/tools/`、`tests/boundary/`、`tests/retrieval/`、`tests/session/` | HTTP 接口与契约、领域规则与存储生命周期、检索与切分、有界工作流的检查。 |
 
-模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型传输和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`）；轨迹只写本地，Langfuse 出站导出不接入（见[决策记录](decisions.md#交稿期补充2026-10-18)）。
+模块调用关系见[架构设计](architecture.md#代码布局)。`Protocol` 声明不能实例化，具体适配器在 `storage/sqlite.py`、`sources/`、`retrieval/`、`models/`、`agents/`、`graph/`、`diagnosis/`、`tracing/` 和 `worker/` 中实现。SQLite/FTS5、来源连接器、模型传输和有界流程已接入；LangGraph 编排改为等价的显式状态机（`graph/workflow.py`）；轨迹先写本地，配齐端点与凭据后才异步导出到 Langfuse（见[决策记录](decisions.md#观测导出接入2026-10-19)）。
 
 存储、检索、提示词和轨迹端口是同步接口。异步 worker 通过 `asyncio.to_thread` 调用它们，不在事件循环上直接执行 SQLite 或 FTS5。来源、模型和工作流的进程内 `deadline` 是 `time.monotonic()` 的绝对时刻；写入任务的 `claimed_at`/`deadline_at` 用墙钟 UTC 秒，因为这两个值会由 API 进程读取，进程内单调时钟跨重启没有意义。
 
@@ -48,12 +48,13 @@ OpenAPI 声明了预期的成功响应类型和架构中已写明的错误响应
 
 ## 本地轨迹与诊断包
 
-交稿与验收只用本地轨迹和诊断包，不做 Langfuse 出站导出（见[决策](decisions.md#交稿期补充2026-10-18)）。
+本地轨迹始终是诊断依据；Langfuse 导出是**默认关闭**的附加通道，只在端点、凭据与观测接收方都配齐时启用（见[决策](decisions.md#观测导出接入2026-10-19)）。
 
-- **轨迹写在哪**：`tracing/local.py` 的 `LocalTraceRecorder` 把每个阶段的 `ExecutionRecord`（阶段、工具名、状态、耗时、轮次、错误码）写进任务同一个 SQLite；它就是诊断包里的 `execution`。模型侧每次请求另表记账，出现在诊断包的 `model_calls` 里。两者按任务与 `request_id` 对账，不需要外部服务。
+- **轨迹写在哪**：`graph/support.py` 的 `StageRecorder` 把每个阶段的 `ExecutionRecord`（阶段、工具名、状态、耗时、轮次、错误码）写进任务同一个 SQLite；它就是诊断包里的 `execution`。模型侧每次请求另表记账，出现在诊断包的 `model_calls` 里。两者按任务与 `request_id` 对账，不需要外部服务。
 - **怎么取**：`GET /api/checks/{id}/diagnostic-packet` 返回 `redacted` 包（`quote` 换成占位符，公开书目字段保留）；`POST /api/checks/{id}/diagnostic-export` 返回 `consented` 包，要求运行配置里已授权 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`，未配置时返回 `400`。
-- **为什么没有 Langfuse**：`config_snapshot().observability.langfuse_enabled` 与 `diagnosis/projector.py` 的 `_default_observability` 都是 `false`，`tracing/` 只有本地实现。接出站导出要改 `config_digest`、观测授权面并单独处理导出失败告警，属功能定型之外的新增功能。
-- **留档截图取哪三处**：详情页的执行记录（阶段 / 工具 / 耗时 / 错误码）、诊断包的 `run_config.observability`（其中 `langfuse_enabled` 为 `false`）、诊断包的 `model_calls`（每次请求的 `request_id`、轮次与修复归属）。三处都是本地记录，截图不依赖外部账号或服务。
+- **什么时候会导出**：`PAPER_EVIDENCE_LANGFUSE_ENABLED=1`、`PAPER_EVIDENCE_LANGFUSE_HOST`（如 `https://cloud.langfuse.com`）、`PAPER_EVIDENCE_LANGFUSE_PUBLIC_KEY`、`PAPER_EVIDENCE_LANGFUSE_SECRET_KEY` 与 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT` 齐备时。缺一项就不启用，并在日志里留一条 WARNING；`run_config.observability.langfuse_enabled` 写的是有效状态，不是开关值。导出走 `<host>/api/public/otel/v1/traces`（OTLP/HTTP + Basic 认证），只发白名单属性：阶段、工具、耗时、状态、错误码、轮次、`request_id` 与 `config_digest`，不含 claim、正文、引文、DOI、提示词与密钥。
+- **导出失败怎么办**：`BatchSpanProcessor` 在独立线程里发，队列有界；发送失败只丢 span 并记本地告警，不改任务结果、不加业务重试、不延长 worker 占用。本地 `execution` 记录在导出之前就已落库，所以断网时诊断包仍然完整。
+- **留档截图取哪三处**：详情页的执行记录（阶段 / 工具 / 耗时 / 错误码）、诊断包的 `run_config.observability`（默认 `langfuse_enabled` 为 `false`）、诊断包的 `model_calls`（每次请求的 `request_id`、轮次与修复归属）。三处都是本地记录，截图不依赖外部账号或服务；要截 Langfuse 界面，必须先在运行配置里把上面五项配齐。
 
 ## Worker 入口
 
@@ -92,6 +93,8 @@ PAPER_EVIDENCE_MODEL_API_KEY=sk-... backend/.venv/bin/python -m paper_evidence.w
 ```
 
 需要换模型时加 `PAPER_EVIDENCE_PROVIDER_MODEL`（LiteLLM 的「供应商/模型」写法，如 `openai/gpt-4o-mini`）；只有上游不是该供应商的默认端点时才需要 `PAPER_EVIDENCE_MODEL_API_BASE`（如 `https://your-endpoint/v1`）。凭据缺失或端点不可达时，任务在 `query_generation` 阶段以映射后的 `UPSTREAM_*` 错误码结束，不会回落到任何内置模型、本地替身或模拟数据。诊断导出另需 `PAPER_EVIDENCE_OBSERVABILITY_RECIPIENT`，与模型凭据无关。
+
+观测导出（可选）另需四项，缺一即保持关闭：`PAPER_EVIDENCE_LANGFUSE_ENABLED=1`、`PAPER_EVIDENCE_LANGFUSE_HOST`（如 `https://cloud.langfuse.com`，自托管填实例地址）、`PAPER_EVIDENCE_LANGFUSE_PUBLIC_KEY`、`PAPER_EVIDENCE_LANGFUSE_SECRET_KEY`。密钥只从进程环境读，不写进快照、摘要或日志；开关打开了但四项不齐时日志会留一条 WARNING，任务照常只在本地记录。
 
 `litellm` 是运行时必需依赖，导入时默认会下载远程价目表；本项目把费用记为未知，因此在导入 LiteLLM 之前设 `LITELLM_LOCAL_MODEL_COST_MAP=True`，跳过这次网络请求。
 

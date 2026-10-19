@@ -3,22 +3,31 @@
 Spans record which step observed which input, output or error; they never claim
 to explain the model's internal reasoning. Only identifiers, stages, tool names,
 durations and error codes are stored — never claims, prompts or responses.
+
+The optional ``sink`` receives the same ``ExecutionRecord`` after it is stored
+locally (``tracing/otel.py`` exports it). A sink failure is logged and swallowed:
+the local record is the diagnostic source of truth, and observation must never
+change whether a check succeeds.
 """
 
+import logging
 import time
 
 from paper_evidence.domain.contracts import ExecutionRecord
 
 __all__ = ["StageRecorder"]
 
+logger = logging.getLogger(__name__)
+
 
 class StageRecorder:
     """Record one ``ExecutionRecord`` per workflow step and track the current stage."""
 
-    def __init__(self, store, task_id: str, db) -> None:
+    def __init__(self, store, task_id: str, db, sink=None) -> None:
         self._store = store
         self._task_id = task_id
         self._db = db
+        self._sink = sink
         self._seq = 0
         self.stage = None
 
@@ -48,3 +57,8 @@ class StageRecorder:
             request_id=request_id,
         )
         await self._db(self._store.record_execution, self._task_id, event)
+        if self._sink is not None:
+            try:
+                self._sink.record(self._task_id, event)
+            except Exception as error:  # noqa: BLE001 - see module docstring
+                logger.warning("观测 sink 写入失败，已跳过：%s", type(error).__name__)

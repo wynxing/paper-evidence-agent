@@ -30,7 +30,7 @@ from paper_evidence.storage.sqlite import SqliteStore
 def run_workflow(tmp_path):
     """Run the real bounded workflow over an injected frozen source."""
 
-    def _run(*, claim: str, jats_bytes: bytes, outputs: list[str]) -> AdversarialRun:
+    def _run(*, claim: str, jats_bytes: bytes, outputs: list[str], tracing=None) -> AdversarialRun:
         settings = replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
         store = SqliteStore(tmp_path / "adversarial.sqlite3")
         gateway = CapturingGateway(outputs)
@@ -38,6 +38,7 @@ def run_workflow(tmp_path):
             store=store, resolver=FrozenResolver(), fulltext=FrozenFulltext(jats_bytes),
             retriever=StoreRetriever(store, settings.retrieval_context_limit),
             prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+            tracing=tracing,
         )
         task = TaskInput(id="adv-1", claim=claim, doi="10.1000/adversarial", config_digest="adv",
                          authorized_recipients=("Agnes",))
