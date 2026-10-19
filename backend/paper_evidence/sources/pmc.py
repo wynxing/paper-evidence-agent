@@ -103,6 +103,44 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _article_doi(article: ElementTree.Element) -> str | None:
+    """The DOI **this article** declares, never one a ``<sub-article>`` declares.
+
+    PLOS serves its open peer-review files as ``<sub-article>`` elements, and each
+    carries its own ``article-id[@pub-id-type="doi"]`` in its front matter
+    (``front-stub`` in the records measured) — ``….r001`` … ``….r006``, placed
+    *after* the article's own DOI. Walking the whole ``article`` subtree and
+    letting the last write win therefore returned ``….r006`` as ``record.doi``,
+    and the identity check in ``SourceService.fetch`` rejected a record that was
+    in fact the article asked for — a parser defect reported as
+    ``SOURCE_MISMATCH``, i.e. as an upstream conflict (Issue #98, measured live
+    on ``PMC13648980``).
+
+    ``front/article-meta`` is where an article declares its own identity, and only
+    ``<article>``'s direct children are read, so a sub-article's front matter is
+    never reached. If that metadata declares no DOI this returns ``None`` instead
+    of falling back to the rest of the tree: a DOI belonging to a different
+    (sub-)article would either block a correct record again or stand in for this
+    article's identity — worse than "unknown", which is at least honest.
+    """
+
+    for front in article:
+        if _local(front.tag) != "front":
+            continue
+        for meta in front:
+            if _local(meta.tag) != "article-meta":
+                continue
+            for element in meta:
+                if _local(element.tag) != "article-id":
+                    continue
+                if (element.get("pub-id-type") or "").lower() != "doi":
+                    continue
+                value = (element.text or "").strip()
+                if value:
+                    return value
+    return None
+
+
 def _oai_error_code(root: ElementTree.Element) -> str | None:
     """The OAI-PMH ``error`` code of a GetRecord response, or ``None``.
 
@@ -223,6 +261,9 @@ class PmcClient:
 
         The returned ``jats_bytes`` is the ``<article>`` subtree, byte-exact
         (``_article_bytes``); the OAI envelope is deliberately not part of it.
+        ``doi`` is the article's **own** DOI, read from ``front/article-meta``; a
+        DOI declared by a ``<sub-article>`` (PLOS open peer-review files) is never
+        substituted for it (Issue #98).
         """
 
         retrieval_form = RETRIEVAL_FULL_TEXT
@@ -236,14 +277,13 @@ class PmcClient:
         if article is None:
             raise ContractError(ErrorCode.CONTENT_INCOMPLETE, "PMC 记录缺少正文")
 
-        doi = None
+        doi = _article_doi(article)
         title = None
         for element in article.iter():
-            name = _local(element.tag)
-            if name == "article-id" and (element.get("pub-id-type") or "").lower() == "doi":
-                doi = (element.text or "").strip() or None
-            elif name == "article-title" and title is None:
+            if _local(element.tag) == "article-title":
                 title = " ".join("".join(element.itertext()).split()) or None
+                if title:
+                    break
 
         license_element = next((item for item in article.iter() if _local(item.tag) == "license"), None)
         href = None

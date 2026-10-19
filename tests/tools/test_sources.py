@@ -40,6 +40,37 @@ JATS = b"""<article xml:lang="en">
  <body><sec><title>Results</title><p>The treatment reduced mortality.</p></sec></body>
 </article>"""
 
+#: The shape PLOS serves for its open peer-review articles: the article's own DOI in
+#: ``front/article-meta``, then one ``<sub-article>`` per review file, each with its
+#: own ``article-id[@pub-id-type="doi"]`` — ``….r001`` … ``….r006`` — as a direct
+#: child of ``<front-stub>``. Measured live 2026-10-19 on ``PMC13648980``
+#: (``10.1371/journal.pone.0360355``): six such DOIs, all after the article's own,
+#: and the last one became ``record.doi`` for as long as the parse let the last write
+#: win (Issue #98). Body text is trimmed to one sentence; the shape is what matters.
+SUB_ARTICLE_JATS = b"""<article xml:lang="en">
+ <front><article-meta>
+   <article-id pub-id-type="pmcid">PMC123</article-id>
+   <article-id pub-id-type="doi">10.1000/xyz</article-id>
+   <title-group><article-title>Demo study</article-title></title-group>
+   <permissions><license license-type="cc-by">CC BY 4.0</license></permissions>
+ </article-meta></front>
+ <body><sec><title>Results</title><p>The treatment reduced mortality.</p></sec></body>
+ <sub-article article-type="aggregated-review-documents" id="pone.0000001.r001">
+  <front-stub>
+   <article-id pub-id-type="doi">10.1000/xyz.r001</article-id>
+   <title-group><article-title>Reviewer report 1</article-title></title-group>
+  </front-stub>
+  <body><p>Reviewer one accepted the manuscript.</p></body>
+ </sub-article>
+ <sub-article article-type="aggregated-review-documents" id="pone.0000001.r006">
+  <front-stub>
+   <article-id pub-id-type="doi">10.1000/xyz.r006</article-id>
+   <title-group><article-title>Reviewer report 6</article-title></title-group>
+  </front-stub>
+  <body><p>Reviewer six accepted the manuscript.</p></body>
+ </sub-article>
+</article>"""
+
 #: The shape PMC actually returns for ``metadataPrefix=pmc_fm``: front matter
 #: (title, permissions, abstract) and **no ``<body>``**. Measured against live
 #: PMC on 2026-10-12 — three of three records had a ``<body>`` count of 0.
@@ -426,6 +457,62 @@ def test_doi_mismatch_between_crossref_and_pmc_is_blocked():
     with pytest.raises(ContractError) as raised:
         run(build(fetch_handler(doi_in_article="10.1000/other")), deadline=time.monotonic() + 60)
     assert raised.value.error_code is ErrorCode.SOURCE_MISMATCH
+
+
+def record_of(jats: bytes):
+    """``PmcClient.fetch_record`` over a mocked OAI answer, no service in between."""
+
+    def handler(request):
+        return httpx.Response(200, content=oai_response(jats))
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    fetcher = Fetcher(client, 15, "test-agent")
+    return asyncio.run(
+        PmcClient(fetcher, "https://pmc.test/idconv", "https://pmc.test/oai").fetch_record(
+            "PMC123", None
+        )
+    )
+
+
+def test_a_sub_article_doi_never_stands_in_for_the_article_doi():
+    """Issue #98：子文章（开放同行评审文件）的 DOI 不是本文的 DOI。
+
+    PLOS 的记录在本文 DOI 之后还带 ``….r001`` … ``….r006`` 六个子文章 DOI，它们同样是
+    ``article-id[@pub-id-type="doi"]``。原来的解析遍历整棵 ``article`` 且后写覆盖前写，
+    于是 ``record.doi`` 变成 ``….r006``，``SourceService.fetch`` 的身份校验必然报
+    ``SOURCE_MISMATCH``——把解析缺陷说成上游身份冲突。这里钉住 ``record.doi`` 就是本文 DOI，
+    不是「随便取到了某个 DOI」。
+    """
+
+    assert record_of(SUB_ARTICLE_JATS).doi == DOI
+
+
+def test_a_plos_shaped_record_is_no_longer_rejected_as_a_doi_mismatch():
+    """同一篇记录走完整 ``fetch``：修复前它停在 ``SOURCE_MISMATCH``，一行正文都读不到。
+
+    这条用例的价值在于它经过 ``SourceService`` 的身份校验，而不是只测解析器：把
+    ``record.doi`` 换回子文章的 DOI，它会立刻变红。
+    """
+
+    snapshot = run(build(fetch_handler(jats=SUB_ARTICLE_JATS)), deadline=time.monotonic() + 60)
+    assert snapshot.metadata.pmcid == "PMC123"
+    assert snapshot.metadata.doi == DOI
+    assert snapshot.metadata.retrieval_form == "full_text"
+
+
+def test_a_record_without_its_own_doi_does_not_borrow_a_sub_article_doi():
+    """本文元数据没有 DOI 时返回 ``None``，不从子文章里捡一个来顶替。
+
+    「本文没声明 DOI」与「子文章有声明的 DOI」是两件事。取后者会让身份校验拿另一个（子）
+    文章的 DOI 去比，重新把正确记录判成冲突；返回 ``None`` 时校验会跳过，因为来源身份另有
+    PMID→PMCID 的映射佐证。这条钉的是「不猜」，不是「猜对」。
+    """
+
+    without_own_doi = SUB_ARTICLE_JATS.replace(
+        b'<article-id pub-id-type="doi">10.1000/xyz</article-id>\n   ', b""
+    )
+    assert b'10.1000/xyz</article-id>' not in without_own_doi
+    assert record_of(without_own_doi).doi is None
 
 
 def test_missing_pmc_source_is_source_unavailable():
