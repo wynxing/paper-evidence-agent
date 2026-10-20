@@ -95,5 +95,49 @@
       "preview": "The publisher apologizes for the inconvenience caused to the authors and readers."
     }
   ],
-  "claims": []
+  "claims": [
+    {
+      "claim_id": "PMC7461750-c01",
+      "claim": "该更正声明指出，原发表文献遗漏了 Fuchs 博士在 KoCo19 合作组中的署名。",
+      "claim_kind": "constructed",
+      "claim_note": "中文转述第 3 段，未改变对象与事实。",
+      "variations": [
+        "object"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 3 段逐字写明该遗漏与更正，论断的对象（Fuchs、合作组署名）与事实与之一致，属「支持」。",
+      "limits": "只能说这份更正声明确认了署名遗漏；不能据此判断原研究本身的学术质量。",
+      "evidence": {
+        "ordinal": 3,
+        "quote": "the author Dr. Fuchs was erroneously omitted as a collaborator from the KoCo19 collaboration group"
+      }
+    },
+    {
+      "claim_id": "PMC7461750-c02",
+      "claim": "该队列研究在慕尼黑招募了约 3 000 名参与者。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：取原协议研究的一个典型事实，用来验证「来源可处理但正文不含该事实」时的拒判。",
+      "variations": [
+        "quantity",
+        "object"
+      ],
+      "expected_label": "证据不足",
+      "rationale": "该记录是一份更正声明：清单 5 段、共 410 字，逐段查过——第 1 段是更正标题、第 2 段是原文 DOI、第 3 段是署名遗漏、第 4 段是已更正、第 5 段是致歉，全文不含研究设计、样本量或结果。来源可处理且有界检索已完成，但不存在可核查片段，符合术语表「证据不足」的定义。",
+      "limits": "这条只说明**本记录**没有该事实，不能推出原协议研究没有招募样本；原协议（10.1186/s12889-020-09164-9）是另一条记录。",
+      "evidence": null
+    },
+    {
+      "claim_id": "PMC7461750-c03",
+      "claim": "该研究的随访在 2020 年 4 月至 6 月之间完成。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：取一个时间条件事实，用来验证「条件类」问题在缺内容来源上的拒判。",
+      "variations": [
+        "condition"
+      ],
+      "expected_label": "证据不足",
+      "rationale": "同上：5 段全文无任何时间、随访或入组信息；「证据不足」在此只表示本次未获得足够证据，不是「该说法为假」。",
+      "limits": "不能把「未获得证据」读成「该说法不成立」——这正是术语表要求区分「相矛盾」与「证据不足」的地方。",
+      "evidence": null
+    }
+  ]
 }

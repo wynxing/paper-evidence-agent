@@ -461,5 +461,117 @@
       "preview": "Click here for additional data file."
     }
   ],
-  "claims": []
+  "claims": [
+    {
+      "claim_id": "PMC8806060-c01",
+      "claim": "DF-Tiny-YOLO 在四类苹果叶数据集上的平均精度均值（mAP）为 99.99%。",
+      "claim_kind": "natural",
+      "claim_note": "",
+      "variations": [
+        "quantity"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 39 段同时给出模型名、指标名与数值，论断在对象（DF-Tiny-YOLO）、指标（mAP）与数量（99.99%）三处完全一致；同段另给出与 Tiny-YOLO 的差值 0.17%，不影响该数值本身。",
+      "limits": "该 mAP 来自 1,404 张图按 80:20 单次划分的测试集，原文未报告交叉验证或多次重复，不能读成「对新数据的泛化精度」，也不能与其它数据集上的 mAP 直接比较。",
+      "evidence": {
+        "ordinal": 39,
+        "quote": "The mAP of DF-Tiny-YOLO is 99.99%"
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c02",
+      "claim": "DF-Tiny-YOLO 在网络末端依次使用 1×1、1×1、3×3 卷积核，目的是在不增加计算复杂度的前提下提升检测精度。",
+      "claim_kind": "constructed",
+      "claim_note": "中文转述第 21 段的设计意图，保留原句的三段因果链（卷积核配置 → 降维与增深 → 精度提升）。",
+      "variations": [
+        "causality"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 21 段用「will contribute to … thus further improving」给出完整因果链：末端卷积核配置导致特征维度下降与网络加深，且不增加计算复杂度，从而提高检测精度。论断的对象（末端卷积核）、条件（不增加计算复杂度）与方向与之逐项一致。",
+      "limits": "这是设计意图陈述，不是消融实验。原文没有单独去掉这组卷积核再测精度，因此不能把该句当作「这组卷积核带来多少精度增益」的证据。",
+      "evidence": {
+        "ordinal": 21,
+        "quote": "Using 1 × 1, 1 × 1, and 3 × 3 convolution kernels at the network terminals will contribute to reducing the dimension of features and increasing the network depth without increasing computational complexity, thus further improving the detection accuracy."
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c03",
+      "claim": "该实验的 1,404 张图像按 80%:20% 的比例随机划分为训练集与测试集。",
+      "claim_kind": "natural",
+      "claim_note": "",
+      "variations": [
+        "condition"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 23 段先给出总量 1,404 张（300 + 300 + 275 + 529），随后写明按 80%:20% 随机划分。论断的划分比例、随机方式与样本总量与原文一致。",
+      "limits": "单次随机划分，原文未报告随机种子、也未做多折或重复划分，因此不能据此判断划分本身的稳定性，更不能说明训练/测试分布是否严丝合缝地代表田间实景。",
+      "evidence": {
+        "ordinal": 23,
+        "quote": "The images were randomly divided into training and test sets at a ratio of 80%:20%"
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c04",
+      "claim": "与原始 Tiny-YOLO 相比，DF-Tiny-YOLO 在检测精度和检测速度上都有提升。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把摘要里「significantly improves the detection performance」这一整体性表述拆开，落到「精度 + 速度」两个可分别核对的分量上。",
+      "variations": [
+        "quantity",
+        "condition"
+      ],
+      "expected_label": "部分支持",
+      "rationale": "第 39 段逐项给出对照：精度侧确实优于 Tiny-YOLO（mAP +0.17%、IoU +10.38%、Recall +0.01），但速度侧原文明确写「the same as that of Tiny-YOLO」。论断把速度提升与精度提升并列，速度这一半在同一段里不成立——合取命题部分成立，按术语表属「部分支持」而非「支持」。",
+      "limits": "同段「3-fold that of YOLOv2」是相对 YOLOv2 的速度倍数，不能读成对 Tiny-YOLO 的优势；本条只否证「速度也有提升」，不否定整体性能改进。",
+      "evidence": {
+        "ordinal": 39,
+        "quote": "The mAP of DF-Tiny-YOLO is 99.99%, which was 0.17% higher than that of Tiny-YOLO. The average IoU was 90.88%, which was 1.59% and 10.38% higher than YOLOV2 and Tiny-YOLO, respectively. Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO. The detection speed was 280 FPS, which was the same as that of Tiny-YOLO, and the number of images that can be processed per second was 3-fold that of YOLOv2."
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c05",
+      "claim": "DF-Tiny-YOLO 的召回率显著高于 YOLOv2。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把原文的「与 YOLOv2 相同」改成「显著高于」，用于验证数量维度上的否定方向。",
+      "variations": [
+        "negation",
+        "quantity"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "第 39 段写「Recall was 1.00, which was the same as YOLOV2」——与 YOLOv2 相同而非更高。论断在同一指标、同一对照对象上断言「显著高于」，方向相反，属对应条件下的明确相反证据，不是「没搜到支持」的推导。",
+      "limits": "1.00 已是召回率上限，两者都取到 1.00，「相同」是测量分辨率所致，不能反推两者真实识别能力完全等价；也不能由本条推出 DF-Tiny-YOLO 在其他指标上同样不优于 YOLOv2（IoU 一项它就高 1.59%）。",
+      "evidence": {
+        "ordinal": 39,
+        "quote": "Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO."
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c06",
+      "claim": "DF-Tiny-YOLO 在四个类别上的识别表现一致。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把原文「在这些类别上表现最好」反过来说成「各类别表现一致」，用于验证对象维度上的相反证据。",
+      "variations": [
+        "object"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "第 40 段明确写「the model performs best for Apple cedar rust and healthy leaves」——存在表现更好的类别，即类别间并不一致。论断断言四个类别表现一致，与之方向相反。",
+      "limits": "原文只给「最好」的定性判断，未公布各类别的具体精度与召回，因此本条只能否证「一致」，不能据此排出完整的类别优劣顺序，也不能量化差异幅度。",
+      "evidence": {
+        "ordinal": 40,
+        "quote": "the model performs best for Apple cedar rust and healthy leaves"
+      }
+    },
+    {
+      "claim_id": "PMC8806060-c07",
+      "claim": "DF-Tiny-YOLO 在与更多主流检测模型的横向对比中表现更优。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把「优于已比较的两个模型」扩成「优于更多主流模型」，用于验证比较对象被扩大时的拒判。",
+      "variations": [
+        "object"
+      ],
+      "expected_label": "证据不足",
+      "rationale": "全文的横向对比只有 YOLOv2 与 Tiny-YOLO 两个对象——第 39 段、第 42 段、第 45 段均如此；第 49 段更明确写「the study is limited by the experimental environment, which makes it difficult to compare with more models」。逐段查过 55 段，不存在支撑「与更多模型比较」的可核查片段，来源可处理且有界检索已完成，符合术语表「证据不足」。",
+      "limits": "这只说明本文没有做更多模型的对比，不能推出 DF-Tiny-YOLO 劣于其它模型；第 49 段表明这是作者自认的环境限制，不是对模型能力的否定。",
+      "evidence": null
+    }
+  ]
 }

@@ -439,18 +439,31 @@ def _short(text: str, limit: int = 24) -> str:
 def coverage(entries: list[dict]) -> dict:
     """Count labels and variations over the set, per source and in total.
 
-    ``disputed`` entries are counted in ``total`` but not in the label or variation
-    tallies: they stay in the file, and they do not enter the truth denominator
-    until the two annotators agree.
+    Two tallies, deliberately kept apart:
+
+    * ``labels`` / ``variations`` describe the **candidates** — what has been written,
+      whether or not a second person has looked at it. Useful while authoring, and
+      the only thing a reviewer can react to.
+    * ``confirmed_labels`` / ``confirmed_variations`` count only ``review.outcome ==
+      "agree"``. This is what ``--require-coverage`` must read: a set of claims that
+      nobody signed says nothing about coverage of the answer key, and treating it as
+      covered is how a green gate ends up meaning "someone typed four labels".
+
+    ``disputed`` entries are counted in ``total`` but in neither tally: they stay in
+    the file, and they do not enter the truth denominator until the two annotators
+    agree.
     """
 
     report = {
         "total": 0,
         "constructed": 0,
         "reviewed": 0,
+        "confirmed": 0,
         "disputed": 0,
         "labels": {label: 0 for label in JUDGEMENT_LABELS},
         "variations": {tag: 0 for tag in VARIATIONS},
+        "confirmed_labels": {label: 0 for label in JUDGEMENT_LABELS},
+        "confirmed_variations": {tag: 0 for tag in VARIATIONS},
         "untagged": 0,
         "per_source": {},
     }
@@ -463,36 +476,52 @@ def coverage(entries: list[dict]) -> dict:
                 continue
             report["total"] += 1
             review = claim.get("review")
-            if isinstance(review, dict) and isinstance(review.get("by"), str) and review["by"].strip():
+            signed = isinstance(review, dict) and bool(str(review.get("by") or "").strip())
+            outcome = review.get("outcome") if isinstance(review, dict) else None
+            if signed:
                 report["reviewed"] += 1
-            if isinstance(review, dict) and review.get("outcome") == "disputed":
+            if outcome == "disputed":
                 report["disputed"] += 1
                 continue
             label = claim.get("expected_label")
+            tags = claim.get("variations") or []
             if label in row:
                 row[label] += 1
                 report["labels"][label] += 1
             if claim.get("claim_kind") == "constructed":
                 report["constructed"] += 1
-            tags = claim.get("variations") or []
             if not tags:
                 report["untagged"] += 1
             for tag in tags:
                 if tag in report["variations"]:
                     report["variations"][tag] += 1
+            if outcome != "agree":
+                continue
+            report["confirmed"] += 1
+            if label in report["confirmed_labels"]:
+                report["confirmed_labels"][label] += 1
+            for tag in tags:
+                if tag in report["confirmed_variations"]:
+                    report["confirmed_variations"][tag] += 1
         report["per_source"][case_id] = row
     return report
 
 
 def render_coverage(entries: list[dict]) -> str:
-    """A table a reviewer can read, including what is *not* covered."""
+    """A table a reviewer can read, including what is *not* covered.
+
+    Candidates and signed claims are printed on separate lines rather than merged:
+    a reader who only sees "16 claims, coverage complete" will assume the answer key
+    is done, when in fact nobody has checked it yet.
+    """
 
     report = coverage(entries)
     counted = report["total"] - report["disputed"]
     lines = [
         f"覆盖：{len(entries)} 个来源，{report['total']} 条 claims"
         f"（其中构造输入 {report['constructed']} 条，未标变体 {report['untagged']} 条，"
-        f"已复核 {report['reviewed']} 条，disputed {report['disputed']} 条）",
+        f"已复核 {report['reviewed']} 条，已签核 {report['confirmed']} 条，"
+        f"disputed {report['disputed']} 条）",
         "",
         "| 来源 | " + " | ".join(JUDGEMENT_LABELS) + " | 合计 |",
         "| --- | " + " | ".join("---" for _ in JUDGEMENT_LABELS) + " | --- |",
@@ -503,21 +532,37 @@ def render_coverage(entries: list[dict]) -> str:
             + f" | {sum(row.values())} |"
         )
     lines.append(
-        "| **合计** | "
+        "| **合计（候选）** | "
         + " | ".join(str(report["labels"][label]) for label in JUDGEMENT_LABELS)
         + f" | {counted} |"
+    )
+    lines.append(
+        "| **合计（已签核）** | "
+        + " | ".join(str(report["confirmed_labels"][label]) for label in JUDGEMENT_LABELS)
+        + f" | {report['confirmed']} |"
     )
     lines.append("")
     lines.append("| 变体 | " + " | ".join(VARIATIONS.values()) + " |")
     lines.append("| --- | " + " | ".join("---" for _ in VARIATIONS) + " |")
     lines.append(
-        "| 条数 | "
+        "| 候选 | "
         + " | ".join(str(report["variations"][tag]) for tag in VARIATIONS)
+        + " |"
+    )
+    lines.append(
+        "| 已签核 | "
+        + " | ".join(str(report["confirmed_variations"][tag]) for tag in VARIATIONS)
         + " |"
     )
 
     missing_labels = [label for label in JUDGEMENT_LABELS if not report["labels"][label]]
     missing_vars = [VARIATIONS[tag] for tag in VARIATIONS if not report["variations"][tag]]
+    missing_confirmed = [
+        label for label in JUDGEMENT_LABELS if not report["confirmed_labels"][label]
+    ]
+    missing_confirmed_vars = [
+        VARIATIONS[tag] for tag in VARIATIONS if not report["confirmed_variations"][tag]
+    ]
     lines.append("")
     if report["total"] == 0:
         lines.append(
@@ -530,25 +575,50 @@ def render_coverage(entries: list[dict]) -> str:
                 "（分歧解决前不计为确定真值）。"
             )
         lines.append(
-            "未覆盖的标签：" + ("无" if not missing_labels else "、".join(missing_labels))
+            "候选未覆盖的标签：" + ("无" if not missing_labels else "、".join(missing_labels))
         )
         lines.append(
-            "未覆盖的变体：" + ("无" if not missing_vars else "、".join(missing_vars))
+            "候选未覆盖的变体：" + ("无" if not missing_vars else "、".join(missing_vars))
         )
+        if report["confirmed"] < counted:
+            lines.append(
+                f"**已签核 {report['confirmed']}/{counted} 条**：未签核的不算覆盖，"
+                "`--require-coverage` 只认已签核。"
+            )
+            lines.append(
+                "已签核未覆盖的标签："
+                + ("无" if not missing_confirmed else "、".join(missing_confirmed))
+            )
+            lines.append(
+                "已签核未覆盖的变体："
+                + ("无" if not missing_confirmed_vars else "、".join(missing_confirmed_vars))
+            )
+        else:
+            lines.append("已签核未覆盖的标签：" + ("无" if not missing_confirmed else "、".join(missing_confirmed)))
+            lines.append("已签核未覆盖的变体：" + ("无" if not missing_confirmed_vars else "、".join(missing_confirmed_vars)))
         if missing_labels or missing_vars:
             lines.append("（#86 / `test-plan.md:46` 要求四类标签、五个变体各至少一例）")
     return "\n".join(lines)
 
 
 def coverage_gaps(entries: list[dict]) -> list[str]:
-    """The cells ``--require-coverage`` refuses to accept, in words."""
+    """The cells ``--require-coverage`` refuses to accept, in words.
+
+    Judged on **signed** claims only. A written-but-unsigned claim is a candidate, and
+    counting candidates here would let a gate pass on answers no second person has
+    looked at — which is exactly what this function exists to prevent.
+    """
 
     report = coverage(entries)
-    gaps = [f"标签「{label}」0 条" for label in JUDGEMENT_LABELS if not report["labels"][label]]
+    gaps = [
+        f"标签「{label}」无已签核 claim"
+        for label in JUDGEMENT_LABELS
+        if not report["confirmed_labels"][label]
+    ]
     gaps += [
-        f"变体「{VARIATIONS[tag]}」0 条"
+        f"变体「{VARIATIONS[tag]}」无已签核 claim"
         for tag in VARIATIONS
-        if not report["variations"][tag]
+        if not report["confirmed_variations"][tag]
     ]
     return gaps
 

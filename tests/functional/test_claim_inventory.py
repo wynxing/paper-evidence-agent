@@ -240,7 +240,9 @@ def test_a_drifted_paragraph_hash_is_reported_as_drift():
     assert any("哈希与清单不一致" in line for line in errors)
 
 
-def test_coverage_counts_labels_and_variations_and_names_the_gaps():
+def test_coverage_counts_candidates_and_says_none_are_signed():
+    """候选分布照实统计；但三条都没签核，门禁一个格子都不能放过。"""
+
     entries = [
         entry([claim(expected_label="支持", variations=["object"]),
                claim(claim_id="c2", expected_label="相矛盾", variations=["causality"],
@@ -256,14 +258,89 @@ def test_coverage_counts_labels_and_variations_and_names_the_gaps():
     assert report["labels"]["证据不足"] == 1
     assert report["variations"]["object"] == 1
     assert report["untagged"] == 1
+    assert report["confirmed"] == 0, "没写 review 就不该算已签核"
 
     gaps = coverage_gaps(entries)
-    assert "标签「部分支持」0 条" in gaps
-    assert "变体「数量」0 条" in gaps
+    assert all(
+        any(f"标签「{label}」无已签核" in gap for gap in gaps) for label in JUDGEMENT_LABELS
+    ), gaps
 
     table = render_coverage(entries)
     assert "PMC_A" in table and "PMC_B" in table
-    assert "未覆盖的标签：部分支持" in table
+    assert "候选未覆盖的标签：部分支持" in table
+    assert "已签核未覆盖的标签" in table
+
+
+def test_an_unsigned_claim_cannot_satisfy_the_coverage_gate():
+    """四类标签全写了、但没一个人签核——门禁仍必须红。
+
+    覆盖表曾经把「写了」当成「覆盖了」，于是 ``--require-coverage`` 在没有真值的
+    清单上是绿的。这条用例钉住那个缺口：门禁只认已签核的答案。
+    """
+
+    entries = [
+        entry(
+            [
+                claim(claim_id="c1", expected_label="支持"),
+                claim(claim_id="c2", expected_label="部分支持"),
+                claim(claim_id="c3", expected_label="相矛盾"),
+                claim(claim_id="c4", expected_label="证据不足", evidence=None),
+            ]
+        )
+    ]
+
+    report = coverage(entries)
+    assert report["total"] == 4
+    assert all(report["labels"][label] == 1 for label in JUDGEMENT_LABELS), "候选应四类齐全"
+    assert report["confirmed"] == 0
+    assert all(report["confirmed_labels"][label] == 0 for label in JUDGEMENT_LABELS)
+
+    gaps = coverage_gaps(entries)
+    assert any("标签「支持」无已签核" in gap for gap in gaps), gaps
+    assert "已签核 0/4 条" in render_coverage(entries)
+
+
+def test_only_signed_claims_are_counted_by_the_gate():
+    """一条签核、一条没签：签核的那条算数，没签的不算，候选仍完整保留。"""
+
+    signed = claim(
+        claim_id="c1",
+        expected_label="支持",
+        review={"by": "评审者", "at": "2026-10-20", "outcome": "agree"},
+    )
+    unsigned = claim(
+        claim_id="c2",
+        expected_label="相矛盾",
+        evidence={"ordinal": 1, "quote": "reduced mortality"},
+    )
+    entries = [entry([signed, unsigned])]
+
+    report = coverage(entries)
+    assert report["confirmed"] == 1
+    assert report["confirmed_labels"]["支持"] == 1
+    assert report["confirmed_labels"]["相矛盾"] == 0
+    assert report["labels"]["相矛盾"] == 1, "未签核的候选不能被丢掉"
+
+    gaps = coverage_gaps(entries)
+    assert any("标签「相矛盾」无已签核" in gap for gap in gaps), gaps
+    assert not any("标签「支持」" in gap for gap in gaps), gaps
+
+
+def test_a_disagreed_claim_is_signed_but_not_confirmed():
+    """``disagree`` 是「看过了、不同意」——它不能被算成覆盖，否则门禁会为错答案开门。"""
+
+    disagreed = claim(
+        claim_id="c1",
+        expected_label="支持",
+        review={"by": "评审者", "at": "2026-10-20", "outcome": "disagree"},
+    )
+    entries = [entry([disagreed])]
+
+    report = coverage(entries)
+    assert report["reviewed"] == 1, "disagree 也是签过了"
+    assert report["confirmed"] == 0, "签了但不同意 ≠ 确认"
+    assert report["confirmed_labels"]["支持"] == 0
+    assert coverage_gaps(entries)
 
 
 def test_a_missing_review_warns_while_the_key_is_being_written():
@@ -340,9 +417,16 @@ def test_review_gaps_names_every_unsigned_or_disputed_entry():
 
 
 def test_empty_claims_are_reported_as_incomplete_not_as_passing():
-    table = render_coverage(load_all(SOURCES))
+    """空集不能出现在「通过」的语义里：这是纪律，不是仓库现状的快照。
+
+    用构造的空清单，不读仓库清单——否则「今天写了多少条」会一起被断言进去，
+    签核进度一变这条就红，而红的原因与它要守的纪律无关。
+    """
+
+    empty = [entry([], case_id="PMC_EMPTY")]
+    table = render_coverage(empty)
     assert "claims 全为空" in table
-    assert coverage_gaps(load_all(SOURCES)), "空集不应被当作覆盖达标"
+    assert coverage_gaps(empty), "空集不应被当作覆盖达标"
 
 
 @pytest.mark.parametrize("missing", ["claim", "expected_label", "evidence"])
