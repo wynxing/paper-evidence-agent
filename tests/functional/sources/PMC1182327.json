@@ -276,5 +276,106 @@
       "preview": "Nevertheless, most new discoveries will continue to stem from hypothesis-generating research with low or very low pre-st"
     }
   ],
-  "claims": []
+  "claims": [
+    {
+      "claim_id": "PMC1182327-c01",
+      "claim": "大多数已发表的研究发现是错的。",
+      "claim_kind": "natural",
+      "claim_note": "",
+      "variations": [
+        "quantity"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 4 段整段只有这一句，是该文对核心命题的直接陈述；论断在对象（claimed research findings）与范围（most）上与之一致，属术语表「支持」的判据。",
+      "limits": "原文限定在统计显著性框架下的整体判断，不能外推到某个具体学科，也不能当成某一篇具体论文的结论。",
+      "evidence": {
+        "ordinal": 4,
+        "quote": "It can be proven that most claimed research findings are false"
+      }
+    },
+    {
+      "claim_id": "PMC1182327-c02",
+      "claim": "研究领域的样本量越小，其研究发现为真的可能性越低。",
+      "claim_kind": "constructed",
+      "claim_note": "转述原文 Corollary 1 的首句，未改变对象与方向。",
+      "variations": [
+        "condition",
+        "causality"
+      ],
+      "expected_label": "支持",
+      "rationale": "Corollary 1 以完全相同的条件—方向关系给出该结论（样本量小 → 真阳性概率低），对象、条件与方向都一致。",
+      "limits": "这是同一框架下的方向性推论，不是定量预测；原文没有给出「小样本研究有多少比例是错的」这类数字。",
+      "evidence": {
+        "ordinal": 14,
+        "quote": "The smaller the studies conducted in a scientific field, the less likely the research findings are to be true."
+      }
+    },
+    {
+      "claim_id": "PMC1182327-c03",
+      "claim": "研究设计、定义、结局与分析方式的灵活性越大，研究发现为真的可能性越低。",
+      "claim_kind": "constructed",
+      "claim_note": "转述原文 Corollary 4 的首句，未改变对象与方向。",
+      "variations": [
+        "condition"
+      ],
+      "expected_label": "支持",
+      "rationale": "Corollary 4 首句以同样措辞给出「灵活性越大 → 越可能为假」，条件与方向一致；该段随后用偏倚 u 的上升解释了机制。",
+      "limits": "原文同时说明遵循共同标准（如 RCT、meta 分析）可以提高真阳性比例，所以不能读成「只要存在灵活性就必然为假」。",
+      "evidence": {
+        "ordinal": 17,
+        "quote": "The greater the flexibility in designs, definitions, outcomes, and analytical modes in a scientific field, the less likely the research findings are to be true."
+      }
+    },
+    {
+      "claim_id": "PMC1182327-c04",
+      "claim": "随机对照试验中不会出现选择性结局报告。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把原文「RCT 中同样存在选择性结局报告」翻成正向断言，用于验证否定方向下的「相矛盾」。",
+      "variations": [
+        "negation",
+        "object"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "原文明确写「even for randomized trails（原文拼写如此）」，即在随机试验里选择性结局报告同样是常见问题；论断断言「不会出现」，在同一对象上方向相反，属对应条件下的明确相反证据，不是「没搜到支持」的推导。",
+      "limits": "原文说的是「常见问题」，不是「每个 RCT 都有」；本条只需否证到「会存在」这一层。",
+      "evidence": {
+        "ordinal": 17,
+        "quote": "there is strong evidence that selective outcome reporting, with manipulation of the outcomes and analyses reported, is a common problem even for randomized trails"
+      }
+    },
+    {
+      "claim_id": "PMC1182327-c05",
+      "claim": "随机对照试验的结论大约 85% 是真的。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：删掉原文的「研究前有 50% 概率为真」这一前提，把条件性数字当成一般结论。",
+      "variations": [
+        "quantity",
+        "condition"
+      ],
+      "expected_label": "部分支持",
+      "rationale": "85% 这个数字原文确实给出，但被限定在「研究开始前有 50% 概率为真」的 RCT 上；论断删掉前提，把条件性数字读成一般结论——数量与条件都有重要差异，按术语表属「部分支持」而不是「支持」。",
+      "limits": "不能用这条推「RCT 平均 85% 为真」；原文同段还说 PPV 超过 50% 已相当困难，且该数字来自模拟而非元证据。",
+      "evidence": {
+        "ordinal": 21,
+        "quote": "A finding from a well-conducted, adequately powered randomized controlled trial starting with a 50% pre-study chance that the intervention is effective is eventually true about 85% of the time."
+      }
+    },
+    {
+      "claim_id": "PMC1182327-c06",
+      "claim": "知名研究者无法通过同行评审压制反驳自己结论的研究。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把原文「可能压制」改成「无法压制」，用于验证否定方向下的「相矛盾」。",
+      "variations": [
+        "negation",
+        "object"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "原文第 18 段明确说知名研究者可能借同行评审压制反驳自己的研究；论断断言「无法」，与之方向相反，构成对应条件下的明确相反证据。",
+      "limits": "原文用 may suppress，是可能性陈述、不是发生率；本条被否证只到「存在这种压制」这一层，不能推成「同行评审普遍失效」。",
+      "evidence": {
+        "ordinal": 18,
+        "quote": "Prestigious investigators may suppress via the peer review process the appearance and dissemination of findings that refute their findings, thus condemning their field to perpetuate false dogma."
+      }
+    }
+  ]
 }
