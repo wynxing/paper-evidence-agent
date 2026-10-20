@@ -471,5 +471,130 @@
       "preview": "(PDF)"
     }
   ],
-  "claims": []
+  "claims": [
+    {
+      "claim_id": "PMC13648980-c01",
+      "claim": "两种 rPMS 治疗时长在 4 周干预期内都显著降低了疼痛强度（VAS）。",
+      "claim_kind": "natural",
+      "claim_note": "",
+      "variations": [
+        "quantity"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 3 段同时给出三个结局的时间效应与显著性（all p < 0.001），并写明两组基线可比；论断只针对 VAS，是该段结论的子集，对象（两种时长）、方向（降低）与数量（显著）都一致。",
+      "limits": "「显著」指随时间变化的时间主效应，不是与对照组相比的效应量；本研究两组都是活性治疗，没有安慰组，因此不能读成「rPMS 优于不治疗」。",
+      "evidence": {
+        "ordinal": 3,
+        "quote": "LMMs demonstrated significant improvements over time in VAS, PPT, and NDI (all p < 0.001)"
+      }
+    },
+    {
+      "claim_id": "PMC13648980-c02",
+      "claim": "VAS 在干预期内持续下降：第 2 周较基线降低 3.02 分，第 4 周降低 4.87 分。",
+      "claim_kind": "natural",
+      "claim_note": "",
+      "variations": [
+        "condition",
+        "quantity"
+      ],
+      "expected_label": "支持",
+      "rationale": "第 34 段逐时点给出时间主效应的估计值：week 2 为 3.02 分（95% CI −3.52 – −2.52），week 4 为 4.87 分（95% CI −5.39 to −4.34），两者 p < 0.001。论断的时点、数值与方向与原文一致。",
+      "limits": "这两个数字是「相对基线」的平均降幅，不是组间差异；原文的时点是预设的第 2、4 周，两个点只能说明「仍在下降」，不足以刻画完整的恢复曲线形状。",
+      "evidence": {
+        "ordinal": 34,
+        "quote": "VAS decreased by 3.02 points at week 2 (95% CI −3.52 – −2.52; p < 0.001) and by 4.87 points at week 4 (95% CI −5.39 to −4.34; p < 0.001)"
+      }
+    },
+    {
+      "claim_id": "PMC13648980-c03",
+      "claim": "15 分钟的 rPMS 方案比 10 分钟方案更有效。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把「延长时长应当带来更好结局」这一常见预期写成断言，用于在数量维度上验证相反证据。",
+      "variations": [
+        "negation",
+        "quantity"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "第 3 段给出主要终点的组间对比：VAS 第 4 周调整差 −0.27（95% CI −0.95–0.40；p = 0.43），并明确写「indicating no significant difference between protocols」；第 34 段另给出两组各时点的组×时间交互均不显著。论断断言较长时长更优，与同对象同终点的原文结论方向相反。",
+      "limits": "不显著不等于证明两者相等——第 49 段明确说本研究「not designed or powered as an equivalence or noninferiority trial」。本条只否证「更有效」，不主张「等效」。",
+      "evidence": {
+        "ordinal": 3,
+        "quote": "The adjusted between-group difference in VAS at week 4 was −0.27 (95% CI −0.95–0.40; p = 0.43), indicating no significant difference between protocols."
+      }
+    },
+    {
+      "claim_id": "PMC13648980-c04",
+      "claim": "10 分钟方案在数值上优于 15 分钟方案。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把「终点均值更低」这一数值事实升格为「更优」，用于验证数量维度上的部分成立。",
+      "variations": [
+        "quantity"
+      ],
+      "expected_label": "部分支持",
+      "rationale": "第 34 段的调整边际均值确实是 B 组（10 分钟）终点更低：6.67→1.80（A 组）对比 6.55→1.53（B 组），第 3 段的降幅也是 4.87 与 5.02，方向支持「数值上更低」。但同段的组间差 p = 0.43、交互项不显著，统计上不支持「更优」。数值方向成立、显著性不成立，按术语表属「部分支持」而非「支持」。",
+      "limits": "原文本就把这种差异解释为随机波动下的可比结局；不能据此建议临床改用 10 分钟方案，也不能把「数值更低」写成「疗效更好」。",
+      "evidence": {
+        "ordinal": 34,
+        "quote": "Adjusted marginal means declined from 6.67 (95% CI 6.23–7.10) to 1.80 (95% CI 1.32–2.28) in Protocol A and from 6.55 (95% CI 6.10–6.99) to 1.53 (95% CI 1.05–2.00) in Protocol B"
+      }
+    },
+    {
+      "claim_id": "PMC13648980-c05",
+      "claim": "观察到的临床改善可归因于 rPMS 刺激本身，而非同期拉伸练习或安慰效应。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把「疗效来自 rPMS」这一因果归因写成断言，用于验证因果维度上缺少对照时的拒判。",
+      "variations": [
+        "causality"
+      ],
+      "expected_label": "证据不足",
+      "rationale": "第 49 段逐条自陈：未设假刺激组，且两组都在活性 rPMS 之外接受标准化拉伸，「the independent contribution of rPMS to the observed clinical improvements could not be determined」，并明确说 rPMS 的特异效应无法与拉伸练习、情境与安慰效应区分。全文 56 段不存在可支撑该归因的对照数据，来源可处理且有界检索已完成，符合术语表「证据不足」。",
+      "limits": "这不是说 rPMS 无效——改善确实发生（第 41 段时间效应显著）；只是本研究的设计无法把改善分配给某一个成分。作者另引用了他人假刺激试验作为间接支持，但那是别的来源。",
+      "evidence": null
+    },
+    {
+      "claim_id": "PMC13648980-c06",
+      "claim": "本研究证明了 15 分钟与 10 分钟两种 rPMS 方案的疗效等效。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把「无显著差异」读成「已证明等效」，这是引文场景里最常见的误读之一。",
+      "variations": [
+        "negation"
+      ],
+      "expected_label": "相矛盾",
+      "rationale": "第 49 段专门反驳这种读法：「the study was not designed or powered as an equivalence or noninferiority trial and did not prespecify an equivalence or noninferiority margin. Therefore, the absence of significant between-group differences should not be interpreted as formal evidence of equivalence between treatment durations」。论断正是在做原文明确禁止的推断，方向相反。",
+      "limits": "本条否证的是「已证明等效」这一强主张；「未发现差异」仍然是事实（第 3 段 p = 0.43），两者不矛盾。",
+      "evidence": {
+        "ordinal": 49,
+        "quote": "the absence of significant between-group differences should not be interpreted as formal evidence of equivalence between treatment durations"
+      }
+    },
+    {
+      "claim_id": "PMC13648980-c07",
+      "claim": "rPMS 的临床疗效在 4 周干预结束后仍能长期维持。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把短期结论外推到随访终点之后，用于验证条件维度上的拒判。",
+      "variations": [
+        "condition"
+      ],
+      "expected_label": "证据不足",
+      "rationale": "第 28 段写明评估只在基线、第 2 周与第 4 周三个时点；第 49 段进一步自陈「follow-up was limited to 4 weeks; therefore, the durability of treatment effects beyond one month remains uncertain」。第 4 段也把结论限定为「short-term improvements」。全文没有任何一个月之后的数据，符合术语表「证据不足」。",
+      "limits": "「未知」不等于「会复发」；短期的良好结果本身是成立的，本条只否定「已证明能长期维持」。",
+      "evidence": null
+    },
+    {
+      "claim_id": "PMC13648980-c08",
+      "claim": "rPMS 对慢性颈痛患者普遍有效。",
+      "claim_kind": "constructed",
+      "claim_note": "构造论断：把单中心、特定人群的结论扩到「慢性颈痛患者」这一更宽的对象上，用于验证对象维度上的部分成立。",
+      "variations": [
+        "object"
+      ],
+      "expected_label": "部分支持",
+      "rationale": "「有效」这一半在本研究人群里成立：第 41 段报告 VAS、PPT、NDI 的时间效应均显著，且改善具有临床意义。但「普遍」这一半不成立：第 49 段明说研究只纳入特定的上斜方肌 MPS 人群、单一康复中心与固定刺激方案，「may limit the generalizability of the findings to other patient populations, musculoskeletal conditions, healthcare settings or alternative stimulation protocols」。对象被扩大，按术语表属「部分支持」。",
+      "limits": "不能把本条读成「rPMS 无效」——本研究人群内的效果是显著的；也不能反过来说其他人群一定无效，原文只说外推受限。",
+      "evidence": {
+        "ordinal": 41,
+        "quote": "Across VAS, PPT, and NDI, LMMs demonstrated significant time effects, indicating substantial clinical improvements over the 4-week intervention period (Table 2)."
+      }
+    }
+  ]
 }
