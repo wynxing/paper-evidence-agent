@@ -1,0 +1,240 @@
+{
+  "schema_version": "2.2",
+  "criteria": {
+    "version": "0.6",
+    "digest": "7196db740a011d67feac8938df7c1516294228c14c1220f7600cb5f885282ed2",
+    "snapshot_ref": "criteria:sha256:7196db740a011d67feac8938df7c1516294228c14c1220f7600cb5f885282ed2",
+    "implementation_revision": "rev"
+  },
+  "accounting": {
+    "verification": "verified",
+    "main_requests_used": 2,
+    "repair_requests_used": 0,
+    "supplemental_rounds_used": 0,
+    "upstream_attempts_used": 2,
+    "observed_upstream_attempts": 2,
+    "reason": null
+  },
+  "case_id": "pkt-1",
+  "run_id": "run:pkt-1",
+  "trace_id": "trace:pkt-1",
+  "previous_id": null,
+  "cancel_requested": false,
+  "status": "COMPLETED",
+  "label": "支持",
+  "error_code": null,
+  "input": {
+    "doi": "10.1000/packet",
+    "claim": "<redacted>",
+    "privacy": "redacted",
+    "recipient": null
+  },
+  "source": {
+    "title": "frozen",
+    "authors": [
+      "Ada Lovelace"
+    ],
+    "year": 2026,
+    "doi": "10.1000/packet",
+    "pmcid": "PMC9000001",
+    "license": "CC BY",
+    "version": "1",
+    "access_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9000001/",
+    "retrieved_at": "2026-10-01T00:00:00+00:00",
+    "version_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "retrieval_form": "full_text"
+  },
+  "run_config": {
+    "profile": "evaluation",
+    "config_digest": "d",
+    "snapshot_ref": "d",
+    "authorized_recipients": [
+      "Agnes"
+    ],
+    "limits": {
+      "main_requests": 3,
+      "repair_requests": 1,
+      "attempts_per_request": 2,
+      "supplemental_rounds": 1
+    },
+    "timeouts": {
+      "model_attempt_seconds": 45,
+      "source_request_seconds": 15,
+      "task_seconds": 180
+    },
+    "observability": {
+      "langfuse_enabled": false,
+      "recipient": null
+    }
+  },
+  "evidence_candidates": [
+    {
+      "paragraph_id": "p:PMC9000001:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:jats-0.1.0:1",
+      "section": "Results",
+      "quote": "<redacted>",
+      "paragraph_hash": "6d458c12ad674a165a9af1872952ade32772115a10c76eaa26563fd3b5ab6d7b",
+      "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9000001/",
+      "round": 0,
+      "rank": 1,
+      "entered_context": true
+    },
+    {
+      "paragraph_id": "p:PMC9000001:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:jats-0.1.0:2",
+      "section": "Results",
+      "quote": "<redacted>",
+      "paragraph_hash": "379a7a8b2e083a4724280d04a37bb34a8e9ecd7a3beb93d19160c6aad40cb762",
+      "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9000001/",
+      "round": 0,
+      "rank": 2,
+      "entered_context": true
+    }
+  ],
+  "decision": {
+    "agent": "paper",
+    "label": "支持",
+    "rationale": "<redacted>",
+    "supported_parts": [],
+    "scope_differences": [],
+    "limitations": [],
+    "evidence": [
+      {
+        "paragraph_id": "p:PMC9000001:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:jats-0.1.0:2",
+        "quote": "<redacted>",
+        "section": "Results",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9000001/",
+        "paragraph_hash": "379a7a8b2e083a4724280d04a37bb34a8e9ecd7a3beb93d19160c6aad40cb762",
+        "validation": "pass"
+      }
+    ],
+    "validation": "pass"
+  },
+  "execution": [
+    {
+      "stage": "source_identity",
+      "span_id": "span:pkt-1:1",
+      "tool": "source_resolver",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": null,
+      "request_id": null
+    },
+    {
+      "stage": "fetch",
+      "span_id": "span:pkt-1:2",
+      "tool": "full_text_source",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": null,
+      "request_id": null
+    },
+    {
+      "stage": "query_generation",
+      "span_id": "span:pkt-1:3",
+      "tool": "model_gateway",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": 0,
+      "request_id": "pkt-1:query_generation:0"
+    },
+    {
+      "stage": "retrieval",
+      "span_id": "span:pkt-1:4",
+      "tool": "fts5",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": 0,
+      "request_id": null
+    },
+    {
+      "stage": "decision",
+      "span_id": "span:pkt-1:5",
+      "tool": "model_gateway",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": 0,
+      "request_id": "pkt-1:decision:0"
+    },
+    {
+      "stage": "evidence_validation",
+      "span_id": "span:pkt-1:6",
+      "tool": "quote_check",
+      "status": "success",
+      "error_code": null,
+      "duration_ms": 0,
+      "round": null,
+      "request_id": null
+    }
+  ],
+  "model_calls": [
+    {
+      "request_id": "pkt-1:query_generation:0",
+      "purpose": "query_generation",
+      "round": 0,
+      "model_alias": "paper-default",
+      "prompt_version": "paper-prompt-0.2.3",
+      "params_digest": "captured",
+      "context_paragraph_ids": [],
+      "repairs_request_id": null,
+      "attempts": [
+        {
+          "attempt_id": "pkt-1:query_generation:0:1",
+          "attempt_index": 1,
+          "span_id": "s",
+          "gateway_request_id": null,
+          "upstream_response_id": null,
+          "configured_model": "captured",
+          "provider_model": "captured",
+          "deployment_id": "captured",
+          "recipient": "Agnes",
+          "response_model": "captured",
+          "verified_model_version": null,
+          "recovery_kind": "none",
+          "recovery_reason": null,
+          "status": "success",
+          "error_code": null,
+          "duration_ms": 1,
+          "usage": null
+        }
+      ]
+    },
+    {
+      "request_id": "pkt-1:decision:0",
+      "purpose": "decision",
+      "round": 0,
+      "model_alias": "paper-default",
+      "prompt_version": "paper-prompt-0.2.3",
+      "params_digest": "captured",
+      "context_paragraph_ids": [
+        "p:PMC9000001:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:jats-0.1.0:1",
+        "p:PMC9000001:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:jats-0.1.0:2"
+      ],
+      "repairs_request_id": null,
+      "attempts": [
+        {
+          "attempt_id": "pkt-1:decision:0:1",
+          "attempt_index": 1,
+          "span_id": "s",
+          "gateway_request_id": null,
+          "upstream_response_id": null,
+          "configured_model": "captured",
+          "provider_model": "captured",
+          "deployment_id": "captured",
+          "recipient": "Agnes",
+          "response_model": "captured",
+          "verified_model_version": null,
+          "recovery_kind": "none",
+          "recovery_reason": null,
+          "status": "success",
+          "error_code": null,
+          "duration_ms": 1,
+          "usage": null
+        }
+      ]
+    }
+  ]
+}
