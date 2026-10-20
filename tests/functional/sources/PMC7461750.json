@@ -110,6 +110,12 @@
       "evidence": {
         "ordinal": 3,
         "quote": "the author Dr. Fuchs was erroneously omitted as a collaborator from the KoCo19 collaboration group"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "更正声明第 3 段可逐字定位；“erroneously omitted as a collaborator” 与「遗漏署名」对象一致（作者本人、合作组署名），不是把「感谢」或「单位」误记。"
       }
     },
     {
@@ -124,7 +130,13 @@
       "expected_label": "证据不足",
       "rationale": "该记录是一份更正声明：清单 5 段、共 410 字，逐段查过——第 1 段是更正标题、第 2 段是原文 DOI、第 3 段是署名遗漏、第 4 段是已更正、第 5 段是致歉，全文不含研究设计、样本量或结果。来源可处理且有界检索已完成，但不存在可核查片段，符合术语表「证据不足」的定义。",
       "limits": "这条只说明**本记录**没有该事实，不能推出原协议研究没有招募样本；原协议（10.1186/s12889-020-09164-9）是另一条记录。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "「证据不足」在本来源内成立：整篇是 5 段、410 字符的更正声明，不含招募地点与人数。需要区分的是——这是「这份来源不含该信息」，不是「论文否定该说法」；两者同属「证据不足」标签，读指标时要分开看（回帖里已提）。"
+      }
     },
     {
       "claim_id": "PMC7461750-c03",
@@ -137,7 +149,13 @@
       "expected_label": "证据不足",
       "rationale": "同上：5 段全文无任何时间、随访或入组信息；「证据不足」在此只表示本次未获得足够证据，不是「该说法为假」。",
       "limits": "不能把「未获得证据」读成「该说法不成立」——这正是术语表要求区分「相矛盾」与「证据不足」的地方。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "同 c02：来源不含随访时间窗，「证据不足」是按来源内判据得出的，不是原文给出了相反时间。"
+      }
     }
   ]
 }

@@ -476,6 +476,12 @@
       "evidence": {
         "ordinal": 39,
         "quote": "The mAP of DF-Tiny-YOLO is 99.99%"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "mAP 99.99% 可逐字定位；论断补的「四类苹果叶数据集」与 Table 5 及第 23 段的四类（300 + 300 + 275 + 529）一致，没有增加原句没有的对象。"
       }
     },
     {
@@ -492,6 +498,12 @@
       "evidence": {
         "ordinal": 21,
         "quote": "Using 1 × 1, 1 × 1, and 3 × 3 convolution kernels at the network terminals will contribute to reducing the dimension of features and increasing the network depth without increasing computational complexity, thus further improving the detection accuracy."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "整段即引文；卷积核配置 → 降维与增深 → 精度提升这三段因果在论断里逐项保留，只省略了中间结果而没有改变方向。limits 里「这是设计意图、不是消融实验」写对了，这条不能被读成「该配置带来多少增益」。"
       }
     },
     {
@@ -508,6 +520,12 @@
       "evidence": {
         "ordinal": 23,
         "quote": "The images were randomly divided into training and test sets at a ratio of 80%:20%"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "80%:20% 可逐字定位；1,404 张出自同段（300 + 300 + 275 + 529），论断把两句合成一句，没有改变任何数量或条件。"
       }
     },
     {
@@ -525,6 +543,12 @@
       "evidence": {
         "ordinal": 39,
         "quote": "The mAP of DF-Tiny-YOLO is 99.99%, which was 0.17% higher than that of Tiny-YOLO. The average IoU was 90.88%, which was 1.59% and 10.38% higher than YOLOV2 and Tiny-YOLO, respectively. Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO. The detection speed was 280 FPS, which was the same as that of Tiny-YOLO, and the number of images that can be processed per second was 3-fold that of YOLOv2."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "合取命题：精度侧成立（mAP +0.17%、IoU +10.38%），速度侧原文明写 “the same as that of Tiny-YOLO” 即 0 增益。按术语表「方向一致、只在数量或范围上有出入 → 部分支持」判部分支持。判据缺口见回帖：术语表没有明文覆盖「合取命题中一个分量被否定」这一形态，本条的判法依赖「整体方向一致 + 该分量是零增益而非反向」这个未成文约定；若按严格合取逻辑应判相矛盾。"
       }
     },
     {
@@ -542,6 +566,12 @@
       "evidence": {
         "ordinal": 39,
         "quote": "Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "原文 “the same as YOLOV2”，论断「显著高于」，同一指标、同一对照、方向相反。引文的 1.00 已是召回率上限，两者都到顶，「相同」是测量分辨率所致；这一点在 limits 里写了，没有把它读成真实识别能力完全等价。"
       }
     },
     {
@@ -558,6 +588,12 @@
       "evidence": {
         "ordinal": 40,
         "quote": "the model performs best for Apple cedar rust and healthy leaves"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "原文 “performs best for Apple cedar rust and healthy leaves” 直接说明四个类别之间表现不一致，论断「表现一致」被同一句否定。对象（四个类别）与论断相同。"
       }
     },
     {
@@ -571,7 +607,13 @@
       "expected_label": "证据不足",
       "rationale": "全文的横向对比只有 YOLOv2 与 Tiny-YOLO 两个对象——第 39 段、第 42 段、第 45 段均如此；第 49 段更明确写「the study is limited by the experimental environment, which makes it difficult to compare with more models」。逐段查过 55 段，不存在支撑「与更多模型比较」的可核查片段，来源可处理且有界检索已完成，符合术语表「证据不足」。",
       "limits": "这只说明本文没有做更多模型的对比，不能推出 DF-Tiny-YOLO 劣于其它模型；第 49 段表明这是作者自认的环境限制，不是对模型能力的否定。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "disputed",
+        "note": "打回的是措辞，不是判断。现措辞有两种读法：读成「与 YOLOv2 / Tiny-YOLO 这两个主流模型对比更优」时，第 39 段支持它；读成「与数量更多的模型对比更优」时，第 49 段明写 “difficult to compare with more models”，是证据不足。两种读法对应不同标签，现在无法确定作者要的是哪一个。建议改成「与两个以上主流检测模型对比时表现更优」（保留证据不足的判法），或「与 YOLOv2 和 Tiny-YOLO 相比表现更优」（改为支持），改写后重新签核。"
+      }
     }
   ]
 }

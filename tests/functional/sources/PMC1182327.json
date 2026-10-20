@@ -291,6 +291,12 @@
       "evidence": {
         "ordinal": 4,
         "quote": "It can be proven that most claimed research findings are false"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "译文与第 4 段 “most claimed research findings are false” 逐句对应，对象（claimed research findings）与数量（most）都未改。限制成立：原文是统计显著性框架下的整体判断，不能外推到单篇论文或单一学科。"
       }
     },
     {
@@ -308,6 +314,12 @@
       "evidence": {
         "ordinal": 14,
         "quote": "The smaller the studies conducted in a scientific field, the less likely the research findings are to be true."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "Corollary 1 首句可逐字定位；小样本 → 真阳性概率低的方向与对象一致，未删改前提。判「支持」而非「部分支持」的理由是原文本身就是方向性推论，论断没有把推论加强成定量预测。"
       }
     },
     {
@@ -324,6 +336,12 @@
       "evidence": {
         "ordinal": 17,
         "quote": "The greater the flexibility in designs, definitions, outcomes, and analytical modes in a scientific field, the less likely the research findings are to be true."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "Corollary 4 首句可逐字定位；设计、定义、结局、分析方式四项齐全，与论断的四项一一对应，方向一致。"
       }
     },
     {
@@ -341,6 +359,12 @@
       "evidence": {
         "ordinal": 17,
         "quote": "there is strong evidence that selective outcome reporting, with manipulation of the outcomes and analyses reported, is a common problem even for randomized trails"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "对象一致（RCT 中的选择性结局报告原文写作 “randomized trails”）；原文断言这是 “a common problem”，论断断言「不会出现」，同一对象上方向相反。引文保留了原文的拼写错误，这一点核过是对的——改成 trials 就不再是逐字引文。"
       }
     },
     {
@@ -358,6 +382,12 @@
       "evidence": {
         "ordinal": 21,
         "quote": "A finding from a well-conducted, adequately powered randomized controlled trial starting with a 50% pre-study chance that the intervention is effective is eventually true about 85% of the time."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "85% 只在 “starting with a 50% pre-study chance that the intervention is effective” 这个前提下成立；论断删掉前提后外推范围变大，属条件/范围上的出入 → 部分支持。不是「支持」，因为删掉前提后的断言强于原文；也不是「证据不足」，因为数值本身原文确实给了。"
       }
     },
     {
@@ -375,6 +405,12 @@
       "evidence": {
         "ordinal": 18,
         "quote": "Prestigious investigators may suppress via the peer review process the appearance and dissemination of findings that refute their findings, thus condemning their field to perpetuate false dogma."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "原文 “may suppress”（存在这种可能）被改写成「无法压制」（不可能发生），同一对象、方向相反。否定只到「存在这种压制」这一层，没有推成「同行评审普遍失效」，界限写对了。"
       }
     }
   ]
