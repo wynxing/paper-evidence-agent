@@ -486,6 +486,12 @@
       "evidence": {
         "ordinal": 3,
         "quote": "LMMs demonstrated significant improvements over time in VAS, PPT, and NDI (all p < 0.001)"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 3 段同时给出时间主效应（VAS/PPT/NDI, all p < 0.001）与「无组×时间交互」，两组都在改善而不是只有一组。论断只取 VAS 这一项、只说「降低」与「显著」，没有越到组间比较；limits 里「不是与对照组相比」的限定也对——本研究没有安慰组。"
       }
     },
     {
@@ -503,6 +509,12 @@
       "evidence": {
         "ordinal": 34,
         "quote": "VAS decreased by 3.02 points at week 2 (95% CI −3.52 – −2.52; p < 0.001) and by 4.87 points at week 4 (95% CI −5.39 to −4.34; p < 0.001)"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 34 段的 3.02 / 4.87 与两个 95% CI 逐字可定位，时点（week 2 / week 4）与方向一致。这是相对基线的平均降幅，不是组间差异——limits 写明了，读的时候不能当成疗效对比。"
       }
     },
     {
@@ -520,6 +532,12 @@
       "evidence": {
         "ordinal": 3,
         "quote": "The adjusted between-group difference in VAS at week 4 was −0.27 (95% CI −0.95–0.40; p = 0.43), indicating no significant difference between protocols."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "对象与终点都对：同是 VAS、第 4 周、两方案对比。原文明确写 no significant difference between protocols（组间差 −0.27, p = 0.43, 第 34 段交互项也不显著）；而且**数值方向也相反**——Protocol A（15 分钟）降 4.87、Protocol B（10 分钟）降 5.02（第 30 段给了 A=15min / B=10min），较长时长的数值降幅反而略小。论断在「统计」与「数值」两层都不成立，判相矛盾成立。"
       }
     },
     {
@@ -536,6 +554,12 @@
       "evidence": {
         "ordinal": 34,
         "quote": "Adjusted marginal means declined from 6.67 (95% CI 6.23–7.10) to 1.80 (95% CI 1.32–2.28) in Protocol A and from 6.55 (95% CI 6.10–6.99) to 1.53 (95% CI 1.05–2.00) in Protocol B"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 30 段确认 Protocol B = 10 分钟，第 34 段 B 组终点调整均值 1.53 低于 A 组 1.80，组间差 −0.27 也指向 B 更低——「数值上更低」这半成立。同段 p = 0.43、交互项不显著，「更优」这半不成立。按术语表「方向一致、数量或范围有出入 → 部分支持」，判部分支持。这里与 c03 构成一组对照：同一份数据，断言「显著更有效」判相矛盾、断言「数值上更优」判部分支持。"
       }
     },
     {
@@ -549,7 +573,13 @@
       "expected_label": "证据不足",
       "rationale": "第 49 段逐条自陈：未设假刺激组，且两组都在活性 rPMS 之外接受标准化拉伸，「the independent contribution of rPMS to the observed clinical improvements could not be determined」，并明确说 rPMS 的特异效应无法与拉伸练习、情境与安慰效应区分。全文 56 段不存在可支撑该归因的对照数据，来源可处理且有界检索已完成，符合术语表「证据不足」。",
       "limits": "这不是说 rPMS 无效——改善确实发生（第 41 段时间效应显著）；只是本研究的设计无法把改善分配给某一个成分。作者另引用了他人假刺激试验作为间接支持，但那是别的来源。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 49 段逐条自陈：无假刺激组、两组都叠加标准化拉伸、rPMS 的独立贡献 could not be determined、其特异效应 cannot be distinguished from 拉伸与安慰效应。判证据不足成立，理由是原文说的是「无法判定」而不是「归因于别的成分」——这正是它与 c06 的分界（c06 原文明确禁止某种推断，所以判相矛盾；本条原文说无法确定，所以判证据不足）。这条界线值得写进 glossary，我按现有判据签核，不替你改口径。"
+      }
     },
     {
       "claim_id": "PMC13648980-c06",
@@ -565,6 +595,12 @@
       "evidence": {
         "ordinal": 49,
         "quote": "the absence of significant between-group differences should not be interpreted as formal evidence of equivalence between treatment durations"
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 49 段明确写 not designed or powered as an equivalence trial，且 absence of significant between-group differences should not be interpreted as formal evidence of equivalence——论断做的正是原文明文禁止的推断。同一对象（两方案疗效）、方向相反，判相矛盾。limits 里把它与「未发现差异是事实」分开，写得对。"
       }
     },
     {
@@ -578,7 +614,13 @@
       "expected_label": "证据不足",
       "rationale": "第 28 段写明评估只在基线、第 2 周与第 4 周三个时点；第 49 段进一步自陈「follow-up was limited to 4 weeks; therefore, the durability of treatment effects beyond one month remains uncertain」。第 4 段也把结论限定为「short-term improvements」。全文没有任何一个月之后的数据，符合术语表「证据不足」。",
       "limits": "「未知」不等于「会复发」；短期的良好结果本身是成立的，本条只否定「已证明能长期维持」。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "第 28 段只有基线 / 第 2 周 / 第 4 周三个评估点，第 49 段自陈 follow-up was limited to 4 weeks、durability beyond one month remains uncertain，第 4 段结论限定为 short-term。全文没有一个月之后的数据，「证据不足」按来源内判据成立——与 c05 同属「原文说无法确定」，不是「原文给出相反结论」。"
+      }
     },
     {
       "claim_id": "PMC13648980-c08",
@@ -594,6 +636,12 @@
       "evidence": {
         "ordinal": 41,
         "quote": "Across VAS, PPT, and NDI, LMMs demonstrated significant time effects, indicating substantial clinical improvements over the 4-week intervention period (Table 2)."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-20",
+        "outcome": "agree",
+        "note": "「有效」这半由第 41 段的三个结局时间效应支持；「普遍」这半被第 49 段否定——单中心、特定上斜方肌 MPS 人群、固定刺激方案，may limit the generalizability。对象被扩大，按术语表判部分支持。limits 里「不能读成 rPMS 无效」也对。"
       }
     }
   ]
