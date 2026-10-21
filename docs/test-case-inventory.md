@@ -4,7 +4,7 @@
 
 - **判据的权威在 `docs/test-plan.md:40-121`**。本文档不新增判据、不放宽判据，只把已有判据落到具体用例上，并标出**没有用例接住的判据**（附录 B）。
 - **不是"用例目录"**。用例的真实位置在 `tests/`，本文档不复制代码，只写「哪条用例钉住哪句判据」。
-- **数字口径**：2026-10-21，`main = 16c9f9e`，`pytest tests` 收集 **433** 条，**404 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
+- **数字口径**：2026-10-21，`main = 7104451`，`pytest tests` 收集 **433** 条，**404 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
 
 ## 0. 总览
 
@@ -13,13 +13,13 @@
 | 维度 | 主目录 | 收集 | 通过 | 跳过 | 判据条数 | 独立复跑 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 功能准确性 | `tests/functional/` | 83 | 70 | 13 | 11 | `pytest tests/functional` |
-| 2 工具调用 | `tests/tools/` | 167 | 151 | 16 | 9 | `pytest tests/tools` |
+| 2 工具调用 | `tests/tools/` | 167 | 151 | 16 | 10 | `pytest tests/tools` |
 | 3 RAG | `tests/retrieval/` | 12 | 12 | 0 | 7 | `pytest tests/retrieval` |
 | 4 任务内澄清、隔离与多步执行 | `tests/session/` | 37 | 37 | 0 | 8 | `pytest tests/session` |
 | 5 对抗与安全 | `tests/adversarial/` | 29 | 29 | 0 | 5 | `pytest tests/adversarial` |
 | 6 边界与异常 | `tests/boundary/` | 64 | 64 | 0 | 13 | `pytest tests/boundary` |
 | 7 性能 | `tests/performance/` | 21 | 21 | 0 | 5 | `pytest tests/performance` |
-| **七维合计** | — | **413** | **384** | **29** | **58** | `pytest tests` |
+| **七维合计** | — | **413** | **384** | **29** | **59** | `pytest tests` |
 
 另有两块**不属于七维度**、但同样在 `#93` 里交付的内容：
 
@@ -45,9 +45,9 @@
 ### 0.3 怎么复跑
 
 ```bash
-# 全量（主树解释器 + 配置 + 独立 basetemp，缺后两者会触发 fail-closed shim）
-"C:/Users/TTCyu/Desktop/论文/paper-evidence-agent/backend/.venv/Scripts/python.exe" \
-  -m pytest tests -c backend/pyproject.toml --basetemp="$TEMP/pe-run" -q
+# 全量：在仓库根目录执行（Windows 用 Scripts/python.exe，Linux/macOS 用 bin/python）
+# -c 与 --basetemp 不能省：缺前者触发 fail-closed shim，缺后者会复用上一次的临时目录
+backend/.venv/Scripts/python.exe -m pytest tests -c backend/pyproject.toml --basetemp="$TEMP/pe-run" -q
 
 # 只跑某一维
 pytest tests/functional -c backend/pyproject.toml --basetemp="$TEMP/pe-fa" -q
@@ -100,7 +100,7 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 
 ### 1.5 这一维的现状与缺口
 
-- **24 条人工答案**（`PMC1182327` 6 / `PMC7461750` 3 / `PMC8806060` 7 / `PMC13648980` 8），四类标签 9/4/6/5，五个变体全覆盖；**23 条已签核，1 条（`PMC8806060-c07`）改词后待重签**。
+- **24 条人工答案**（`PMC1182327` 6 / `PMC7461750` 3 / `PMC8806060` 7 / `PMC13648980` 8），四类标签 9/4/6/5，五个变体全覆盖；**24 条已全部签核**（`#109` 重签 `c07` 后关闭 `#86`），`--require-coverage` / `--require-review` / `--live` 三道门禁均 exit 0。
 - **缺口**：`test-plan.md:47` 要求「邻段可能同样支持论断，不能仅因更换邻段就硬设失败」。现有负向控制覆盖了「正确结果必须通过」，但**「把引文换成邻段」这一变体没有专门断言**。
 - **缺口**：`Recall@k` 明确不在本验收集产出（`report.py` 与 `semantic-report.md` 均声明），不是遗漏，但评分时必须写"不适用"而不是 0。
 
@@ -139,6 +139,7 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 | TO-7 | 来源身份与许可闸门：DOI 解析各分支落**不同**错误码，不得合成"来源不存在" | 构造各分支响应 | 逐分支断言 HTTP 状态与错误码 | `test_crossref_404_with_agency_confirmed_is_metadata_not_found`、`test_crossref_404_with_other_agency_is_unsupported`、`test_agency_missing_and_resolver_miss_is_doi_unresolvable`、`test_doi_mismatch_between_crossref_and_pmc_is_blocked`、`test_a_sub_article_doi_never_stands_in_for_the_article_doi`、`test_non_english_body_is_language_unsupported`、`test_unsupported_or_unknown_licenses_are_blocked` |
 | TO-8 | 每次尝试（失败与成功）都关联 `request_id`；usage/模型版本缺失记 `null` 不写零 | 替身不返回 usage | 跑一次成功 + 一次失败，读调用账 | `test_success_records_one_attempt_and_keeps_unknown_fields_null`、`test_failed_and_successful_calls_share_the_params_digest`、`test_missing_usage_and_missing_ids_stay_null_rather_than_zero`、`test_success_records_the_call_id_the_sdk_would_have_sent_as_a_header`、`test_a_real_sdk_call_returns_a_call_id_and_usage` |
 | TO-9 | 总时限先到时记为任务超时，**不计作一次上游尝试** | 时钟已耗尽 | 在 deadline 后发起调用 | `test_expired_deadline_is_task_timeout_not_an_attempt` |
+| TO-10 | HTTP 错误信封与校验错误：机器可读错误码、不回显输入值、定位到字段与数组下标、创建冲突不带任务 | 有测试路由与真实路由 | 分别触发契约错误、框架错误、校验错误与创建冲突 | `test_preview_contract_errors_keep_machine_readable_codes`、`test_unmapped_contract_errors_are_not_reclassified`、`test_framework_http_errors_preserve_headers_and_log_only_safe_structure`、`test_validation_errors_expose_locations_without_input_values`、`test_validation_errors_locate_query_fields_and_array_indices`、`test_creation_conflict_needs_no_task_and_task_conflict_requires_state` |
 
 ### 2.5 这一维的现状与缺口
 
@@ -398,7 +399,7 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 | `tools/test_sources.py` | 44 | 2 / 6 | 身份与许可闸门同时属边界 |
 | `tools/test_sdk_gateway.py` | 36 | 2 | |
 | `tools/test_checks_api.py` | 31 | 2 | 任务路由与诊断导出 |
-| `tools/test_error_handling.py` | 20 | 6 | 错误信封 |
+| `tools/test_error_handling.py` | 20 | 2 | HTTP 错误信封与校验错误（错误码终态归 6） |
 | `tools/test_live_source_contract.py` | 16 | 2 | **全部 skip**（live） |
 | `tools/test_api_contract.py` | 10 | 2 | |
 | `tools/test_gateway.py` | 10 | 2 | |
@@ -455,15 +456,13 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 
 | `#93` 条目 | 本文档的角色 | 状态 |
 | --- | --- | --- |
-| `#86` 真实来源人工答案 | 第 1 维的判据与用例来源 | 24 条候选，23 签核，1 待重签 |
+| `#86` 真实来源人工答案 | 第 1 维的判据与用例来源 | **24 条，全部签核**（`#86` 已关闭） |
 | 七维度用例清单文档（本文档） | 本体 | 完成 |
 | `#20` 联调清单 | 附录 B 的 1/2/5 可由它覆盖 | 4/20 |
 | 全部用例执行，留执行记录 | 按维度分节复跑，输出贴到执行记录 | 待跑（10-24） |
 | 真实模型跑三项指标 | 第 1 维 + `evaluation.md` §4 | 待跑（10-28） |
 
 ---
-
-*本文档的判据全部引自 `docs/test-plan.md`；用例名与条数为 2026-10-21 在 `main = 16c9f9e` 上实测。改动用例后请同步更新本文档的收集数与附录 A。*
 
 ---
 
@@ -495,3 +494,7 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 | `tests/tools/test_sources.py` | `test_timeouts_are_timeouts_and_404_is_not_one`、`test_a_transient_failure_without_retry_after_still_waits`、`test_a_retry_after_header_still_wins_over_the_default_backoff`、`test_a_backoff_longer_than_the_remaining_budget_does_not_burn_it`、`test_resolve_returns_a_read_only_preview`、`test_fetch_returns_a_licensed_snapshot_with_a_version_hash`、`test_stable_identifiers_survive_a_second_fetch_of_the_same_record`、`test_pmc_oai_request_prefers_the_full_text_metadata_prefix` |
 
 若某条判据只有附录 D 里的用例支撑，说明该判据在判据表里被合并描述了；改动那些用例时，先回判据表确认覆盖哪一条。
+
+---
+
+*本文档的判据全部引自 `docs/test-plan.md`；用例名与条数为 2026-10-21 在 `main = 7104451` 上实测。改动用例后请同步更新本文档的收集数与附录 A。*
