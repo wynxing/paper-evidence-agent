@@ -203,6 +203,69 @@ def test_a_clean_run_says_so_instead_of_returning_an_empty_list():
     assert "不等于通过" in findings[0].summary
 
 
+def test_a_recalled_paragraph_without_a_decision_is_not_called_retrieval_ok():
+    """FAILED runs leave ``decision=None`` (storage/sqlite.py, worker/runner.py) — and
+    they are exactly the runs that get triaged with ``--expect-ordinal``. The verdict
+    must not say 「被结论引用」 when the packet itself has no conclusion."""
+
+    findings = run(variant(decision=None, status="FAILED", error_code=ErrorCode.QUOTE_MISMATCH),
+                   expect_ordinal=2)
+
+    assert codes(findings) == ["NO_DECISION"]
+    finding = findings[0]
+    assert "没有可核对的结论" in finding.summary
+    assert any("decision=None" in line for line in finding.evidence)
+    assert "RETRIEVAL_OK" not in codes(findings)
+
+
+def test_both_human_answers_together_keep_the_divergence_primary_on_a_clean_pipeline():
+    """``--expect-ordinal`` + ``--expect-label`` is the normal shape of a defect report
+    after claims sign-off. RETRIEVAL_OK is an observation, not an error: it must not
+    demote JUDGEMENT_DIVERGENCE to a concurrent finding or claim "another error first"."""
+
+    findings = run(BASE, expect_ordinal=2, expect_label="相矛盾")
+
+    divergence = next(item for item in findings if item.code == "JUDGEMENT_DIVERGENCE")
+    assert divergence.role == "primary"
+    assert "判据边界" in divergence.summary
+    assert "管道另有" not in divergence.summary
+    ok = next(item for item in findings if item.code == "RETRIEVAL_OK")
+    assert ok.role == "secondary"
+
+
+def test_both_human_answers_with_a_technical_error_demote_the_divergence():
+    """The flip side: with a real technical error the divergence is concurrent, and the
+    demotion is driven by that error — not by the retrieval verdict."""
+
+    findings = run(variant(
+        status="FAILED",
+        error_code=ErrorCode.UPSTREAM_RATE_LIMITED,
+        model_calls=[call_with_attempt_error(ErrorCode.UPSTREAM_RATE_LIMITED)],
+    ), expect_ordinal=2, expect_label="相矛盾")
+
+    divergence = next(item for item in findings if item.code == "JUDGEMENT_DIVERGENCE")
+    assert divergence.role == "secondary"
+    assert "管道另有技术错误" in divergence.summary
+
+
+def test_a_source_gate_failure_is_not_reported_twice_as_a_tool_error():
+    """A fetch-stage gate refusal is one defect; SOURCE_GATE names it, TOOL_ERROR must
+    not narrate the same execution record a second time."""
+
+    refused = BASE.execution[-1].model_copy(
+        update={"status": "error", "error_code": ErrorCode.LICENSE_UNKNOWN}
+    )
+    findings = run(variant(
+        status="BLOCKED",
+        error_code=ErrorCode.LICENSE_UNKNOWN,
+        model_calls=[],
+        evidence_candidates=[],
+        execution=[refused],
+    ))
+
+    assert [item.code for item in findings if item.code in ("SOURCE_GATE", "TOOL_ERROR")] == ["SOURCE_GATE"]
+
+
 def test_the_cli_reads_a_packet_file_and_prints_the_primary_cause(capsys):
     assert triage.main([str(PACKETS / "packet_completed.json")]) == 0
     printed = capsys.readouterr().out

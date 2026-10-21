@@ -40,23 +40,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from paper_evidence.domain.contracts import DiagnosticPacket
-from paper_evidence.domain.enums import ErrorCode
-
-#: Failures that happen **before** any model call: the source is refused, not the model.
-#: ``CONTENT_INCOMPLETE`` is here because the retrieval-form gate blocks before the
-#: first request (Issue #28), the same way a licence refusal does.
-SOURCE_GATE_CODES = frozenset({
-    ErrorCode.DOI_INVALID,
-    ErrorCode.DOI_UNRESOLVABLE,
-    ErrorCode.METADATA_NOT_FOUND,
-    ErrorCode.REGISTRATION_AGENCY_UNSUPPORTED,
-    ErrorCode.SOURCE_MISMATCH,
-    ErrorCode.SOURCE_UNAVAILABLE,
-    ErrorCode.LICENSE_UNKNOWN,
-    ErrorCode.LICENSE_UNSUPPORTED,
-    ErrorCode.SOURCE_LANGUAGE_UNSUPPORTED,
-    ErrorCode.CONTENT_INCOMPLETE,
-})
+from paper_evidence.domain.enums import ErrorCode, TaskStatus
+# 「一次模型都没调就终态的」就是来源门禁拒掉的那组错误码。这组词汇的唯一来源在
+# ``domain/rules.py``（``BLOCKED_CODES``）：在那里加码，这里自动跟着变——手抄一份
+# 的下场是 rules 新增一个来源类码后，那次失败掉进 BLOCKED_BEFORE_MODEL，归因错层。
+from paper_evidence.domain.rules import BLOCKED_CODES as SOURCE_GATE_CODES
 
 #: The model answered and the answer was unusable. Distinguished from an upstream
 #: failure because the fix lives in the prompt/repair path, not in the transport.
@@ -114,7 +102,7 @@ def triage(
     candidates = list(packet.evidence_candidates)
     decision = packet.decision
 
-    if status == "CANCELLED":
+    if packet.status is TaskStatus.CANCELLED:
         return [Finding(
             "CANCELLED",
             "任务被取消：取消是用户的终态决定，不是技术缺陷，其余错误不再归因",
@@ -178,7 +166,7 @@ def triage(
 
     # 3. Was the repair path used, and did it run out?
     repairs = [call for call in calls if call.purpose == "output_repair"]
-    if repairs and status != "COMPLETED":
+    if repairs and packet.status is not TaskStatus.COMPLETED:
         findings.append(Finding(
             "REPAIR_EXHAUSTED",
             "输出修复已发生且用尽，终态仍未产出可发布的结果",
@@ -210,10 +198,13 @@ def triage(
             role="secondary" if findings else "primary",
         ))
 
-    # 5. Tool-level errors that are not the model's output contract (already named above).
+    # 5. Tool-level errors that are not the model's output contract (already named above)
+    #    nor a source-gate refusal (that story is SOURCE_GATE's; a fetch-stage
+    #    LICENSE_UNKNOWN reported twice is one defect wearing two codes).
+    gate_exclusion = MODEL_OUTPUT_CODES | SOURCE_GATE_CODES
     tool_errors = [
         (index, record) for index, record in enumerate(executions)
-        if record.status == "error" and _code(record.error_code) not in MODEL_OUTPUT_CODES
+        if record.status == "error" and _code(record.error_code) not in gate_exclusion
     ]
     for index, record in tool_errors:
         findings.append(Finding(
@@ -226,24 +217,32 @@ def triage(
             role="secondary" if findings else "primary",
         ))
 
+    # Everything found so far is a *technical* error. The two questions below — was the
+    # expected paragraph retrieved, does the label match the human answer — must not
+    # count an informational retrieval verdict (RETRIEVAL_OK) as one: a clean pipeline
+    # plus a label difference is a criteria gap, not "another error to fix first".
+    has_technical_error = bool(findings)
+
     # 6. Retrieval, but only against a human answer.
     if expect_ordinal is not None:
-        findings.extend(_retrieval_findings(candidates, decision, expect_ordinal, has_error=bool(findings)))
+        findings.extend(
+            _retrieval_findings(candidates, decision, expect_ordinal, has_error=has_technical_error)
+        )
 
     # 7. The pipeline was clean and the label still differs: that is a criteria gap,
-    #    not a defect in the run. Only claimable when nothing above fired.
+    #    not a defect in the run. Only claimable when no technical error fired.
     expected = _normalise_label(expect_label)
     if expected and decision is not None and _normalise_label(decision.label) != expected:
         findings.append(Finding(
             "JUDGEMENT_DIVERGENCE",
             f"发布标签与人工答案不同（{decision.label} vs {expected}）"
-            + ("；管道无技术错误，属判据边界" if not findings else "；但管道另有错误，先修错误再看标签"),
+            + ("；管道无技术错误，属判据边界" if not has_technical_error else "；但管道另有技术错误，先修错误再看标签"),
             (
                 f"decision.label={decision.label}",
                 f"expected_label={expected}",
                 f"decision.evidence={len(decision.evidence)}",
             ),
-            role="primary" if not findings else "secondary",
+            role="primary" if not has_technical_error else "secondary",
         ))
 
     # 8. Nothing fired: say so explicitly rather than returning an empty list that
@@ -292,7 +291,21 @@ def _retrieval_findings(candidates, decision, expect_ordinal: int, *, has_error:
         )]
 
     cited = {item.paragraph_id for item in (decision.evidence if decision is not None else [])}
-    if decision is not None and not (cited & {item.paragraph_id for item in entered}):
+    if decision is None:
+        # The run never produced a verdict to check against (FAILED/CANCELLED paths
+        # leave ``decision=None``). Saying 「被结论引用」 here would be a claim the
+        # packet itself disproves — exactly what this tool must not output.
+        return [Finding(
+            "NO_DECISION",
+            f"ordinal {expect_ordinal} 被召回并进入上下文，但本次运行没有可核对的结论，引用无从谈起",
+            (
+                f"expected_ordinal={expect_ordinal}",
+                "entered_context=True",
+                "decision=None",
+            ),
+            role="secondary" if has_error else "primary",
+        )]
+    if not (cited & {item.paragraph_id for item in entered}):
         return [Finding(
             "MODEL_IGNORED",
             f"ordinal {expect_ordinal} 已进入上下文，但发布结论没有引用它：这是模型选择问题，不是检索遗漏",
@@ -304,6 +317,8 @@ def _retrieval_findings(candidates, decision, expect_ordinal: int, *, has_error:
             role="secondary" if has_error else "primary",
         )]
 
+    # An observation, not a defect: it never outranks a real cause, so it is always
+    # secondary even on an otherwise clean packet.
     return [Finding(
         "RETRIEVAL_OK",
         f"ordinal {expect_ordinal} 被召回、进入上下文且被结论引用：检索链路这一段没有缺陷",
@@ -312,7 +327,7 @@ def _retrieval_findings(candidates, decision, expect_ordinal: int, *, has_error:
             "entered_context=True",
             "cited_by_decision=True",
         ),
-        role="secondary" if has_error else "primary",
+        role="secondary",
     )]
 
 

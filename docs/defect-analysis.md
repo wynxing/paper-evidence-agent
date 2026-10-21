@@ -162,7 +162,7 @@
 
 **为什么不是相邻那层**：不是「退避参数没配」，是两个语义被合并成一个值。恢复策略的常量已单源到 `domain/rules.py`，由 `sources/http.py` 与 `models/sdk.py` 共用。
 
-**复现**：`tests/tools/test_sdk_gateway.py::test_an_upstream_retry_after_is_waited_out`、`tests/performance/test_worker_deadline.py::test_a_retry_after_within_the_remaining_time_is_waited_out_then_retried`、`::test_a_retry_after_beyond_the_remaining_time_is_not_waited_out`。
+**复现**：`tests/tools/test_sdk_gateway.py::test_an_upstream_retry_after_is_waited_out`、`tests/performance/test_worker_deadline.py::test_a_retry_after_within_the_remaining_time_is_waited_out_then_retried`、`::test_a_source_retry_after_beyond_the_remaining_time_is_not_waited_out`。
 
 ---
 
@@ -204,7 +204,7 @@
 | --- | --- | --- |
 | #78 的 0.2.3 提示词 | 结构性缺口已补，**真实模型未复测** | 本机无模型密钥；不能用 stubbed upstream 顶替，那正是 D-11 说的那种假证据。 |
 | 观测留档（执行记录、模型调用、`langfuse_enabled`） | **缺密钥，未截图** | 没有密钥时任务停在 `query_generation / UPSTREAM_UNAVAILABLE`，`model_calls` 是空的；拿这样的包当留档会误导。 |
-| 真实来源集的四项指标 | 分母还不完整 | `PMC13648980` 仍是 0 条 claims；其余三篇 16 条已签核 15 条、1 条因措辞歧义打回。 |
+| 真实来源集的四项指标（评测口径 §4：引用匹配正确率、证据冲突识别率、出处引用准确率、摘录定位有效率） | 分母还不完整 | 4 篇来源共 24 条候选，23 条已签核 agree、1 条（`PMC8806060-c07`）改词后待重签，见 #86。 |
 | 模型调用的 token / 成本 | 未纳入归因 | `ModelAttempt.usage` 在调用账里、不在 `ExecutionRecord` 里，要做成 Langfuse 的 generation 需另开 sink（`decisions.md`「观测导出接入」已记为未做项）。 |
 
 ## 怎么用这份报告
