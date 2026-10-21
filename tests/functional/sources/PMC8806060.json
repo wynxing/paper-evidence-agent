@@ -607,7 +607,13 @@
       "expected_label": "证据不足",
       "rationale": "全文的横向对比只有 YOLOv2 与 Tiny-YOLO 两个对象——第 39 段、第 42 段、第 45 段均如此；第 49 段更明确写「the study is limited by the experimental environment, which makes it difficult to compare with more models」。逐段查过 55 段，不存在支撑「与三个及以上模型比较」的可核查片段，来源可处理且有界检索已完成，符合术语表「证据不足」。",
       "limits": "这只说明本文没有做更多模型的对比，不能推出 DF-Tiny-YOLO 劣于其它模型；第 49 段表明这是作者自认的环境限制，不是对模型能力的否定。",
-      "evidence": null
+      "evidence": null,
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-21",
+        "outcome": "agree",
+        "note": "按 #108 改后的可数表述重签。重新取回的 55 段全文逐段查过：实验对比只有 YOLOv2 与 Tiny-YOLO 两个对象（Table 5、「Compared with YOLOV2 and the original Tiny-YOLO」、「among YOLOv2, Tiny-YOLO … offered more advantages than the other two models」）；提到的 SSD / Faster R-CNN / INAR-SSD 全部是相关工作里别人论文的模型，没有一条是 DF-Tiny-YOLO 与它们的对比；第 49 段作者自陈 difficult to compare with more models。「与三个及以上主流检测模型对比」在全文没有任何可核查支撑，且不再有两种读法，证据不足成立。"
+      }
     }
   ]
 }
