@@ -84,6 +84,7 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 - [术语表与数据契约](docs/glossary.md)
 - [架构设计](docs/architecture.md)
 - [测试方案](docs/test-plan.md)
+- [七维度用例清单](docs/test-case-inventory.md)
 - [技术选型](docs/tech-stack.md)
 - [开发指南](docs/development.md)
 - [决策记录](docs/decisions.md)
