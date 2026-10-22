@@ -1773,7 +1773,7 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
 | `test-plan.md:72` 中文子词召回盲区 | `tests/retrieval/test_chinese_tokenizer.py`（3 条） | 标点切出的整段词元能命中；连续中文里的真子词命中 0 条；中文查询仍被引号包裹，不会变成 MATCH 运算符 |
 | `test-plan.md:69`/`:72` 中文论断→英文正文 | `tests/session/test_workflow.py`（2 条） | 中文论断配英文正文可完成并发布标签；把检索词换成中文则命中为空、工作流自返回 `RETRIEVAL_EMPTY` |
 | `test-plan.md:47` 邻段负控 | `tests/functional/test_semantic_acceptance.py`（1 条） | 换引同样支持论断的第 2 段仍判通过；同一段引文换成别段原文必须被检出 |
-| 指标记录回归 | `tests/functional/test_live_metrics.py`（6 条） | `--from` 重生成与已提交记录**逐字节相等**；22/24、macro-F1 0.92、44/44、拒判错误率 0.25 独立重算；缺 provider 时在任何网络调用前拒绝 |
+| 指标记录回归 | `tests/functional/test_live_metrics.py`（6 条） | `--from` 重生成与已提交记录**内容一致**；22/24、macro-F1 0.92、44/44、拒判错误率 0.25 独立重算；缺 provider 时在任何网络调用前拒绝 |
 
 ### 怎么验的（不是只看绿）
 
@@ -1791,7 +1791,7 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
   这补上了脚本化测试证明不了的一环：跨语言的桥确实在模型侧，不是测试替身假设出来的。
   余额 3.52 → 3.52（CNY，不足 0.01），模型 `deepseek/deepseek-flash`、提示词
   `paper-prompt-0.2.3`。
-- **指标回归的三层**：逐字节相等只说明「和上次渲染的一样」；独立重算（测试自己算
+- **指标回归的三层**：内容相等只说明「和上次渲染的一样」；独立重算（测试自己算
   22/24 与 macro-F1）说明「和这批数据算出来的一样」；第三条断言 `--from` 用的是
   `tests/functional/sources/` 的**当前**金标——`PMC8806060-c07` 在快照里仍是「证据不足」，
   重算后逐条表必须写「部分支持」。缺这一条，「拿旧金标冒充新指标」是查不出来的。
@@ -1804,7 +1804,18 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
 | `pytest tests/functional` | 97 passed / 13 skipped（110） |
 | `pytest tests/retrieval` | 15 passed |
 | `pytest tests/session` | 40 passed |
-| `live_metrics.py --from docs/metrics-live-86.run.json` | exit 0，重生成与已提交记录逐字节一致（53 355 B） |
+| `live_metrics.py --from docs/metrics-live-86.run.json` | exit 0，重生成与已提交记录内容一致（53 355 B，CRLF 归一后逐字节相等） |
+
+### 首轮 CI 红过一次，原因值得留档
+
+这条回归最初写成**比较原始字节**，本地全绿、CI 红。原因不是口径错，是 `render()` 用
+`Path.write_text`：Windows 写 CRLF、Linux 写 LF，所以「逐字节相等」只在生成记录的那台
+机器上成立。`report.py:366` 的 `sample_fingerprint()` 踩过同一个坑（哈希原始字节 →
+本地过、CI 才现形），这次是第二次。
+
+改法：把比较收敛成「内容相等」——两侧都把 CRLF 归一成 LF 再逐字节比。换行风格是仓库
+约定（`docs/*.md` 为 CRLF），应由约定去管，不该由一条跨平台回归测试来判。
+记在这里是因为它说明一件事：**断言写成本地能过，不等于在 CI 上承重**。
 
 ### 这一节不能被读成
 

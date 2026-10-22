@@ -9,12 +9,13 @@ macro-F1 0.92、冲突识别 1.00……）。它此前零测试、CI 也不跑�
 
 这里不调用模型、不花一分钱：`docs/metrics-live-86.run.json` 是**已经发生过的一次
 运行的快照**（原始回复、逐条计数、余额变化），`--from` 只按当前答案集重算。
-既然重算是确定性的，就可以像 `semantic-report.md --check` 那样逐字节比对——
-重生成的结果必须与仓库里发布的记录**完全一致**。
+既然重算是确定性的，就可以像 `semantic-report.md --check` 那样比对**内容**——
+重生成的结果必须与仓库里发布的记录完全一致（换行按平台归一，见 :func:`content`）。
 
 三层断言，越往下越具体
 ----------------------
-1. **逐字节**：重生成 == 已提交文件。抓任何渲染/口径漂移，报错信息指向行。
+1. **内容一致**：重生成 == 已提交文件（CRLF 归一后逐字节相等）。抓任何渲染/口径漂移，
+   报错信息指向行。
 2. **独立重算**：测试自己按行算一遍 22/24、macro-F1、定位率、拒判错误率，
    再验证这些数字确实出现在文档里。逐字节相等只说明「和上次一样」，这一层说明
    「和这批数据算出来的一样」。
@@ -34,6 +35,19 @@ from live_metrics import REPO, answer_set_stats, render_from, run_live, source_f
 RECORD = REPO / "docs" / "metrics-live-86.md"
 SNAPSHOT = REPO / "docs" / "metrics-live-86.run.json"
 SOURCES = REPO / "tests" / "functional" / "sources"
+
+
+def content(path: Path) -> bytes:
+    """按内容比较，不按字节比较：换行由运行平台决定。
+
+    `render()` 用 `Path.write_text`，Windows 写 CRLF、Linux 写 LF。直接比原始字节
+    会让这条断言只在生成记录的那台机器上过——`report.py:366` 的
+    `sample_fingerprint()` 踩过同一个坑（哈希原始字节 → 本地过、CI 才现形）。
+    这里比的是**内容**；换行风格由仓库约定（`docs/*.md` 为 CRLF）另行约束，
+    不该由一条跨平台的回归测试来判。
+    """
+
+    return path.read_bytes().replace(b"\r\n", b"\n")
 
 #: 快照里仍然写着旧金标的那一条：`#117` 把它从「证据不足」改判为「部分支持」。
 RELABELLED = "PMC8806060-c07"
@@ -63,7 +77,7 @@ def test_regenerating_from_the_recorded_run_reproduces_the_published_record(tmp_
 
     out = tmp_path / "regen.md"
     assert render_from(out, SNAPSHOT) == 0
-    assert out.read_bytes() == RECORD.read_bytes(), (
+    assert content(out) == content(RECORD), (
         "重生成的记录与 docs/metrics-live-86.md 不一致；"
         "若答案集或渲染口径确有变更，请重跑 live_metrics.py 并提交新记录")
 
