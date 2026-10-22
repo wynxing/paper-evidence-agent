@@ -178,7 +178,8 @@ def test_the_answer_set_fingerprint_does_not_depend_on_line_endings(tmp_path):
         names.append(source.name)
 
     # 前提：两份副本确实只差换行，否则下面比的是别的东西。
-    assert len(names) == 4
+    # 不写死来源数量：新增一篇来源是正常演进，不该以「4 != 5」这种消息变红。
+    assert names
     assert b"\r\n" not in (lf_dir / names[0]).read_bytes()
     assert b"\r\n" in (crlf_dir / names[0]).read_bytes()
     assert (lf_dir / names[0]).read_bytes().replace(b"\r\n", b"\n") == \
