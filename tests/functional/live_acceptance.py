@@ -196,8 +196,19 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
     matched = sum(1 for row in rows if row["actual"] == row["expected"])
     unlabelled = sum(1 for row in rows if row["actual"] is None)
     derived = sum(1 for row in rows if row.get("label_source") == "工作流降级")
+    # The model's own hit rate, which is a different number from ``matched``: a
+    # row the workflow filled in itself can agree with the human and must not be
+    # counted as a model judgement (the #115 review found exactly this reading).
+    judged = [row for row in rows if row.get("label_source") == "模型判定"]
+    judged_matched = sum(1 for row in judged if row["actual"] == row["expected"])
     models = sorted({reply["response_model"] for row in rows for reply in row["replies"]
                      if reply.get("response_model")})
+
+    # Which key/account produced this run: a reproducible column would be better,
+    # but a balance figure alone cannot tell two keys apart (the #115 review found
+    # the run's balance did not match the local key). Free text, never the key.
+    key_label = os.environ.get("PAPER_EVIDENCE_MODEL_KEY_LABEL", "").strip() or (
+        "未记录（生成时未设置 `PAPER_EVIDENCE_MODEL_KEY_LABEL`；余额列不唯一确定密钥）")
 
     commit_cell = f"`{commit}`" if commit else "未取到（不在 git 工作树内）"
     lines = [
@@ -220,6 +231,7 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         f"| 样本集 | `tests/functional/samples/`，N = {len(rows)} |",
         f"| 样本集指纹 | `{fingerprint}` |",
         f"| 余额（前 → 后） | {balance_before or '未取到'} → {balance_after or '未取到'} |",
+        f"| 密钥来源 / 账号 | {key_label} |",
         "",
         "复现命令（需网络与凭据，会真实计费）：",
         "",
@@ -228,6 +240,11 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         "PAPER_EVIDENCE_MODEL_API_KEY=<key> \\",
         "  python tests/functional/live_acceptance.py",
         "```",
+        "",
+        "> **与 `#86` 那轮的关系**：本记录跑的是 `tests/functional/samples/` 的 7 例**构造样本**"
+        "（验收用例）；`docs/metrics-live-86.md`（`#116`）跑的是 4 篇真实来源的 24 条签核答案（指标）。",
+        "> 两轮是**独立运行、互不替代**；`#110` 原先「用本机 key + `deepseek-chat` 只跑一轮」的要求"
+        "已由项目负责人作废（2026-10-22），以这两轮实测为准。",
         "",
         "## 这份记录不能被读成什么",
         "",
@@ -258,6 +275,8 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
         "| 汇总 | 值 |",
         "| --- | --- |",
         f"| 标签与人工核对一致 | **{matched} / {len(rows)}** |",
+        f"| 其中**模型自行判断**（有 `final` 动作）的例数 | {len(judged)} / {len(rows)} |",
+        f"| **模型判定且一致**（不含工作流降级那几例） | **{judged_matched} / {len(judged)}** |",
         f"| **未产出标签**（`FAILED`/`BLOCKED` 等） | **{unlabelled} / {len(rows)}** |",
         f"| 其中标签由**工作流降级**（不是模型判断）产出 | **{derived} / {len(rows)}** |",
         "",
@@ -265,6 +284,13 @@ def render(rows: list[dict], *, provider_model: str, settings, fingerprint: str,
     if balance_before and balance_before == balance_after:
         lines += [
             "> 余额前后读数相同，**不代表本次没有计费**：结算有延迟，按余额差估算花费并不可靠。",
+            "",
+        ]
+    if derived:
+        lines += [
+            f"> 上表「一致」里的 {derived} 例标签由**工作流**给出（检索为空后自动返回「证据不足」），",
+            "> 不算模型判断：引用本记录时要说「模型判定 "
+            f"{judged_matched} / {len(judged)}」，不能把两件事合并成一个数字。",
             "",
         ]
     if unlabelled:
