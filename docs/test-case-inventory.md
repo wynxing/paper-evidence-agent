@@ -4,7 +4,7 @@
 
 - **判据的权威在 `docs/test-plan.md:40-121`**。本文档不新增判据、不放宽判据，只把已有判据落到具体用例上，并标出**没有用例接住的判据**（附录 B）。
 - **不是"用例目录"**。用例的真实位置在 `tests/`，本文档不复制代码，只写「哪条用例钉住哪句判据」。
-- **数字口径**：2026-10-22，`main = 12bfe01` + 本文件附录 B 所记的新增用例（`#118` 10 条 + `#113` 剩余批 12 条），`pytest tests` 收集 **455** 条，**426 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
+- **数字口径**：2026-10-22，`main = 12bfe01` + 本文件附录 B 所记的新增用例（`#118` 10 条 + `#113` 剩余批 13 条），`pytest tests` 收集 **456** 条，**427 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
 
 ## 0. 总览
 
@@ -12,14 +12,14 @@
 
 | 维度 | 主目录 | 收集 | 通过 | 跳过 | 判据条数 | 独立复跑 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 功能准确性 | `tests/functional/` | 110 | 97 | 13 | 11 | `pytest tests/functional` |
+| 1 功能准确性 | `tests/functional/` | 111 | 98 | 13 | 11 | `pytest tests/functional` |
 | 2 工具调用 | `tests/tools/` | 167 | 151 | 16 | 10 | `pytest tests/tools` |
 | 3 RAG | `tests/retrieval/` | 15 | 15 | 0 | 7 | `pytest tests/retrieval` |
 | 4 任务内澄清、隔离与多步执行 | `tests/session/` | 40 | 40 | 0 | 8 | `pytest tests/session` |
 | 5 对抗与安全 | `tests/adversarial/` | 31 | 31 | 0 | 5 | `pytest tests/adversarial` |
 | 6 边界与异常 | `tests/boundary/` | 71 | 71 | 0 | 13 | `pytest tests/boundary` |
 | 7 性能 | `tests/performance/` | 21 | 21 | 0 | 5 | `pytest tests/performance` |
-| **七维合计** | — | **455** | **426** | **29** | **59** | `pytest tests` |
+| **七维合计** | — | **456** | **427** | **29** | **59** | `pytest tests` |
 
 另有两块**不属于七维度**、但同样在 `#93` 里交付的内容：
 

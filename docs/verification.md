@@ -1773,7 +1773,7 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
 | `test-plan.md:72` 中文子词召回盲区 | `tests/retrieval/test_chinese_tokenizer.py`（3 条） | 标点切出的整段词元能命中；连续中文里的真子词命中 0 条；中文查询仍被引号包裹，不会变成 MATCH 运算符 |
 | `test-plan.md:69`/`:72` 中文论断→英文正文 | `tests/session/test_workflow.py`（2 条） | 中文论断配英文正文可完成并发布标签；把检索词换成中文则命中为空、工作流自返回 `RETRIEVAL_EMPTY` |
 | `test-plan.md:47` 邻段负控 | `tests/functional/test_semantic_acceptance.py`（1 条） | 换引同样支持论断的第 2 段仍判通过；同一段引文换成别段原文必须被检出 |
-| 指标记录回归 | `tests/functional/test_live_metrics.py`（6 条） | `--from` 重生成与已提交记录**内容一致**；22/24、macro-F1 0.92、44/44、拒判错误率 0.25 独立重算；缺 provider 时在任何网络调用前拒绝 |
+| 指标记录回归 | `tests/functional/test_live_metrics.py`（7 条） | `--from` 重生成与已提交记录**内容一致**；22/24、macro-F1 0.92、44/44、拒判错误率 0.25 独立重算；缺 provider 时在任何网络调用前拒绝 |
 
 ### 怎么验的（不是只看绿）
 
@@ -1800,22 +1800,34 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
 
 | 命令 | 结果 |
 | --- | --- |
-| `pytest tests`（`main = 12bfe01` + 本批 12 条） | 收集 455，**426 passed / 29 skipped** |
-| `pytest tests/functional` | 97 passed / 13 skipped（110） |
+| `pytest tests`（`main = 12bfe01` + 本批 13 条） | 收集 456，**427 passed / 29 skipped** |
+| `pytest tests/functional` | 98 passed / 13 skipped（111） |
 | `pytest tests/retrieval` | 15 passed |
 | `pytest tests/session` | 40 passed |
 | `live_metrics.py --from docs/metrics-live-86.run.json` | exit 0，重生成与已提交记录内容一致（53 355 B，CRLF 归一后逐字节相等） |
 
-### 首轮 CI 红过一次，原因值得留档
+### 首轮 CI 红了两次，两处都是「本地能过不等于承重」
 
-这条回归最初写成**比较原始字节**，本地全绿、CI 红。原因不是口径错，是 `render()` 用
-`Path.write_text`：Windows 写 CRLF、Linux 写 LF，所以「逐字节相等」只在生成记录的那台
-机器上成立。`report.py:366` 的 `sample_fingerprint()` 踩过同一个坑（哈希原始字节 →
-本地过、CI 才现形），这次是第二次。
+**第一次：断言写成本地能过。** 这条回归最初比较**原始字节**，本地全绿、CI 红。不是口径
+错，是 `render()` 用 `Path.write_text`：Windows 写 CRLF、Linux 写 LF，「逐字节相等」只在
+生成记录的那台机器上成立。改成两侧都把 CRLF 归一成 LF 再比。
 
-改法：把比较收敛成「内容相等」——两侧都把 CRLF 归一成 LF 再逐字节比。换行风格是仓库
-约定（`docs/*.md` 为 CRLF），应由约定去管，不该由一条跨平台回归测试来判。
-记在这里是因为它说明一件事：**断言写成本地能过，不等于在 CI 上承重**。
+**第二次：修完还红，暴露出工具本身有缺陷。** 归一之后内容仍不等，差异只有一行——
+`答案集指纹`：仓库里印 `6cfe8482486f9078`（Windows 算的），CI 算出来是
+`6b801235496a73e1`。原因是 `live_metrics.source_fingerprint()` 直接哈希
+`path.read_bytes()`，而 git 存 LF、Windows 工作区是 CRLF：**同一个答案集在两个平台上
+有两个指纹**，也就没法用它核对「这份指标是哪份答案集算出来的」。
+
+这不是测试的问题，是指纹函数的问题，而且 `report.py:366` 的 `sample_fingerprint()`
+早就踩过同一个坑并写下了注释（`#67` 的同类：哈希内容，不哈希传输形式）。
+`source_fingerprint()` 原样复刻了它。修法与之一致——哈希前归一 CRLF；同时把目录改成
+参数，让「换行不影响指纹」可以**直接断言**，而不是等它在另一个平台上才现形。已发布的
+记录随之重生成，`答案集指纹` 从 `6cfe848…` 变为 `6b8012…`（只有这一行变化）。
+
+**还有一层值得记**：这条不变性用例的第一版是拿仓库文件当对照组，可 Windows 工作区
+本来就是 CRLF，「CRLF 比 CRLF」永远相同——把实现变异回原始字节，它照样绿。改成
+**LF 副本 与 CRLF 副本互比**之后才承重（变异后该用例与逐字节用例同时变红）。
+一条断言「通过了但没验到东西」，比没有断言更危险。
 
 ### 这一节不能被读成
 

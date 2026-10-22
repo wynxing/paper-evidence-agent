@@ -153,6 +153,40 @@ def test_the_headline_numbers_are_what_this_run_supports(tmp_path):
     assert "校验：D+I+B+F+C+X+U = 24，与 N 一致。" in text
 
 
+def test_the_answer_set_fingerprint_does_not_depend_on_line_endings(tmp_path):
+    """指纹只取决于答案集内容，不取决于换行。
+
+    git 存 LF、Windows 工作区是 CRLF。原先哈希原始字节，于是记录里印的「答案集指纹」
+    在 Windows 上是 `6cfe8482486f9078`、在 CI 上是 `6b801235496a73e1`——同一个答案集两个
+    指纹，谁也没法用它核对「这份指标是哪份答案集算出来的」。`report.py` 的
+    `sample_fingerprint` 当年就是这么坏掉的，`source_fingerprint` 原样复刻了它。
+
+    做法：把同一份答案集写成 LF 与 CRLF 两份副本，两者指纹必须相同。**不能**拿仓库里的
+    文件当对照——Windows 工作区本来就是 CRLF，那样断言会变成拿 CRLF 比 CRLF，永远过
+    （第一版就是这么写的，变异回原始字节也照样绿）。
+    """
+
+    lf_dir = tmp_path / "lf"
+    crlf_dir = tmp_path / "crlf"
+    lf_dir.mkdir()
+    crlf_dir.mkdir()
+    names = []
+    for source in sorted(SOURCES.glob("PMC*.json")):
+        text = source.read_text(encoding="utf-8").replace("\r\n", "\n")
+        (lf_dir / source.name).write_bytes(text.encode("utf-8"))
+        (crlf_dir / source.name).write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+        names.append(source.name)
+
+    # 前提：两份副本确实只差换行，否则下面比的是别的东西。
+    assert len(names) == 4
+    assert b"\r\n" not in (lf_dir / names[0]).read_bytes()
+    assert b"\r\n" in (crlf_dir / names[0]).read_bytes()
+    assert (lf_dir / names[0]).read_bytes().replace(b"\r\n", b"\n") == \
+        (crlf_dir / names[0]).read_bytes().replace(b"\r\n", b"\n")
+
+    assert source_fingerprint(lf_dir) == source_fingerprint(crlf_dir)
+
+
 def test_an_unknown_case_is_refused_instead_of_scored(tmp_path):
     """快照与答案集对不上时拒绝重算，而不是用旧期望值凑一个数。
 

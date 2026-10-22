@@ -16,7 +16,7 @@
 | 上游回报的模型 | `deepseek-flash` |
 | 提示词版本（`PaperPromptBuilder.version`） | `paper-prompt-0.2.3` |
 | 答案集 | `tests/functional/sources/`，4 篇来源、N = 24（全部签核 `agree`） |
-| 答案集指纹 | `6cfe8482486f9078` |
+| 答案集指纹 | `6b801235496a73e1` |
 | 余额（前 → 后） | 15.10 → 14.98 |
 | 密钥来源 / 账号 | DeepSeek key（用户另行提供，与 #115 同一把；余额约 CNY 15.3）。非本机 deepseek_token.txt 那把（本机实测 CNY 3.52） |
 | 本轮模型输出来源 | 见 `docs/metrics-live-86.run.json`（**未重跑模型**，只按当前答案集重算指标） |

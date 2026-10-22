@@ -422,14 +422,24 @@ def render(rows: list[dict], *, provider_model: str, prompt_version: str, stats:
     return "\n".join(lines) + "\n"
 
 
-def source_fingerprint() -> str:
-    """Hash the committed answer-set files, the input that determines the truth."""
+def source_fingerprint(directory: Path = SOURCES) -> str:
+    """Hash the committed answer-set files, the input that determines the truth.
+
+    Line endings are **not** answer-set content. Git stores these files with LF and a
+    Windows working copy gets CRLF, so hashing the raw bytes made the digest — and the
+    「答案集指纹」 printed in the record — a property of the checkout instead of the data.
+    Measured 2026-10-22: raw bytes gave ``6cfe8482486f9078`` on Windows against
+    ``6b801235496a73e1`` on the CI runner, the same class of bug ``report.py`` fixed for
+    ``sample_fingerprint`` (hash the content, not the transport). ``directory`` is a
+    parameter so the invariance can be asserted directly, instead of only showing up on
+    whichever platform the test did not run on.
+    """
 
     import hashlib
     digest = hashlib.sha256()
-    for path in sorted(SOURCES.glob("PMC*.json")):
+    for path in sorted(directory.glob("PMC*.json")):
         digest.update(path.name.encode("utf-8"))
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
     return digest.hexdigest()[:16]
 
 
