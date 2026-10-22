@@ -12,6 +12,7 @@ by ``request_id``; a missing gateway/upstream id or version stays ``null`` and
 usage is never padded with zero.
 """
 
+import asyncio
 import time
 
 import httpx
@@ -20,6 +21,7 @@ from paper_evidence.domain import ErrorCode
 from paper_evidence.domain.contracts import ModelAttempt, ModelCall
 from paper_evidence.domain.records import ModelReply
 from paper_evidence.models.recording import (
+    AttemptCancelled,
     AttemptRecorder,
     ModelFailure,
     elapsed_ms,
@@ -107,6 +109,14 @@ class OpenAIChatGateway(AttemptRecorder):
             response = await self._client.post(
                 f"{self._base}/v1/chat/completions", json=body, headers=headers, timeout=timeout
             )
+        except asyncio.CancelledError:
+            # Same rule as the SDK transport: an aborted dispatch keeps its attempt
+            # row (status "cancelled", usage unknown) so the ledger does not read as
+            #「什么都没发出去」（Issue #113）.
+            raise AttemptCancelled(
+                call([self.attempt_record(request_id, error_code=None, duration_ms=elapsed_ms(started),
+                                          status="cancelled")])
+            ) from None
         except httpx.TimeoutException:
             raise ModelFailure(ErrorCode.UPSTREAM_TIMEOUT,
                                call([attempt(ErrorCode.UPSTREAM_TIMEOUT, None, elapsed_ms(started))]))

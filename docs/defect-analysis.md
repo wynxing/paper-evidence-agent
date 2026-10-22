@@ -128,6 +128,22 @@
 
 ---
 
+## 取消与生命周期层
+
+### D-13 取消只在阶段边界检查，在途请求把收尾拖到超时（#113 `:116`）
+
+**现象**：`POST /api/checks/{id}/cancel` 对 RUNNING 任务立即返回 202（这一点是对的），但 worker 只有在下一个阶段边界才读取消标记。本机实测：在途模型调用睡觉 5 秒时，受理取消到任务落 CANCELLED 用了 **4.70 秒**；来源请求同样在途时 **4.73 秒**。真实上限是这次调用的超时（模型 45 秒 / 来源 15 秒），`test-plan.md` 要求的是「受理后 2 秒内收尾释放 worker」。
+
+**归因**：取消是**状态**（`cancel_requested`），不是**信号**。`_check_cancel` 只在每个阶段开始时调用一次，`await` 期间没人看这个标记，于是收尾时间等于「当前这次上游调用还要跑多久」。
+
+**为什么不是相邻那层**：不是接口慢（接口是同步读一行、立即返回），也不是 worker 不会收尾（它收尾了，只是晚了）；是把「取消」实现成了轮询点而不是等待中的可中断点。
+
+**修复与证据**：`graph/workflow.py::_await_upstream` 在途轮询取消标记（`CANCEL_POLL_SECONDS = 0.2`），受理即中断在途请求；被打断的传输按 `AttemptCancelled` 交回这次派发的尝试记录，`status="cancelled"`、`usage=null`，所以收尾快不等于账上假装没花钱。修复后同一替身实测 **0.09～0.14 秒**；轨迹里留下一条 `cancelled` 的执行记录，前端已有该状态的中文文案。`deadline` 那条边界本来就有界（单次尝试超时取 `min(45, 剩余)`），本次未改。
+
+**复现**：`tests/session/test_workflow.py::test_a_cancel_during_an_in_flight_model_call_settles_within_two_seconds`、`::test_a_cancel_during_an_in_flight_source_request_stops_before_the_timeout`；变异「在途不看取消标记」两条都红。
+
+---
+
 ## 账务层
 
 ### D-08 冻结快照记的是配置里的模型名，不是实际调用的模型（#68）
@@ -163,6 +179,18 @@
 **为什么不是相邻那层**：不是「退避参数没配」，是两个语义被合并成一个值。恢复策略的常量已单源到 `domain/rules.py`，由 `sources/http.py` 与 `models/sdk.py` 共用。
 
 **复现**：`tests/tools/test_sdk_gateway.py::test_an_upstream_retry_after_is_waited_out`、`tests/performance/test_worker_deadline.py::test_a_retry_after_within_the_remaining_time_is_waited_out_then_retried`、`::test_a_source_retry_after_beyond_the_remaining_time_is_not_waited_out`。
+
+### D-14 控制面没回报派发，被当成「只缺 usage」放行（#113 `:103`）
+
+**现象**：构造一个回答正确、但调用记录里 `attempts` 为空的网关替身（即控制面没回报这次派发），工作流照常派发**第二次**请求并发布 `COMPLETED` + 标签「支持」，只在账上写 `unverified / attempt_records_missing`。`test-plan.md:103` 的要求正好相反：逐次元数据缺失但控制可靠时才保留结果；**控制失效须停止后续调用**。
+
+**归因**：`_accounting` 的完整性判据只看一个方向——「有记录但没尝试」。派发额度是在 `take_request` 时就保守占用的，因此「占过额度的派发数」多于「有记录的调用数」说明有派发完全没留下记录，这个方向此前没人看；`_invoke` 也没有在「这次派发没账目」时停下。
+
+**为什么不是相邻那层**：不是「usage 缺失」，而是「账缺失」。usage 缺失的记录在、单价未知，结果可以保留并标 `unverified`；账缺失意味着连发了几次都不知道，继续调用就是在无法计数的通道上花钱。两者混在一句「缺元数据」里，就会把后者放行。
+
+**修复与证据**：`_invoke` 遇到零尝试的调用记录即以 `UPSTREAM_UNAVAILABLE` 停机（复用已有错误码，不新开：语义就是上游链路不可用，新码要同步术语表、前端文案与导出白名单）；`_accounting` 改为双向判据（`len(calls) >= main_requests_used + repair_requests_used` 且每条记录都有尝试），缺任何一边都报 `unverified`。反向的「记录多于派发」不判缺失——那来自直接写账的调用方，不是这笔账缺了。
+
+**复现**：`tests/session/test_workflow.py::test_a_dispatch_the_control_plane_did_not_account_for_stops_the_task`、`::test_missing_usage_alone_does_not_make_the_ledger_incomplete`（反例：usage 全空但记录齐，仍是 verified）、`tests/boundary/test_storage_lifecycle.py::test_a_dispatch_that_occupied_quota_without_a_call_record_is_not_verified`。
 
 ---
 

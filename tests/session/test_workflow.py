@@ -23,6 +23,7 @@ from paper_evidence.domain.contracts import (
 from paper_evidence.domain.records import ModelReply, SourceSnapshot, TaskInput
 from paper_evidence.domain.rules import criteria_reference
 from paper_evidence.graph.workflow import BoundedWorkflow
+from paper_evidence.models.recording import AttemptCancelled
 from paper_evidence.retrieval.local import StoreRetriever
 from paper_evidence.storage.sqlite import SqliteStore
 
@@ -151,6 +152,77 @@ class CancellingGateway(FakeGateway):
         return reply
 
 
+class SlowGateway(FakeGateway):
+    """Holds each request open, so a cancel can land while it is in flight.
+
+    Mirrors the transports' abort path: a request already dispatched stays in the
+    ledger as a ``cancelled`` attempt with unknown usage instead of disappearing
+    (Issue #113). ``started`` counts dispatches, so a test can tell a request that
+    was never sent from one that was aborted.
+    """
+
+    def __init__(self, seconds, responses):
+        super().__init__(responses)
+        self._seconds = seconds
+        self.started = []
+
+    async def complete(self, request_id, prompt, deadline, *, purpose, round_index, prompt_version="",
+                       context_paragraph_ids=None, repairs_request_id=None):
+        self.started.append(request_id)
+        try:
+            await asyncio.sleep(self._seconds)
+        except asyncio.CancelledError:
+            raise AttemptCancelled(ModelCall(
+                request_id=request_id, purpose=purpose, round=round_index, model_alias="paper-default",
+                prompt_version=prompt_version, params_digest="d",
+                context_paragraph_ids=list(context_paragraph_ids or []),
+                repairs_request_id=repairs_request_id,
+                attempts=[ModelAttempt(
+                    attempt_id=f"{request_id}:1", attempt_index=1, span_id="s", gateway_request_id=None,
+                    upstream_response_id=None, configured_model="m", provider_model="p", deployment_id="d",
+                    recipient="Agnes", response_model=None, verified_model_version=None, recovery_kind="none",
+                    recovery_reason=None, status="cancelled", error_code=None, duration_ms=5, usage=None,
+                )],
+            )) from None
+        return await super().complete(
+            request_id, prompt, deadline, purpose=purpose, round_index=round_index,
+            prompt_version=prompt_version, context_paragraph_ids=context_paragraph_ids,
+            repairs_request_id=repairs_request_id,
+        )
+
+
+class UnaccountedGateway(FakeGateway):
+    """Answers correctly but reports no dispatched attempt for the dispatch.
+
+    This is what losing the routing/budget control looks like from the workflow
+    side: the text arrives, the ledger entry does not. It must stop the task
+    instead of passing as「只是缺 usage」（测试方案「边界与异常」, Issue #113）.
+    """
+
+    async def complete(self, request_id, prompt, deadline, *, purpose, round_index, prompt_version="",
+                       context_paragraph_ids=None, repairs_request_id=None):
+        reply = await super().complete(
+            request_id, prompt, deadline, purpose=purpose, round_index=round_index,
+            prompt_version=prompt_version, context_paragraph_ids=context_paragraph_ids,
+            repairs_request_id=repairs_request_id,
+        )
+        return ModelReply(text=reply.text, call=reply.call.model_copy(update={"attempts": []}))
+
+
+class SlowResolver(FakeResolver):
+    """A source identity call that takes long enough to be cancelled in flight."""
+
+    def __init__(self, seconds):
+        super().__init__()
+        self._seconds = seconds
+        self.accepted = 0
+
+    async def resolve(self, doi, deadline=None):
+        self.accepted += 1
+        await asyncio.sleep(self._seconds)
+        return SourcePreview(doi=doi, title="Demo", authors=["A"], year=2026)
+
+
 @pytest.fixture
 def settings(tmp_path):
     return replace(Settings.from_env(), data_dir=tmp_path, contact_email="")
@@ -173,10 +245,10 @@ def make_task(store, settings, claim="The treatment reduced mortality."):
 
 
 def run(store, settings, responses, *, resolver=None, fulltext=None, claim="The treatment reduced mortality.",
-        deadline=None, limits=None):
+        deadline=None, limits=None, gateway=None):
     if limits is not None:
         settings = replace(settings, limits=limits)
-    gateway = FakeGateway(responses)
+    gateway = gateway if gateway is not None else FakeGateway(responses)
     workflow = BoundedWorkflow(
         store=store, resolver=resolver or FakeResolver(), fulltext=fulltext or FakeFulltext(),
         retriever=StoreRetriever(store, settings.retrieval_context_limit),
@@ -412,6 +484,107 @@ def test_accepted_cancel_wins_over_workflow_result(store, settings):
     assert detail.status is TaskStatus.CANCELLED
     assert detail.label is None and detail.decision is None
     assert gateway.calls == []
+
+
+def test_a_cancel_during_an_in_flight_model_call_settles_within_two_seconds(store, settings):
+    """受理取消后 2 秒内收尾释放 worker，且这次已派发的请求仍留在调用账里。
+
+    只在阶段边界查取消标记时，要等这次 45 秒的调用返回才收尾（Issue #113 实测
+    4.7 秒/5 秒的替身）。收尾快不等于账目干净：请求已经发出去，费用未知要写进
+    调用账（status=cancelled、usage=null），不能被读成「什么都没发」。
+    """
+
+    gateway = SlowGateway(5.0, [QUERIES, final_json()])
+    workflow = BoundedWorkflow(
+        store=store, resolver=FakeResolver(), fulltext=FakeFulltext(),
+        retriever=StoreRetriever(store, settings.retrieval_context_limit),
+        prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+    )
+    task = make_task(store, settings)
+
+    async def scenario():
+        pending = asyncio.ensure_future(workflow.run(task, time.monotonic() + 180))
+        while not gateway.started:
+            await asyncio.sleep(0.01)
+        store.request_cancel(task.id)
+        accepted = time.monotonic()
+        return await pending, time.monotonic() - accepted
+
+    detail, drained = asyncio.run(scenario())
+
+    assert drained < 2.0, f"受理后 {drained:.2f} 秒才收尾，超过 2 秒预算"
+    assert detail.status is TaskStatus.CANCELLED
+    assert detail.label is None and detail.decision is None
+    assert gateway.started == ["t1:query_generation:0"], "取消受理后不得再派发新请求"
+    calls = store.model_calls(task.id)
+    assert [(call.request_id, [item.status for item in call.attempts]) for call in calls] == [
+        ("t1:query_generation:0", ["cancelled"])]
+    assert calls[0].attempts[0].usage is None, "被打断的这次调用费用未知，不能补零"
+    assert detail.accounting.verification == "verified", "记录在、usage 缺：这不是调用账缺失"
+    assert detail.accounting.upstream_attempts_used == 1
+    assert (Stage.QUERY_GENERATION, "model_gateway", "cancelled") in {
+        (event.stage, event.tool, event.status) for event in store.execution(task.id)}
+
+
+def test_a_cancel_during_an_in_flight_source_request_stops_before_the_timeout(store, settings):
+    """来源请求在途时受理取消同样要立刻收尾，而不是等 15 秒的来源超时。"""
+
+    resolver = SlowResolver(5.0)
+    gateway = FakeGateway([QUERIES, final_json()])
+    workflow = BoundedWorkflow(
+        store=store, resolver=resolver, fulltext=FakeFulltext(),
+        retriever=StoreRetriever(store, settings.retrieval_context_limit),
+        prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+    )
+    task = make_task(store, settings)
+
+    async def scenario():
+        pending = asyncio.ensure_future(workflow.run(task, time.monotonic() + 180))
+        while not resolver.accepted:
+            await asyncio.sleep(0.01)
+        store.request_cancel(task.id)
+        accepted = time.monotonic()
+        return await pending, time.monotonic() - accepted
+
+    detail, drained = asyncio.run(scenario())
+
+    assert drained < 2.0, f"受理后 {drained:.2f} 秒才收尾，超过 2 秒预算"
+    assert detail.status is TaskStatus.CANCELLED
+    assert gateway.calls == [], "来源都没取到，不应有模型请求"
+    assert detail.source is None
+    assert (Stage.SOURCE_IDENTITY, "source_resolver", "cancelled") in {
+        (event.stage, event.tool, event.status) for event in store.execution(task.id)}
+
+
+def test_a_dispatch_the_control_plane_did_not_account_for_stops_the_task(store, settings):
+    """控制面没回报这次派发就不能继续派发，而不是当成「只是缺 usage」放行。
+
+    「逐次元数据缺失」的形态是记录在、usage 为空（结果可保留，标 unverified）；
+    记录整条没有才是控制失效——继续调用就是在无法计数的通道上花钱。
+    """
+
+    gateway = UnaccountedGateway([QUERIES, final_json()])
+    detail, gateway = run(store, settings, [], gateway=gateway)
+
+    assert detail.status is TaskStatus.FAILED
+    assert detail.error_code is ErrorCode.UPSTREAM_UNAVAILABLE
+    assert detail.label is None and detail.decision is None
+    assert len(gateway.calls) == 1, "第一次派发没有账目，就不该有第二次"
+    assert detail.accounting.verification == "unverified"
+    assert detail.accounting.reason == "attempt_records_missing"
+    assert detail.accounting.observed_upstream_attempts == 0
+    assert detail.accounting.upstream_attempts_used is None
+
+
+def test_missing_usage_alone_does_not_make_the_ledger_incomplete(store, settings):
+    """反例：usage 全空但每次派发都有尝试记录时，账仍是完整的（不能误标缺失）。"""
+
+    detail, _ = run(store, settings, [QUERIES, final_json()])
+
+    assert detail.status is TaskStatus.COMPLETED
+    assert detail.accounting.verification == "verified"
+    assert detail.accounting.upstream_attempts_used == 2
+    assert [item.usage for call in store.model_calls("t1") for item in call.attempts] == [None, None]
 
 
 # ------------------------------------------------- review regression coverage

@@ -14,6 +14,7 @@ mechanical. This deviation is recorded in the PR.
 """
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass
 
@@ -39,9 +40,18 @@ from paper_evidence.domain.rules import (
 from paper_evidence.domain.text import quote_spans
 from paper_evidence.graph.support import StageRecorder
 from paper_evidence.models.gateway import ModelFailure
+from paper_evidence.models.recording import AttemptCancelled
 from paper_evidence.retrieval.jats import parse_jats
 
 __all__ = ["BoundedWorkflow", "QuoteError"]
+
+#: How often an in-flight upstream wait re-reads the persisted cancel flag.
+#:
+#: 取消只在阶段边界检查时，一次 45 秒的模型调用会把「受理后 2 秒内收尾释放
+#: worker」拖成 45 秒（测试方案「性能」）。轮询而不是订阅，是因为取消标记落在
+#: SQLite 里、由另一个进程的 API 写入；0.2 秒既远小于 2 秒的预算，也不至于让
+#: 本地库每秒被打几百次。
+CANCEL_POLL_SECONDS = 0.2
 
 
 class QuoteError(ValueError):
@@ -49,7 +59,16 @@ class QuoteError(ValueError):
 
 
 class _Cancelled(Exception):
-    """An accepted cancel stops local work; it is not an academic result."""
+    """An accepted cancel stops local work; it is not an academic result.
+
+    ``call`` carries the attempt record of a model request that was already on the
+    wire when the cancel landed, so the workflow can still put that dispatch in the
+    ledger before settling the task as CANCELLED.
+    """
+
+    def __init__(self, call=None) -> None:
+        super().__init__("cancel accepted")
+        self.call = call
 
 
 @dataclass
@@ -86,6 +105,48 @@ class BoundedWorkflow:
         if await self._db(self._store.cancel_accepted, task_id):
             raise _Cancelled
 
+    async def _await_upstream(self, task_id: str, awaitable):
+        """Await one upstream step, aborting it if a cancel is accepted meanwhile.
+
+        Stage boundaries alone do not bound the drain: a click during a 45-second
+        model attempt or a 15-second source request would only be noticed when that
+        await returned, and 测试方案「性能」 requires the worker to be released within
+        2 seconds of accepting a cancel. So the persisted flag is polled while the
+        step runs, and an accepted cancel cancels the in-flight dispatch. A
+        transport that already sent the request reports it as an ``AttemptCancelled``
+        carrying the attempt row, which the caller stores: the abort is fast, not
+        amnesiac (测试方案「取消」: 保留已发生费用未知的说明).
+        """
+
+        inner = asyncio.ensure_future(awaitable)
+        try:
+            while True:
+                done, _pending = await asyncio.wait({inner}, timeout=CANCEL_POLL_SECONDS)
+                if done:
+                    return inner.result()
+                if await self._db(self._store.cancel_accepted, task_id):
+                    raise _Cancelled(await self._abort_upstream(inner))
+        except BaseException:
+            # A dispatch must never outlive the task it belongs to: a late response
+            # would try to write to a settled row and reopen the ledger.
+            if not inner.done():
+                inner.cancel()
+                with contextlib.suppress(BaseException):
+                    await inner
+            raise
+
+    async def _abort_upstream(self, inner):
+        """Cancel the in-flight dispatch; return the attempt record it carried."""
+
+        inner.cancel()
+        try:
+            await inner
+        except AttemptCancelled as aborted:
+            return aborted.call
+        except BaseException:  # a transport without the abort path records nothing
+            return None
+        return None
+
     # -------------------------------------------------------------------- run
 
     async def run(self, task: TaskInput, deadline: float) -> "CheckDetail":  # noqa: F821
@@ -113,9 +174,9 @@ class BoundedWorkflow:
     async def _prepare_source(self, task, deadline, recorder):
         self._check_stop(deadline)
         # The task deadline reaches the source connectors too (架构「取消与截止时间」).
-        preview = await self._stage(recorder, Stage.SOURCE_IDENTITY, "source_resolver",
+        preview = await self._stage(task.id, recorder, Stage.SOURCE_IDENTITY, "source_resolver",
                                     self._resolver.resolve(task.doi, deadline))
-        snapshot = await self._stage(recorder, Stage.FETCH, "full_text_source",
+        snapshot = await self._stage(task.id, recorder, Stage.FETCH, "full_text_source",
                                      self._fulltext.fetch(task.doi, deadline))
         paragraphs = parse_jats(snapshot)
         await self._db(self._store.link_task_source, task.id, snapshot.source_id)
@@ -128,11 +189,14 @@ class BoundedWorkflow:
         await self._refuse_front_matter(recorder, snapshot.metadata)
         return snapshot.source_id, preview
 
-    async def _stage(self, recorder, stage: Stage, tool: str, coro):
+    async def _stage(self, task_id: str, recorder, stage: Stage, tool: str, coro):
         await recorder.enter(stage, tool)
         started = time.monotonic()
         try:
-            result = await coro
+            result = await self._await_upstream(task_id, coro)
+        except _Cancelled:
+            await recorder.cancelled(stage, tool, started)
+            raise
         except ContractError as error:
             await recorder.fail(stage, tool, error.error_code, started)
             raise
@@ -321,11 +385,19 @@ class BoundedWorkflow:
         await recorder.enter(stage, "model_gateway")
         started = time.monotonic()
         try:
-            reply = await self._gateway.complete(
+            reply = await self._await_upstream(task.id, self._gateway.complete(
                 request_id, prompt, deadline, purpose=purpose, round_index=round_index,
                 prompt_version=self._prompts.version, context_paragraph_ids=list(context),
                 repairs_request_id=repairs_request_id,
-            )
+            ))
+        except _Cancelled as stopped:
+            # The request was already dispatched. Its attempt row says「cancelled,
+            # usage unknown」, so the cancel is quick without hiding the spend.
+            if stopped.call is not None:
+                await self._db(self._store.record_model_call, task.id, stopped.call)
+            await recorder.cancelled(stage, "model_gateway", started,
+                                     round_index=round_index, request_id=request_id)
+            raise
         except ModelFailure as failure:
             # The gateway builds the call record for both outcomes, so a failed
             # attempt keeps the same params_digest as a successful one.
@@ -333,6 +405,15 @@ class BoundedWorkflow:
             await recorder.fail(stage, "model_gateway", failure.error_code, started,
                                 round_index=round_index, request_id=request_id)
             raise ContractError(failure.error_code, "模型上游失败") from failure
+        if not reply.call.attempts:
+            # 派发发生了，控制面却没有回报这一次的上游尝试：既不知道单价，也不知道
+            # 它到底发出去几次。这不是「逐次元数据缺失」（那种记录在、usage 为空，
+            # 结果可以保留并标 unverified），继续派发等于在无法计数的通道上花钱，
+            # 所以停在这里（测试方案「边界与异常」, Issue #113）。
+            await self._db(self._store.record_model_call, task.id, reply.call)
+            await recorder.fail(stage, "model_gateway", ErrorCode.UPSTREAM_UNAVAILABLE, started,
+                                round_index=round_index, request_id=request_id)
+            raise ContractError(ErrorCode.UPSTREAM_UNAVAILABLE, "模型网关未回报本次派发，停止后续调用")
         await self._db(self._store.record_model_call, task.id, reply.call)
         await recorder.ok(stage, "model_gateway", started, round_index=round_index, request_id=request_id)
         return reply.text

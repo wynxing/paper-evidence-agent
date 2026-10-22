@@ -8,6 +8,7 @@ import pytest
 
 from paper_evidence.domain import ContractError, ErrorCode
 from paper_evidence.models.gateway import ModelFailure, OpenAIChatGateway
+from paper_evidence.models.recording import AttemptCancelled
 
 
 def build(handler, recipient="Agnes"):
@@ -127,3 +128,31 @@ def test_malformed_success_body_is_invalid_request():
     with pytest.raises(ModelFailure) as raised:
         complete(build(handler))
     assert raised.value.error_code is ErrorCode.UPSTREAM_INVALID_REQUEST
+
+
+def test_an_aborted_request_keeps_its_attempt_row_as_cancelled():
+    """被打断的请求已经在路上：账上留一条 cancelled 尝试，费用未知写 null。
+
+    这条记录是「取消后 2 秒内收尾」与「不把未知当零」同时成立的前提：没有它，
+    快速收尾就等于假装这次没发出去（Issue #113）。
+    """
+
+    async def handler(request):
+        await asyncio.sleep(30)
+        return httpx.Response(200, json={})
+
+    async def scenario():
+        gateway = build(handler)
+        pending = asyncio.ensure_future(gateway.complete(
+            "r1", "prompt", time.monotonic() + 30, purpose="decision", round_index=0,
+            prompt_version="v", context_paragraph_ids=["p:1"],
+        ))
+        await asyncio.sleep(0.05)
+        pending.cancel()
+        with pytest.raises(AttemptCancelled) as raised:
+            await pending
+        return raised.value.call
+
+    call = asyncio.run(scenario())
+    assert [(item.status, item.error_code, item.usage) for item in call.attempts] == [("cancelled", None, None)]
+    assert call.request_id == "r1" and call.context_paragraph_ids == ["p:1"]

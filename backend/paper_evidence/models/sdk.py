@@ -39,6 +39,7 @@ from paper_evidence.domain.contracts import ModelAttempt, ModelCall  # noqa: E40
 from paper_evidence.domain.records import ModelReply  # noqa: E402
 from paper_evidence.domain.rules import RECOVERY_BACKOFF_SECONDS  # noqa: E402
 from paper_evidence.models.recording import (  # noqa: E402
+    AttemptCancelled,
     AttemptRecorder,
     ModelFailure,
     elapsed_ms,
@@ -249,6 +250,17 @@ class LiteLLMSdkGateway(AttemptRecorder):
             started = time.monotonic()
             try:
                 response = await self._completion(**self._request(prompt, timeout))
+            except asyncio.CancelledError:
+                # The dispatch is already on the wire, so it stays in the ledger as
+                # a cancelled attempt with unknown usage: an accepted cancel must
+                # release the worker quickly without pretending nothing was spent
+                # （测试方案「取消」, Issue #113）.
+                attempts.append(self.attempt_record(
+                    request_id, error_code=None, duration_ms=elapsed_ms(started),
+                    attempt_index=attempt_index, recovery_kind=recovery_kind,
+                    recovery_reason=recovery_reason, status="cancelled",
+                ))
+                raise AttemptCancelled(call()) from None
             except Exception as error:
                 # A cancelled task arrives as CancelledError, a BaseException that
                 # never reaches this handler, so cancellation is never retried.

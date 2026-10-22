@@ -13,7 +13,7 @@ import pytest
 from paper_evidence.domain import ContractError, ErrorCode
 from paper_evidence.domain.rules import RECOVERY_BACKOFF_SECONDS
 from paper_evidence.models import sdk as sdk_module
-from paper_evidence.models.recording import ModelFailure
+from paper_evidence.models.recording import AttemptCancelled, ModelFailure
 from paper_evidence.models.sdk import LiteLLMSdkGateway, error_code_for
 
 litellm_errors = sdk_module.litellm.exceptions
@@ -458,3 +458,25 @@ def test_a_real_sdk_failure_reaches_the_same_mapping(monkeypatch):
     with pytest.raises(ModelFailure) as raised:
         complete(build())
     assert raised.value.error_code is ErrorCode.UPSTREAM_UNAVAILABLE
+
+
+def test_an_aborted_attempt_is_reported_as_cancelled_not_as_a_success():
+    """SDK 传输被打断时也要留下这条尝试：取消快收尾不等于这次没发出去（Issue #113）。"""
+
+    async def scenario():
+        async def forever(**kwargs):
+            await asyncio.sleep(30)
+
+        gateway = build(completion=forever)
+        pending = asyncio.ensure_future(gateway.complete(
+            "r1", "prompt", time.monotonic() + 300, purpose="query_generation", round_index=0,
+            prompt_version="v", context_paragraph_ids=["p:1"],
+        ))
+        await asyncio.sleep(0.05)
+        pending.cancel()
+        with pytest.raises(AttemptCancelled) as raised:
+            await pending
+        return raised.value.call
+
+    call = asyncio.run(scenario())
+    assert [(item.status, item.error_code, item.usage) for item in call.attempts] == [("cancelled", None, None)]

@@ -44,6 +44,16 @@ class StageRecorder:
     async def fail(self, stage, tool: str, error_code, started: float, round_index=None, request_id=None) -> None:
         await self._record(stage, tool, "error", error_code, started, round_index, request_id)
 
+    async def cancelled(self, stage, tool: str, started: float, round_index=None, request_id=None) -> None:
+        """A step that was aborted by an accepted cancel, not by a failure.
+
+        Without this row the trace of a cancelled task shows a step that entered
+        and never came back — indistinguishable from a crash. It carries no error
+        code on purpose: the step did nothing wrong (Issue #113).
+        """
+
+        await self._record(stage, tool, "cancelled", None, started, round_index, request_id)
+
     async def _record(self, stage, tool, status, error_code, started, round_index, request_id) -> None:
         self.stage = stage
         event = ExecutionRecord(

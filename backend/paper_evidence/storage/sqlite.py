@@ -217,7 +217,15 @@ class SqliteStore:
     def _accounting(self, task_id: str, counters: dict[str, int]) -> Accounting:
         calls = self.model_calls(task_id)
         observed = sum(len(call.attempts) for call in calls)
-        complete = all(len(call.attempts) >= 1 for call in calls)
+        # 两个方向都要看，否则「账不完整」只认得出「有记录没尝试」这一种形态：
+        # 派发在 ``take_request`` 时就已经占用额度，所以「占过额度的派发数」多于
+        # 「有记录的调用数」说明有派发没留下任何记录（控制面丢了回报，或取消把
+        # 在途请求打断而传输没来得及记账）。那种情形不能报 verified —— 展示的是
+        # 「至少 observed 次／上限，实际次数未核实」（术语表「调用账与版本归属」,
+        # Issue #113）。反向的「记录多于派发」不在这里判：它来自直接写账的调用方，
+        # 不是这笔账缺失。
+        dispatched = counters["main_requests_used"] + counters["repair_requests_used"]
+        complete = all(len(call.attempts) >= 1 for call in calls) and len(calls) >= dispatched
         return Accounting(
             verification="verified" if complete else "unverified",
             main_requests_used=counters["main_requests_used"],
