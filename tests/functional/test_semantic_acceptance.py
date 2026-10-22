@@ -13,6 +13,7 @@ through, so a failing control forbids publishing a semantic score (测试方案
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -175,3 +176,54 @@ def test_the_frozen_set_is_decidable_rather_than_all_refusals(acceptance):
         published[case_id] = outcome.detail.label.value
 
     assert set(published.values()) >= {"支持", "部分支持", "相矛盾"}, published
+
+#: 两段都支持同一论断的正文：结果段与摘要段在真实论文里常常重复同一结论。
+#: 第 1 段是样本人工核对的引用位置，第 2 段是「邻段同样支持」的情形。
+NEIGHBOUR_JATS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<article xml:lang="en"><front><article-meta/></front><body>
+<sec id="s1"><title>Results</title>
+<p id="n1">The treatment reduced mortality by 20 percent.</p>
+<p id="n2">Mortality was 20 percent lower in the treated group.</p>
+</sec></body></article>
+"""
+NEIGHBOUR_QUOTE = "Mortality was 20 percent lower in the treated group."
+
+
+def test_a_neighbouring_paragraph_that_also_supports_is_not_a_hard_failure(acceptance):
+    """邻段同样支持论断时，不得仅因更换邻段就硬判失败（测试方案 `test-plan.md:47`）。
+
+    判据要防的是一种很自然的错法：验收器把「引了别的段落」直接等同于「引错了」。
+    真实论文里同一个结论往往在摘要、结果段、讨论段各说一遍，模型引到哪一段都算
+    找对了证据，差别只在定位，不在标签。
+
+    这里把样本换成**两段都支持**的正文（断言论断与标签都不变），让模型引第 2 段：
+    工作流必须照常完成并发布同一个标签，验收器也必须判它通过。对照放在同一个用例
+    里——同一段引文换成另一段的原文必须被检出，否则「通过」可能只是因为验收器根本
+    不看摘录。
+    """
+
+    base = load_case("support_object_scope")
+    case = replace(base, jats=NEIGHBOUR_JATS)
+    decision = json.dumps({"action": "final", "decision": {
+        "label": case.label, "rationale": "两段都给出 20% 的降幅。",
+        "supported_parts": ["死亡率下降 20%"], "scope_differences": [],
+        "limitations": [], "evidence": [{"paragraph": 2, "quote": NEIGHBOUR_QUOTE}],
+    }}, ensure_ascii=False)
+
+    outcome = acceptance(case, transcript=['{"queries": ["mortality"]}', decision])
+
+    assert outcome.detail.status is TaskStatus.COMPLETED, outcome.detail.error_code
+    assert outcome.detail.label.value == case.label
+    assert [item.paragraph_id for item in outcome.detail.decision.evidence] == [
+        item.paragraph_id for item in outcome.paragraphs.values() if item.ordinal == 2
+    ]
+    reasons = acceptance_failures(outcome.detail, case, outcome.paragraphs)
+    assert not reasons, "换了同样支持论断的邻段就被判失败：" + "；".join(reasons)
+
+    # 对照：仍引第 2 段，但摘录换成第 1 段的原文 → 必须被检出。
+    checked = outcome.detail.decision.evidence[0]
+    swapped = checked.model_copy(update={"quote": base.quote("support")})
+    tampered = outcome.detail.model_copy(update={
+        "decision": outcome.detail.decision.model_copy(update={"evidence": [swapped]})})
+    assert acceptance_failures(tampered, case, outcome.paragraphs), "引了别段的摘录没有被检出"
+

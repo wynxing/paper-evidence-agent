@@ -778,3 +778,49 @@ def test_a_linked_task_never_sees_the_previous_claim(store, settings):
     # 原任务的输入不被覆盖，两条历史各自可见。
     assert store.get("t1").claim == old_claim
     assert {row.id for row in store.list()} == {"t1", "t2"}
+
+#: 中文论断配英文正文：真实来源几乎全是英文，而考卷里的论断是中文写的。
+CHINESE_CLAIM = "该治疗使死亡率下降了 20%。"
+
+
+def test_a_chinese_claim_is_judged_against_an_english_body(store, settings):
+    """中文论断→英文正文受支持（测试方案 `test-plan.md:69`、`:72`）。
+
+    跨语言的桥在模型这边：正文是英文，模型把论断译成英文查询词再提交，应用自己
+    不对论断语言做判定（判据只要求**英文论断→中文正文**被拒，那条由
+    `sources/pmc.py` 的 `require_english` 负责）。
+
+    所以要钉的是两件事：中文论断不被系统性阻断，且模型给的英文查询确实能命中英文
+    正文，并让引用通过逐字定位。
+    """
+
+    detail, _ = run(store, settings, [RETRIEVE, final_json()], claim=CHINESE_CLAIM)
+
+    assert detail.status is TaskStatus.COMPLETED, detail.error_code
+    assert detail.error_code is None
+    assert detail.label is not None and detail.label.value == "支持"
+    assert [item.paragraph_id for item in detail.decision.evidence] == [PID1]
+
+
+def test_a_chinese_query_against_an_english_body_finds_nothing(store, settings):
+    """对照：同一个中文论断，若直接用中文查询词检索英文正文，命中为空。
+
+    这条钉住的是**机制**而不是缺陷：unicode61 把连续中文当一个词元，英文正文里
+    不存在这个词元，所以中文查询必然落空。工作流随后按有界检索自返回「证据不足」
+    （`graph/workflow.py` 的 `_insufficient()`），这不是模型的判断，标签来源要
+    记成工作流降级。
+
+    有了这条对照，上面那条才不是「怎么都能过」——把桥抽掉，结论立刻从「支持」
+    变成「证据不足」。
+    """
+
+    chinese_retrieve = '{"action": "retrieve", "queries": ["死亡率"], "neighbor_paragraph_ids": []}'
+    detail, gateway = run(store, settings, [chinese_retrieve, chinese_retrieve], claim=CHINESE_CLAIM)
+
+    assert detail.status is TaskStatus.COMPLETED, detail.error_code
+    assert detail.error_code is ErrorCode.RETRIEVAL_EMPTY
+    assert detail.label is not None and detail.label.value == "证据不足"
+    assert detail.decision is not None and detail.decision.evidence == []
+    # 模型只被问过两次（两轮查询），没有拿到第三轮去「猜」一个判断。
+    assert len(gateway.calls) == 2
+
