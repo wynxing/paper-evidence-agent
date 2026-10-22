@@ -728,3 +728,53 @@ def test_cancel_accepted_before_a_failure_still_wins(store, settings):
 
     assert detail.status is TaskStatus.CANCELLED
     assert detail.label is None and detail.decision is None
+
+
+def _snapshot(settings):
+    """``make_task`` hardcodes id ``t1``; the second task needs its own run config."""
+
+    return RunConfigSnapshot(profile="daily", config_digest="d", snapshot_ref="r",
+                             authorized_recipients=["Agnes"], limits=settings.limits,
+                             timeouts=settings.timeouts, observability=settings.observability)
+
+
+def test_a_linked_task_never_sees_the_previous_claim(store, settings):
+    """上一条论断不得进入下一条任务（测试方案「任务内澄清」:83）。
+
+    ``previous_id`` 只是记录关联：第二个任务的提示词里只能出现它自己的论断，原任务
+    的原句与判断都不得进入上下文；原任务记录也不能被新任务覆盖。
+    """
+
+    old_claim = "甲论断：治疗把死亡率降低了 20%，老年亚组同样有效。"
+    new_claim = "乙论断：治疗缩短了住院时间。"
+
+    def run_one(task, responses):
+        gateway = FakeGateway(responses)
+        workflow = BoundedWorkflow(
+            store=store, resolver=FakeResolver(), fulltext=FakeFulltext(),
+            retriever=StoreRetriever(store, settings.retrieval_context_limit),
+            prompts=PaperPromptBuilder(), gateway=gateway, settings=settings,
+        )
+        store.create(task, _snapshot(settings), criteria_reference("rev"))
+        return asyncio.run(workflow.run(task, time.monotonic() + 180)), gateway
+
+    old_task = TaskInput(id="t1", claim=old_claim, doi="10.1000/xyz", config_digest="d",
+                         authorized_recipients=("Agnes",))
+    run_one(old_task, [QUERIES, final_json()])
+
+    new_task = TaskInput(id="t2", claim=new_claim, doi="10.1000/xyz", config_digest="d",
+                         authorized_recipients=("Agnes",), previous_id="t1")
+    detail, gateway = run_one(new_task, [QUERIES, final_json()])
+
+    prompts = "\n".join(call["prompt"] for call in gateway.calls)
+    assert new_claim in prompts
+    assert old_claim not in prompts
+    # 逐段核对，避免只靠整句 miss 就宣布没问题。
+    assert "老年亚组" not in prompts
+    assert "死亡率降低了 20%" not in prompts
+
+    assert detail.previous_id == "t1"
+    assert detail.claim == new_claim
+    # 原任务的输入不被覆盖，两条历史各自可见。
+    assert store.get("t1").claim == old_claim
+    assert {row.id for row in store.list()} == {"t1", "t2"}
