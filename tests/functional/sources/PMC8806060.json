@@ -610,6 +610,12 @@
       "evidence": {
         "ordinal": 45,
         "quote": "the results of comparative experimental exploration showed that among YOLOv2, Tiny-YOLO, the optimized DF-Tiny-YOLO network offered more advantages than the other two models."
+      },
+      "review": {
+        "by": "Ziyiqian123",
+        "at": "2026-10-22",
+        "outcome": "agree",
+        "note": "按 #117 改判后的标签重签。对重新取回的正文（101,339 字符，article_sha256 a7d5ee99…）复核：①第 45 段引文逐字可定位（quote_spans 命中），第 39 段 Table 5 给出 mAP 99.99%、平均 IoU 90.88%、Recall 1.00、280 FPS 四项对照；②全文横向比较对象只有 YOLOv2 与 Tiny-YOLO（YOLOv3/4/5 各 0 次），SSD、Faster R-CNN 的出现均在相关工作，不是与 DF-Tiny-YOLO 的对比；第 49 段自陈 difficult to compare with more models。故「更优」成立、「三个及以上」不成立，差异落在数量维，符合 glossary.md:23 的部分支持定义；不取证据不足——那条要求可核查片段仍不足，这里片段是有的，缺的只是第三个比较对象。与 PMC13648980-c08（有效成立、普遍不成立→部分支持）同构，两条口径一致。variations 仍记 object：差异落点是比较对象集合内的数量，与 c08「普遍」、c06「四个类别」同口径，理由见 claim_note。"
       }
     }
   ]
