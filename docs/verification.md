@@ -1840,3 +1840,44 @@ PAPER_EVIDENCE_MODEL_API_KEY=... \
 - **`#113` 没有全绿**。剩余两条：`:116` 取消时限归 `#20` 手工联调，`:103` 控制失效
   即停仍需能模拟控制失效的替身。
 
+## 2026-10-23 `#121` 合入后的判据收口：在途取消与「控制失效即停」
+
+`#121`（squash 后 `7306c7f`）补齐了 `test-plan.md` 里两条此前只有间接覆盖的判据。
+本节只记**测试侧的复核口径与实测**，实现细节见该 PR 与 `docs/defect-analysis.md` 的
+D-13 / D-14。
+
+### 覆盖落点
+
+| 判据 | 实现要点 | 用例 | 本节实测 |
+| --- | --- | --- | --- |
+| `:116` 取消 1 秒内响应、受理后 2 秒内收尾 | `_await_upstream` 在途轮询取消标记（0.2s），受理即中断在途请求；被打断的派发按 `AttemptCancelled` 交回尝试记录，`status="cancelled"`、`usage=null` | `tests/session/test_workflow.py::test_a_cancel_during_an_in_flight_model_call_settles_within_two_seconds`、`::test_a_cancel_during_an_in_flight_source_request_stops_before_the_timeout` | 两条均通过；变异后分别以 5.03 秒失败 |
+| `:103` 模拟控制失效须停止后续调用 | `_invoke` 遇零尝试的调用记录即以 `UPSTREAM_UNAVAILABLE` 停机；`_accounting` 改双向判据（记录数 ≥ 派发数，且每条记录都有尝试） | `::test_a_dispatch_the_control_plane_did_not_account_for_stops_the_task`、反例 `::test_missing_usage_alone_does_not_make_the_ledger_incomplete`、`tests/boundary/test_storage_lifecycle.py::test_a_dispatch_that_occupied_quota_without_a_call_record_is_not_verified` | 三条均通过；反例证明「只缺 usage」仍保留结果并记 `unverified` |
+
+### 测试侧做的独立验证
+
+- **全量**：`pytest tests` → 收集 463，**434 passed / 29 skipped**（合入前 427/29）。
+- **断言没有被削弱**：`#121` 对测试目录的改动只把 `_call` 辅助并入 `run(..., gateway=None)`
+  （为了注入自定义网关），没有删断言、没有放宽阈值。
+- **独立变异**（不采信提交信息里自述的「六处」）：删掉 `_await_upstream` 里的
+  `cancel_accepted` 轮询后，两条计时用例同时变红，实测 **5.03 秒 > 2 秒预算**——
+  与缺陷报告记录的原始现象（替身 4.70 / 4.73 秒）同量级，说明用例锁的是机制而不是结果值。
+  变异已还原，`git status` 只余文档改动。
+
+### 这条边界的说明（重要）
+
+`:116` 的自动化用例跑在**脚本化替身 + 虚拟时钟**上，它证明的是「不再等这次调用超时」，
+**不证明**真机上从点击取消到 worker 释放确实在 2 秒内。后者需要真实后端 + 常驻 worker +
+真实模型，记在 `#20` 的执行记录里（`#20` 正文已单列该行）。两者不能互相替代：
+替身跑出的秒数只能算机制证据（实现方在 D-13 里记的是 0.09~0.14 秒，**本节没有复测这个数值**），墙钟才是 `:116` 的验收证据。
+
+`:103` 的「零尝试即停」是确定性分支，替身足够；但「真实上游不回报派发」这一情形
+尚未在真环境里复现过——它需要控制面真的丢一次记录，不是靠构造。
+
+### 这一节不能被读成
+
+- **不是「取消已经全部验证」**：墙钟未测，`#20` 那一行仍欠。
+- **不是「上游不可用已被覆盖」**：只覆盖了「控制面不回账」这一种失效形态，
+  真正的网络失败路径由既有的 `UPSTREAM_UNAVAILABLE` 用例覆盖，两者不重复。
+- **不是「换段/换状态都放过」**：`cancelled` 是把状态记准（不是 success、不是 0），
+  而 `:103` 是让账不完整时**停下来**——一个放宽方向、一个收紧方向，别读反。
+
