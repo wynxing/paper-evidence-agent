@@ -4,7 +4,7 @@
 
 - **判据的权威在 `docs/test-plan.md:40-121`**。本文档不新增判据、不放宽判据，只把已有判据落到具体用例上，并标出**没有用例接住的判据**（附录 B）。
 - **不是"用例目录"**。用例的真实位置在 `tests/`，本文档不复制代码，只写「哪条用例钉住哪句判据」。
-- **数字口径**：2026-10-22，`main = 12bfe01` + 本文件附录 B 所记的新增用例（`#118` 10 条 + `#113` 剩余批 13 条），`pytest tests` 收集 **456** 条，**427 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
+- **数字口径**：2026-10-22，`main = 7306c7f`（`#118` / `#119` / `#120` / `#121` 已并入），`pytest tests` 收集 **463** 条，**434 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
 
 ## 0. 总览
 
@@ -13,13 +13,13 @@
 | 维度 | 主目录 | 收集 | 通过 | 跳过 | 判据条数 | 独立复跑 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 功能准确性 | `tests/functional/` | 111 | 98 | 13 | 11 | `pytest tests/functional` |
-| 2 工具调用 | `tests/tools/` | 167 | 151 | 16 | 10 | `pytest tests/tools` |
+| 2 工具调用 | `tests/tools/` | 169 | 153 | 16 | 10 | `pytest tests/tools` |
 | 3 RAG | `tests/retrieval/` | 15 | 15 | 0 | 7 | `pytest tests/retrieval` |
-| 4 任务内澄清、隔离与多步执行 | `tests/session/` | 40 | 40 | 0 | 8 | `pytest tests/session` |
+| 4 任务内澄清、隔离与多步执行 | `tests/session/` | 44 | 44 | 0 | 8 | `pytest tests/session` |
 | 5 对抗与安全 | `tests/adversarial/` | 31 | 31 | 0 | 5 | `pytest tests/adversarial` |
-| 6 边界与异常 | `tests/boundary/` | 71 | 71 | 0 | 13 | `pytest tests/boundary` |
+| 6 边界与异常 | `tests/boundary/` | 72 | 72 | 0 | 13 | `pytest tests/boundary` |
 | 7 性能 | `tests/performance/` | 21 | 21 | 0 | 5 | `pytest tests/performance` |
-| **七维合计** | — | **456** | **427** | **29** | **59** | `pytest tests` |
+| **七维合计** | — | **463** | **434** | **29** | **59** | `pytest tests` |
 
 另有两块**不属于七维度**、但同样在 `#93` 里交付的内容：
 
@@ -438,19 +438,19 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 
 | # | 判据出处 | 判据 | 现状 | 处置 |
 | --- | --- | --- | --- | --- |
-| 1 | `:83` | 多主张输入返回拆分提示，改写或拆分后重新确认提交 | **半覆盖（实现缺口）**：输入页有一条静态提示「多个主张请手动拆分」，但「多主张 → 只说明歧义、不输出确定判断」这条运行时行为不存在——`agents/prompts.py` 全文没有相关约束 | 需产品决定：补提示词（要 bump `PROMPT_VERSION`、旧 `config_digest` 快照会 409），或在文档里降级这一句 |
+| 1 | `:83` | 多主张输入返回拆分提示，改写或拆分后重新确认提交 | **未实现（已定不补）**：输入页有一条静态提示「多个主张请手动拆分」，但「多主张 → 只说明歧义、不输出确定判断」这条运行时行为**不存在**——`agents/prompts.py` 全文没有相关约束 | 2026-10-23 产品侧定：**冻结期不补**（补提示词要 bump `PROMPT_VERSION`，旧 `config_digest` 快照会按设计 409）。按「未实现」记录，不冒充「已覆盖」；关联任务路径本身可用（见 `#20`） |
 | 2 | `:83` | 上一条论断不得进入下一条任务（模型上下文不继承） | **已覆盖**：`tests/session/test_workflow.py::test_a_linked_task_never_sees_the_previous_claim` | 已补 |
 | 3 | `:72` | unicode61 下中文子词召回盲区 | **已覆盖**：`tests/retrieval/test_chinese_tokenizer.py`（整段词元命中 / 真子词落空，两向对照；子串先在正文里断言存在，排除「原文没这句话」的假阳性） | 已补（钉住的是**已知限制**，不是期待修好） |
 | 4 | `:72` | 中文论断→英文正文受支持 | **已覆盖**：`tests/session/test_workflow.py::test_a_chinese_claim_is_judged_against_an_english_body` + 反向对照 `::test_a_chinese_query_against_an_english_body_finds_nothing`（中文查询词检索英文正文必空 → 工作流自返回 `RETRIEVAL_EMPTY`） | 已补；真实模型侧另有 1 条抽查（见 `verification.md` 2026-10-22 记录） |
-| 5 | `:116` | 取消接口 1 秒内响应、受理后 2 秒内收尾、deadline 后 2 秒内收尾 | 全是虚拟时钟 | 归 `#20` 手工联调，执行记录里留条目 |
+| 5 | `:116` | 取消接口 1 秒内响应、受理后 2 秒内收尾、deadline 后 2 秒内收尾 | **已覆盖（机制部分）**：`tests/session/test_workflow.py::test_a_cancel_during_an_in_flight_model_call_settles_within_two_seconds`、`::test_a_cancel_during_an_in_flight_source_request_stops_before_the_timeout`（`#121`；删掉在途轮询后两条以 5.03 秒变红） | 自动化证明「不再等这次调用超时」；**本机墙钟 1s/2s 仍归 `#20` 执行记录**，替身计时不能替代 |
 | 6 | `:47` | 邻段同样支持论断时，不得仅因更换邻段就硬判失败 | **已覆盖**：`tests/functional/test_semantic_acceptance.py::test_a_neighbouring_paragraph_that_also_supports_is_not_a_hard_failure`（两段都支持的正文，改引第 2 段仍通过；同段换别段原文必被检出） | 已补，并做过变异检验（给验收器加「换段即失败」后该用例变红） |
 | 7 | `:106` | 预览错误不得伪造 BLOCKED 任务 | **已覆盖**：`tests/boundary/test_preview_failure.py`（5 个错误码参数化 + 存储为空 + 成功分支反向对照） | 已补 |
 | 8 | `:91` | 重试路径也要注入敏感标记 | **已覆盖**：`tests/adversarial/test_retry_leakage.py`（redacted / consented 两向对照） | 已补 |
-| 9 | `:103` | 模拟控制失效须停止后续调用 | 只有 `unverified` 的间接覆盖 | 待补「控制失效即停」的正向断言（下一批） |
+| 9 | `:103` | 模拟控制失效须停止后续调用 | **已覆盖**：`tests/session/test_workflow.py::test_a_dispatch_the_control_plane_did_not_account_for_stops_the_task`、反例 `::test_missing_usage_alone_does_not_make_the_ledger_incomplete`、`tests/boundary/test_storage_lifecycle.py::test_a_dispatch_that_occupied_quota_without_a_call_record_is_not_verified`（`#121`） | 已补；反例钉住「只缺 usage 仍保留结果并记 `unverified`」，防「一缺元数据就拒判」 |
 
 **行号已订正**：本表原先引用的 `:114` / `:100` / `:125` / `:124` / `:115` / `:118` 与 `test-plan.md` 实际行不对应（该文件一直是 130 行、`多主张` 一直在 `:83`），本轮按判据原文逐条 `grep` 核对后改成 `:83` / `:72` / `:116` / `:106` / `:91` / `:103`。`test-plan.md` 本身**没有被改动**：它的 `:46` 被三处代码/文档按行号引用，插行会错位。
 
-9 条中 **6 条已补自动化用例、1 条半覆盖（实现缺口）、2 条仍待处置**（`:116` 取消时限归 `#20` 手工，`:103` 控制失效即停待补）。`#113` 的收口标准是每条都有归属，不是每条都自动化；但「未实现」与「未测」必须分开写——第 1 条是前者，补用例补不出一个不存在的实现。
+9 条中 **8 条已补自动化用例、1 条未实现且已定不补**（第 1 条，冻结期）。**没有「待处置」项**；`:116` 的本机墙钟计时另归 `#20` 的执行记录，不计入本表的「未覆盖」。`#113` 的收口标准是每条都有归属，不是每条都自动化；但「未实现」与「未测」必须分开写——第 1 条是前者，补用例补不出一个不存在的实现。
 
 ---
 
