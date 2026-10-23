@@ -1,6 +1,6 @@
 # 缺陷分析报告
 
-**范围**：截至 2026-10-20，功能定型（`v0.3.0-test-freeze`）与之后的缺陷修复。逐轮验证流水在 [verification.md](verification.md)，真实模型的原始输出在 [semantic-acceptance-live.md](semantic-acceptance-live.md)；本文件只做**归因汇总**，不重复那两份的记录。
+**范围**：截至 2026-10-23，功能定型（`v0.3.0-test-freeze`）与之后的缺陷修复。逐轮验证流水在 [verification.md](verification.md)，真实模型的原始输出在 [semantic-acceptance-live.md](semantic-acceptance-live.md)，真实来源集指标在 [metrics-live-86.md](metrics-live-86.md)；本文件只做**归因汇总**，不重复那三份的记录。
 
 归因口径与 `tests/functional/triage.py` 的 code 一致：拿一份诊断包，机器能复算出「主因是哪一层、被排除了哪几层」。本报告里每条缺陷都写了复现命令，用于复核这个归因，而不是只读一段叙述。
 
@@ -21,7 +21,8 @@
 | 来源层 | 取回、许可、记录身份 | 3 |
 | 契约层 | 输出形状、ID 形状、顶层严格度 | 3 |
 | 判据层 | 提示词有没有携带判据 | 1 |
-| 账务层 | `request_id` 归属、`config_digest`、重试等待 | 3 |
+| 取消与生命周期层 | 在途取消监听、收尾时限 | 1 |
+| 账务层 | `request_id` 归属、`config_digest`、重试等待、控制面是否回报派发 | 4 |
 | 方法层 | 测试替身把上游行为写死 | 2 |
 
 一条缺陷归到哪层，看的是**修哪里能让症状消失**，不是看它在哪里被发现。下面每条都写了「为什么不是相邻那层」，因为错误码经常指错排查方向——这本身是这批缺陷里反复出现的形态。
@@ -230,10 +231,10 @@
 
 | 项 | 状态 | 为什么不糊过去 |
 | --- | --- | --- |
-| #78 的 0.2.3 提示词 | 结构性缺口已补，**真实模型未复测** | 本机无模型密钥；不能用 stubbed upstream 顶替，那正是 D-11 说的那种假证据。 |
-| 观测留档（执行记录、模型调用、`langfuse_enabled`） | **缺密钥，未截图** | 没有密钥时任务停在 `query_generation / UPSTREAM_UNAVAILABLE`，`model_calls` 是空的；拿这样的包当留档会误导。 |
-| 真实来源集的四项指标（评测口径 §4：引用匹配正确率、证据冲突识别率、出处引用准确率、摘录定位有效率） | 分母还不完整 | 4 篇来源共 24 条候选，23 条已签核 agree、1 条（`PMC8806060-c07`）改词后待重签，见 #86。 |
-| 模型调用的 token / 成本 | 未纳入归因 | `ModelAttempt.usage` 在调用账里、不在 `ExecutionRecord` 里，要做成 Langfuse 的 generation 需另开 sink（`decisions.md`「观测导出接入」已记为未做项）。 |
+| #78 的 0.2.3 提示词 | 结构性缺口已补，**已复测**：标签与人工核对 6/7 一致（模型自行判定 5/6，另 1 例工作流降级），0 例 `QUOTE_MISMATCH` / `MODEL_INVALID_OUTPUT` | 复测于 `paper-prompt-0.2.3` + `deepseek/deepseek-flash`（2026-10-21，单次抽样），记录见 [semantic-acceptance-live.md](semantic-acceptance-live.md)（PR #115 合入）；#78 已于 2026-10-18 关闭。单次运行不可复现，引用需带日期与模型名。 |
+| 观测留档（执行记录、模型调用、`langfuse_enabled`） | 密钥已解决（#110 于 2026-10-22 关闭）：真实任务三截图 + 诊断包已按测试侧 10-23 口径核对通过，证据由 #123 落库 `docs/verification.md`（图在本机 `Desktop/论文/2026-10-23-观测留档/`，仓库只留 sha256 指纹） | 真实 DOI + 真实模型（task `cebc184e`，COMPLETED）+ `langfuse_enabled=false`，非 `dev:demo`；`usage` 缺失记「未知」，不写 0。 |
+| 真实来源集的四项指标（评测口径 §4：引用匹配正确率、证据冲突识别率、出处引用准确率、摘录定位有效率） | 分母已完整：24/24 全部签核（`disputed 0`）；已有两轮真实运行——10-21 一致 20/24、10-22 **22/24（91.7%）**、冲突识别 1.00、macro-F1 0.92 | 签核与覆盖：`claims.py --require-coverage --require-review` exit 0（#109、#117 合入，`c07` 改判「部分支持」后已按真实正文重签）；指标记录 [metrics-live-86.md](metrics-live-86.md) + `.run.json` 可 `--from` 重算（#116）。两轮差异只在 `PMC13648980-c04` 一个边界样本；稳定口径仍待 n≥3（现两轮）。 |
+| 模型调用的 token / 成本 | 未纳入归因 | `ModelAttempt.usage` 在调用账里、不在 `ExecutionRecord` 里，要做成 Langfuse 的 generation 需另开 sink（`decisions.md`「观测导出接入」已记为未做项）。日后若写 generation：`usage` 缺失记「未知」，不写 0（术语表口径）。 |
 
 ## 怎么用这份报告
 
