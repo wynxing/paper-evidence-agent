@@ -13,12 +13,14 @@ carried through, never chosen here.
 """
 
 import time
+from typing import Literal
 
 from paper_evidence.domain import ContractError, ErrorCode
 from paper_evidence.domain.contracts import ModelAttempt, ModelCall, TokenUsage
 from paper_evidence.domain.digest import digest_of
 
 __all__ = [
+    "AttemptCancelled",
     "AttemptRecorder",
     "ModelFailure",
     "elapsed_ms",
@@ -37,6 +39,22 @@ class ModelFailure(ContractError):
 
     def __init__(self, error_code: ErrorCode, call: ModelCall, message: str = "") -> None:
         super().__init__(error_code, message)
+        self.call = call
+
+
+class AttemptCancelled(Exception):  # noqa: N818 - an outcome, not an error code
+    """A dispatched attempt aborted by an accepted cancel, with its record.
+
+    ``asyncio.CancelledError`` carries nothing, but a request already on the wire
+    may still have been billed upstream. Whoever aborts the call therefore needs
+    the attempt row: it is what makes「已发生费用未知」sayable instead of showing
+    a ledger that pretends nothing was dispatched（测试方案「取消」）. The workflow
+    stores the carried record and then settles the task as CANCELLED; this class
+    is not a task failure and has no error code of its own.
+    """
+
+    def __init__(self, call: ModelCall) -> None:
+        super().__init__(call.request_id)
         self.call = call
 
 
@@ -141,12 +159,17 @@ class AttemptRecorder:
                        attempt_index: int = 1, gateway_request_id: str | None = None,
                        upstream_response_id: str | None = None, response_model: str | None = None,
                        usage: TokenUsage | None = None, recovery_kind: str = "none",
-                       recovery_reason: ErrorCode | None = None) -> ModelAttempt:
+                       recovery_reason: ErrorCode | None = None,
+                       status: Literal["success", "error", "cancelled"] | None = None) -> ModelAttempt:
         """One dispatched upstream attempt, numbered from 1.
 
         The recovery fields belong to the attempt that *is* the recovery: the
         first one is ``none``, and a retried second one carries ``retry`` plus the
         error that triggered it (术语表「调用账与版本归属」).
+
+        ``status`` is only passed by the abort path: a cancelled attempt has no
+        response and no error code, so deriving the status from ``error_code``
+        would record it as a success.
         """
 
         return ModelAttempt(
@@ -163,7 +186,7 @@ class AttemptRecorder:
             verified_model_version=None,
             recovery_kind=recovery_kind,  # type: ignore[arg-type]
             recovery_reason=recovery_reason,
-            status="success" if error_code is None else "error",
+            status=status if status is not None else ("success" if error_code is None else "error"),
             error_code=error_code,
             duration_ms=duration_ms,
             usage=usage,

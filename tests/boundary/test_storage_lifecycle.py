@@ -365,12 +365,44 @@ def test_a_repeated_request_id_is_rejected_instead_of_overwriting_the_ledger(sto
     assert [call.request_id for call in store.model_calls("t1")] == ["t1:decision:0", "t1:decision:1"]
 
 
-def _call(request_id, *, prompt_version="v", round_index=0):
+def _call(request_id, *, prompt_version="v", round_index=0, attempts=None):
     return ModelCall(
         request_id=request_id, purpose="decision", round=round_index, model_alias="paper-default",
         prompt_version=prompt_version, params_digest="d", context_paragraph_ids=[],
-        repairs_request_id=None, attempts=[],
+        repairs_request_id=None, attempts=attempts or [],
     )
+
+
+def _attempt(request_id):
+    from paper_evidence.domain.contracts import ModelAttempt
+
+    return ModelAttempt(
+        attempt_id=f"{request_id}:1", attempt_index=1, span_id="s", gateway_request_id=None,
+        upstream_response_id=None, configured_model="m", provider_model="p", deployment_id="d",
+        recipient="Agnes", response_model="m", verified_model_version=None, recovery_kind="none",
+        recovery_reason=None, status="success", error_code=None, duration_ms=5, usage=None,
+    )
+
+
+def test_a_dispatch_that_occupied_quota_without_a_call_record_is_not_verified(store):
+    """占过额度的派发多于有记录的调用：展示「至少几次」，不能报成已核实。
+
+    额度在派发前就保守占用（``take_request``），所以「占过额度的派发数」可以作为
+    「应该有几次记录」的下界。少一条记录说明控制面丢了回报，或被打断的请求没来得及
+    记账；两种情形都不能让 `verification=verified` 把次数说成已核实（Issue #113）。
+    """
+
+    make_task(store, "t1")
+    store.take_request("t1", "main_requests_used")
+    store.take_request("t1", "main_requests_used")
+    store.record_model_call("t1", _call("t1:query_generation:0", attempts=[_attempt("t1:query_generation:0")]))
+
+    accounting = store.get("t1").accounting
+    assert accounting.main_requests_used == 2
+    assert accounting.verification == "unverified"
+    assert accounting.reason == "attempt_records_missing"
+    assert accounting.upstream_attempts_used is None
+    assert accounting.observed_upstream_attempts == 1
 
 
 def test_opening_an_older_database_adds_the_new_columns_and_keeps_rows(tmp_path):
