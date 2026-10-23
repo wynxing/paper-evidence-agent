@@ -8,7 +8,7 @@ Paper Evidence Agent 旨在核对单条论断与指定被引文献之间的证�
 
 后端已实现首版业务流程，前端已提供核验工作台：
 
-- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部**来源**连通性已有实测（Crossref 解析与 PMC 全文取回，见[验证记录](docs/verification.md)）；**模型**连通性也已在真实上游上跑通（Issue #20 第 2 轮：真实模型 + 常驻 worker，任务推进到 `COMPLETED` 并产出判断与证据校验记录）；**论文语义验收仍未验证**——现有功能样本为人工构造，不得当作总体准确率。
+- 后端可启动，`GET /health` 返回 `200`；业务接口为已实现代码，不再返回 `501`。真实外部**来源**连通性已有实测（Crossref 解析与 PMC 全文取回，见[验证记录](docs/verification.md)）；**模型**连通性也已在真实上游上跑通（Issue #20 第 2 轮：真实模型 + 常驻 worker，任务推进到 `COMPLETED` 并产出判断与证据校验记录）；**论文语义验收**已在真实模型上取得两轮实测——构造样本复测 6/7 一致、0 例契约失败（[语义验收记录](docs/semantic-acceptance-live.md)，PR #115），真实来源集 24 条已签核人工答案上 22/24、冲突识别 1.00、macro-F1 0.92（[指标记录](docs/metrics-live-86.md)，PR #116）。两轮都是单次抽样、边界样本有抖动，稳定口径仍待 n≥3；不得把单轮结果当作总体准确率。
 - 前端包含新建核验、任务详情和运行诊断，支持显式模拟演示和真实接口模式。模拟材料为构造数据，不访问后端或模型；真实模式调用后端，不回退模拟数据。
 
 设计文档描述目标行为，不能作为能力已完成或语义验收通过的依据。
@@ -42,7 +42,7 @@ npm ci
 npm run dev
 ```
 
-前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 在 `backend` 目录使用 `.\.venv\Scripts\python` 代替 `.venv/bin/python`，其余参数相同。
+前端默认地址：<http://127.0.0.1:5173>。两个服务默认均绑定本机回环地址。Windows 下 `python3.12` 通常不在 PATH，可用 `py -3.12` 或 3.12 解释器的绝对路径代替；venv 内解释器路径在 CMD/PowerShell 中写作 `.\.venv\Scripts\python.exe`、在 Git Bash 中写作 `.venv/Scripts/python`（本节其余命令按原参数使用它）。
 
 预览构建产物时，在 `frontend` 目录执行 `npm run build && npm run preview`（同样需要后端已在 8000 运行）。预览默认地址为 <http://127.0.0.1:4173>，`/api` 与 `/health` 同样代理到该后端。
 
@@ -85,6 +85,7 @@ pytest 的前后端契约检查需要 Node.js 和已安装的前端依赖。前�
 - [架构设计](docs/architecture.md)
 - [测试方案](docs/test-plan.md)
 - [七维度用例清单](docs/test-case-inventory.md)
+- [缺陷分析报告](docs/defect-analysis.md)
 - [技术选型](docs/tech-stack.md)
 - [开发指南](docs/development.md)
 - [决策记录](docs/decisions.md)
