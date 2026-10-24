@@ -86,6 +86,12 @@ def test_concurrent_claims_produce_exactly_one_winner(tmp_path):
 
     两个 worker 各领一条并行执行是 #34 要消除的行为，所以这里让两个连接用栅栏
     一起进 ``BEGIN IMMEDIATE``，断言「恰有一个赢家」而不是「谁先谁后」。
+
+    输家的**退让方式**也在判据内：必须是 ``claim_next`` 返回 ``None``，不能是抛
+    ``sqlite3.OperationalError: database is locked``。只数 ``results`` 里的赢家会让
+    「输家崩了」与「输家正常退让」长得一样——把 ``claim_next`` 的事务降级成
+    ``BEGIN DEFERRED`` 后，输家抛 ``database is locked``，旧写法仍然全绿（2026-10-24
+    实测），而 worker 侧会把这种异常当成一次失败迭代。所以这里单独收异常。
     """
 
     path = tmp_path / "exclusivity.sqlite3"
@@ -96,10 +102,14 @@ def test_concurrent_claims_produce_exactly_one_winner(tmp_path):
 
     barrier = threading.Barrier(2)
     results: list[object] = [None, None]
+    errors: list[BaseException | None] = [None, None]
 
     def claim(index, handle):
         barrier.wait(timeout=10)
-        results[index] = handle.claim_next(time.time() + 180)
+        try:
+            results[index] = handle.claim_next(time.time() + 180)
+        except BaseException as exc:  # 收住而不是让它变成「结果仍是 None」
+            errors[index] = exc
 
     threads = [threading.Thread(target=claim, args=(index, handle)) for index, handle in enumerate((first, second))]
     try:
@@ -109,6 +119,8 @@ def test_concurrent_claims_produce_exactly_one_winner(tmp_path):
             thread.join(timeout=30)
         assert not any(thread.is_alive() for thread in threads)
 
+        raised = [exc for exc in errors if exc is not None]
+        assert not raised, f"并发领取不应抛异常（退让必须是返回 None）：{raised!r}"
         claimed = [task for task in results if task is not None]
         assert len(claimed) == 1, f"应当恰有一个 worker 领到任务，实际 {results!r}"
         assert claimed[0].id == "t1"
