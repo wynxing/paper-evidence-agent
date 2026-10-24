@@ -4,7 +4,7 @@
 
 - **判据的权威在 `docs/test-plan.md:40-121`**。本文档不新增判据、不放宽判据，只把已有判据落到具体用例上，并标出**没有用例接住的判据**（附录 B）。
 - **不是"用例目录"**。用例的真实位置在 `tests/`，本文档不复制代码，只写「哪条用例钉住哪句判据」。
-- **数字口径**：2026-10-22，`main = 7306c7f`（`#118` / `#119` / `#120` / `#121` 已并入），`pytest tests` 收集 **463** 条，**434 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。
+- **数字口径**：2026-10-24，`main = 43207fb`（截至 `#128`），`pytest tests` 收集 **464** 条，**435 passed / 29 skipped**。跳过项全部是网络门控的 live 检查（附录 A.2），不是被删的用例。与 `docs/execution-record.md` 锁定的 `1101e4e`（收集 463 / 434 passed / 29 skipped）差 1 条，来源是 `#128` 新增的回归用例 `test_a_record_written_outside_the_repository_exits_zero`，不是通过率变化——引用这两个数字时必须成对解释。
 
 ## 0. 总览
 
@@ -12,14 +12,14 @@
 
 | 维度 | 主目录 | 收集 | 通过 | 跳过 | 判据条数 | 独立复跑 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 功能准确性 | `tests/functional/` | 111 | 98 | 13 | 11 | `pytest tests/functional` |
+| 1 功能准确性 | `tests/functional/` | 112 | 99 | 13 | 11 | `pytest tests/functional` |
 | 2 工具调用 | `tests/tools/` | 169 | 153 | 16 | 10 | `pytest tests/tools` |
 | 3 RAG | `tests/retrieval/` | 15 | 15 | 0 | 7 | `pytest tests/retrieval` |
 | 4 任务内澄清、隔离与多步执行 | `tests/session/` | 44 | 44 | 0 | 8 | `pytest tests/session` |
 | 5 对抗与安全 | `tests/adversarial/` | 31 | 31 | 0 | 5 | `pytest tests/adversarial` |
 | 6 边界与异常 | `tests/boundary/` | 72 | 72 | 0 | 13 | `pytest tests/boundary` |
 | 7 性能 | `tests/performance/` | 21 | 21 | 0 | 5 | `pytest tests/performance` |
-| **七维合计** | — | **463** | **434** | **29** | **59** | `pytest tests` |
+| **七维合计** | — | **464** | **435** | **29** | **59** | `pytest tests` |
 
 另有两块**不属于七维度**、但同样在 `#93` 里交付的内容：
 
@@ -28,7 +28,7 @@
 | 界面主路径 | `tests/e2e/` | 16（Playwright） | `test-plan.md:128` 明说它「不替代上面各维的判定」，故不并入七维 |
 | 缺陷归因链路 | `tests/functional/test_triage.py` | 20 | 对应 `test-plan.md` §1「外部测试 Agent」，不是七维之一 |
 
-423 + 20 = 443，与 `pytest tests` 的收集数一致。
+七维去掉归因链路的 20 条是 443，**443 + 20 = 463**，与 `pytest tests` 的收集数一致。
 
 ### 0.2 维度与目录不是一一对应（先看这条，否则会数错）
 
@@ -460,9 +460,9 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 | --- | --- | --- |
 | `#86` 真实来源人工答案 | 第 1 维的判据与用例来源 | **24 条，全部签核**（`#86` 已关闭） |
 | 七维度用例清单文档（本文档） | 本体 | 完成 |
-| `#20` 联调清单 | 附录 B 的 1/2/5 可由它覆盖 | 4/20 |
-| 全部用例执行，留执行记录 | 按维度分节复跑，输出贴到执行记录 | 待跑（10-24） |
-| 真实模型跑三项指标 | 第 1 维 + `evaluation.md` §4 | 待跑（10-28） |
+| `#20` 联调清单 | 附录 B 的 1/2/5 可由它覆盖 | **已全部实测**：22 条正文均有实测记录，issue 已由表主关闭；逐条「判据 → 轨迹 → 归因」见 `docs/execution-record.md` §5 |
+| 全部用例执行，留执行记录 | 按维度分节复跑，输出贴到执行记录 | **已完成**：`docs/execution-record.md`（`#127` 合入，锁 `1101e4e` 的 463 / 434 / 29） |
+| 真实模型跑三项指标 | 第 1 维 + `evaluation.md` §4 | **已完成**：n = 3 三轮全进结果（22/24、macro-F1 0.92、冲突识别 1.00），快照 `docs/metrics-n3/run{1,2,3}.run.json` |
 
 ---
 
@@ -499,4 +499,4 @@ PAPER_EVIDENCE_LIVE_SOURCES=1 pytest tests/functional/test_live_frozen_sources.p
 
 ---
 
-*本文档的判据全部引自 `docs/test-plan.md`；用例名与条数为 2026-10-21 在 `main = 7104451` 上实测。改动用例后请同步更新本文档的收集数与附录 A。*
+*本文档的判据全部引自 `docs/test-plan.md`；用例名与收集数为 2026-10-24 在 `main = 43207fb` 上逐维核对，判据表条目未变。改动用例后请同步更新本文档的收集数与附录 A。*
