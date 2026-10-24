@@ -241,3 +241,29 @@ def test_the_published_record_states_where_its_model_outputs_came_from():
     spent = float(data["balance_before"]) - float(data["balance_after"])
     assert spent > 0, f"余额没有减少，记录不到成本：{data['balance_before']} → {data['balance_after']}"
     assert live_metrics.answer_set_stats()["agreed"] == answer_set_stats()["total"] == 24
+
+
+def test_a_record_written_outside_the_repository_exits_zero(tmp_path, monkeypatch):
+    """回归 `#125`：记录生成到仓库外时，收尾打印路径曾抛 ValueError、退出码 1。
+
+    坏在最后一行 `out.relative_to(REPO)`：仓外路径不是仓库的子路径，`relative_to`
+    直接抛。文件其实**已经写完、数字也对**，但退出码是 1——按退出码判断「跑没跑成」
+    的人会当成失败重跑，重复计费（一次真模型运行约 ¥0.17）。
+
+    这里不调用模型：取案与逐条测量替换成快照里已记录的一行，其余（渲染、快照落盘、
+    收尾打印）全走真实代码路径。断言只关心「两个文件都写出来且退出码 0」，
+    不核对任何数字——那是上面几条用例的事。
+    """
+
+    row = dict(snapshot()["rows"][0])
+    monkeypatch.setenv("PAPER_EVIDENCE_PROVIDER_MODEL", "deepseek/deepseek-flash")
+    monkeypatch.setenv("PAPER_EVIDENCE_MODEL_API_KEY", "not-a-real-key")
+    monkeypatch.setattr(live_metrics, "load_claim_cases", lambda work: [row["case_id"]])
+    monkeypatch.setattr(live_metrics, "measure", lambda case, work, gateway: dict(row))
+    monkeypatch.setattr(live_metrics, "deepseek_balance", lambda: "1.00")
+
+    # 仓库外，且父目录还不存在：两条都曾让收尾那行炸掉（未创建 / 不是子路径）。
+    out = tmp_path / "outside" / "record.md"
+    assert run_live(out) == 0
+    assert out.exists()
+    assert out.with_suffix(".run.json").exists()

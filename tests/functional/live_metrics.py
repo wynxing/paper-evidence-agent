@@ -63,6 +63,22 @@ REPO = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = REPO / "docs" / "metrics-live-86.md"
 
 
+def shown_path(path: Path) -> str:
+    """显示路径：仓库内给相对路径，仓库外原样给。
+
+    ``relative_to`` 只接受「自己就在 REPO 下面」的路径，仓外路径一律抛
+    ``ValueError``。原先收尾那行直接写 ``out.relative_to(REPO)``，于是把记录生成到
+    临时目录时，**文件已经写完、数字也对**，却在最后一步崩掉、退出码变 1（`#125`）。
+    危险的不是崩溃本身，而是退出码：按退出码判断「跑没跑成」的人会当成失败重跑，
+    白花一次真模型运行的钱。这只是打印，不该成为任何路径的门槛。
+    """
+
+    try:
+        return path.resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 class UsageRecordingGateway(RecordingGateway):
     """The acceptance recorder plus the two fields this record needs.
 
@@ -520,7 +536,7 @@ def run_live(out: Path) -> int:
     print()
     print("标签一致 %d / %d，未产出标签 %d" % (
         matched, len(rows), sum(1 for row in rows if row["actual"] is None)))
-    print("已写入", out.relative_to(REPO), "与", run_path.relative_to(REPO))
+    print("已写入", shown_path(out), "与", shown_path(run_path))
     return 0
 
 
@@ -536,12 +552,7 @@ def render_from(out: Path, run_path: Path) -> int:
         return 2
     for row in rows:
         row["expected"] = answers[row["case_id"]]
-    # The caller may pass a relative path; ``relative_to`` only accepts absolute
-    # ones, and a crash here would hide the numbers behind a path error.
-    try:
-        shown = run_path.resolve().relative_to(REPO).as_posix()
-    except ValueError:
-        shown = run_path.as_posix()
+    shown = shown_path(run_path)
     out.write_text(
         render(rows, provider_model=snapshot["provider_model"],
                prompt_version=snapshot["prompt_version"], stats=answer_set_stats(),
