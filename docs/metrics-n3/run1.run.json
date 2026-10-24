@@ -1,0 +1,950 @@
+{
+ "provider_model": "deepseek/deepseek-flash",
+ "prompt_version": "paper-prompt-0.2.3",
+ "started_at": "2026-10-23T21:19:54+08:00",
+ "commit": "43c012994c2874946a4a1681b29009f1edd7f265",
+ "balance_before": "3.46",
+ "balance_after": "3.41",
+ "key_label": "DeepSeek key（用户提供）",
+ "fingerprint_at_run": "6b801235496a73e1",
+ "rows": [
+  {
+   "case_id": "PMC1182327-c01",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 11.4,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c01:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"most published research findings are false\",\"most published findings are false\",\"majority of published research findings are false\",\"published research findings incorrect\",\"published research findings wrong\",\"most published studies are false\",\"most published research is wrong\",\"published findings not true\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 146,
+      "completion_tokens": 303,
+      "total_tokens": 449
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c01:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选片段直接断言大多数当前已发表的研究发现是错误的，并在正文中明确称大多数声称的研究发现为假，与论断的核心对象和数量判断一致。\",\"supported_parts\":[\"大多数已发表的研究发现是错的\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:1\",\"quote\":\"There is increasing concern that most current published research findings are false.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:2\",\"quote\":\"It can be proven that most claimed research findings are false.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3793,
+      "completion_tokens": 1264,
+      "total_tokens": 5057
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC1182327-c02",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 7.6,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c02:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"small sample size research field\",\"probability findings are true\",\"smaller sample size lower probability\",\"sample size and true findings\",\"research findings probability true\",\"small sample size less likely to be true\",\"field sample size findings true\",\"small sample size lower probability true\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 151,
+      "completion_tokens": 345,
+      "total_tokens": 496
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c02:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选片段中的 Corollary 1 明确表述：科学领域中所开展研究越小，研究发现为真的可能性越低；小样本量通过降低统计功效导致 PPV 下降，与论断一致。\",\"supported_parts\":[\"研究领域的样本量越小，其研究发现为真的可能性越低。\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:14\",\"quote\":\"Corollary 1: The smaller the studies conducted in a scientific field, the less likely the research findings are to be true.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3594,
+      "completion_tokens": 693,
+      "total_tokens": 4287
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC1182327-c03",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 6.5,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c03:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"flexibility in research design definitions outcomes and analysis methods\",\"greater flexibility lower likelihood research findings true\",\"researcher degrees of freedom false positive findings\",\"analytic flexibility research design outcomes analysis\",\"flexible definitions outcomes analysis methods likelihood findings\",\"design flexibility analysis flexibility truth of research findings\",\"research flexibility and probability findings are true\",\"methodological flexibility inflated false positive rate\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 155,
+      "completion_tokens": 455,
+      "total_tokens": 610
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c03:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文的推论4与论断在对象、条件和方向上完全一致：设计、定义、结局与分析方式的灵活性越大，研究发现为真的可能性越低。\",\"supported_parts\":[\"研究设计、定义、结局与分析方式的灵活性越大，研究发现为真的可能性越低\"],\"scope_differences\":[],\"limitations\":[\"该表述来自原文的理论框架与推论，而非独立的实证研究汇总。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:17\",\"quote\":\"Corollary 4: The greater the flexibility in designs, definitions, outcomes, and analytical modes in a scientific field, the less likely the research findings are to be true.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3855,
+      "completion_tokens": 459,
+      "total_tokens": 4314
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC1182327-c04",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 6.3,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c04:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"selective outcome reporting randomized controlled trials\",\"outcome reporting bias randomized controlled trials\",\"selective reporting of outcomes in randomized trials\",\"no selective outcome reporting in randomized controlled trials\",\"absence of selective outcome reporting randomized trials\",\"outcome reporting bias in RCTs\",\"selective outcome reporting does not occur\",\"randomized controlled trials outcome reporting bias\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 148,
+      "completion_tokens": 266,
+      "total_tokens": 414
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c04:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"候选原文明确指出，即使在随机对照试验中，选择性结局报告仍是一个常见问题，这与论断“随机对照试验中不会出现选择性结局报告”直接相反。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[\"该证据未提供选择性结局报告在随机对照试验中的具体发生率，但足以否定全称否定表述。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:17\",\"quote\":\"there is strong evidence that selective outcome reporting, with manipulation of the outcomes and analyses reported, is a common problem even for randomized trails [25]\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3599,
+      "completion_tokens": 552,
+      "total_tokens": 4151
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC1182327-c05",
+   "expected": "部分支持",
+   "actual": "部分支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 6.5,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c05:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"randomized controlled trials conclusions approximately 85 percent true\",\"randomized controlled trials conclusions about 85 percent true\",\"RCT conclusions 85 percent true\",\"85 percent of randomized controlled trial conclusions are true\",\"proportion of true conclusions in randomized controlled trials\",\"randomized trials true conclusions 85 percent\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 150,
+      "completion_tokens": 354,
+      "total_tokens": 504
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c05:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"部分支持\",\"rationale\":\"证据确实给出随机对照试验结论约85%为真的数值，但该数值仅适用于设计良好、统计效能充分、且干预有效的先验概率为50%的随机对照试验；论断将其泛化为所有随机对照试验的结论，范围与条件存在重要差异。\",\"supported_parts\":[\"设计良好、统计效能充分的随机对照试验，在干预有效的先验概率为50%时，其结论最终为真的概率约为85%\"],\"scope_differences\":[\"证据限定于设计良好、统计效能充分且先验有效概率为50%的随机对照试验，而论断泛指随机对照试验的结论\"],\"limitations\":[\"无法由该片段判定所有随机对照试验的结论是否普遍约有85%为真\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:21\",\"quote\":\"A finding from a well-conducted, adequately powered randomized controlled trial starting with a 50% pre-study chance that the intervention is effective is eventually true about 85% of the time.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3413,
+      "completion_tokens": 599,
+      "total_tokens": 4012
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC1182327-c06",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 8.0,
+   "replies": [
+    {
+     "request_id": "PMC1182327-c06:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\": [\"prominent researchers peer review suppress contrary findings\", \"renowned researchers peer review suppress refuting research\", \"peer review cannot suppress contradictory research\", \"famous researchers gatekeeping peer review\", \"researchers suppress findings contradicting their conclusions\", \"peer review suppress research refuting conclusions\", \"prominent scientists cannot block contrary evidence\", \"academic peer review suppress opposing conclusions\", \"influential researchers cannot suppress refuting studies\", \"peer review gatekeeping contradictory evidence\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 150,
+      "completion_tokens": 339,
+      "total_tokens": 489
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC1182327-c06:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"候选原文明确称知名研究者可能通过同行评审压制反驳其结论的研究，与论断“无法压制”方向相反。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[\"原文使用“may suppress”表述可能性，未给出经验证据或具体案例。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:18\",\"quote\":\"Prestigious investigators may suppress via the peer review process the appearance and dissemination of findings that refute their findings, thus condemning their field to perpetuate false dogma.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3739,
+      "completion_tokens": 722,
+      "total_tokens": 4461
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c01",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 16.4,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c01:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"rPMS pain intensity VAS\",\"repetitive peripheral magnetic stimulation pain VAS\",\"rPMS treatment duration four weeks pain reduction\",\"both rPMS treatment durations pain intensity\",\"four week intervention VAS pain intensity\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 162,
+      "completion_tokens": 287,
+      "total_tokens": 449
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c01:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选片段明确报告两组的 VAS 随时间显著改善，并称两种治疗时长在 4 周干预期内均伴随疼痛强度等临床改善，与论断一致。\",\"supported_parts\":[\"两种 rPMS 治疗时长\",\"4 周干预期内\",\"疼痛强度（VAS）显著改善\"],\"scope_differences\":[],\"limitations\":[\"两组均同时接受标准化拉伸，原文提示不能据此确认 rPMS 本身的独立疗效。\",\"原文主要报告显著时间效应和无组×时间交互，未展示每种时长单独的组内显著性检验。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:45\",\"quote\":\"both treatment durations were associated with substantial and clinically meaningful improvements across multiple outcome domains, including pain intensity\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:42\",\"quote\":\"LMMs demonstrated significant time effects for VAS, PPT, and NDI (all p < 0.001), indicating significant improvements across the 4-week intervention period.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3613,
+      "completion_tokens": 2225,
+      "total_tokens": 5838
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c02",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 8.3,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c02:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"VAS score week 2 baseline reduction 3.02 points\",\"VAS score week 4 baseline reduction 4.87 points\",\"visual analogue scale baseline week 2 week 4 reduction\",\"VAS continuously decreased during intervention\",\"VAS score change from baseline at week 2 and week 4\",\"visual analogue scale intervention reduction 3.02 4.87\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 176,
+      "completion_tokens": 301,
+      "total_tokens": 477
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c02:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文报告了同一试验中 VAS 随时间的主效应显著，并明确给出相较基线的第2周下降3.02分、第4周下降4.87分，与论断的对象、时间点和数量一致。\",\"supported_parts\":[\"VAS 在干预期内下降\",\"第 2 周较基线降低 3.02 分\",\"第 4 周降低 4.87 分\"],\"scope_differences\":[],\"limitations\":[\"证据主要支持两个访视点相较基线的降幅及显著时间主效应，未逐段给出第2周至第4周之间的连续变化量。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:34\",\"quote\":\"Compared with baseline, VAS decreased by 3.02 points at week 2 (95% CI −3.52 – −2.52; p < 0.001) and by 4.87 points at week 4 (95% CI −5.39 to −4.34; p < 0.001) (Table 2).\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3721,
+      "completion_tokens": 961,
+      "total_tokens": 4682
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c03",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 10.2,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c03:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"15 minute rPMS compared with 10 minute rPMS\",\"rPMS 15 minutes more effective than 10 minutes\",\"repetitive peripheral magnetic stimulation 15 minute versus 10 minute protocol\",\"rPMS session duration effectiveness 15 minutes 10 minutes\",\"fifteen minute rPMS protocol compared to ten minute protocol\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 155,
+      "completion_tokens": 411,
+      "total_tokens": 566
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c03:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"原文直接比较了15分钟与10分钟rPMS方案，报告所有结局均无显著组×时间交互、两组恢复轨迹相当，并指出延长刺激时长未必成比例增强临床疗效；这与“15分钟方案更有效”的论断相反。\",\"supported_parts\":[],\"scope_differences\":[\"论断未限定人群和结局；证据来自上斜方肌肌筋膜疼痛综合征患者及短期临床结局。\"],\"limitations\":[\"证据针对上斜方肌MPS中的两种主动rPMS方案比较，不能外推到所有rPMS适应症；但在该对应条件下已明确报告无优越性。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:42\",\"quote\":\"no significant group-by-time interaction was observed for any outcome, suggesting that both stimulation durations produced comparable recovery trajectories.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:47\",\"quote\":\"extending rPMS session duration may not proportionally enhance clinical outcomes.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3460,
+      "completion_tokens": 1134,
+      "total_tokens": 4594
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c04",
+   "expected": "部分支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 4,
+   "quotes_located": 4,
+   "seconds": 43.5,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c04:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"10 minute regimen compared with 15 minute regimen\",\"10 minute protocol versus 15 minute protocol numerical results\",\"ten minute schedule better than fifteen minute schedule\",\"10 min versus 15 min procedure outcomes\",\"numerical superiority of 10 minute protocol over 15 minute protocol\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 152,
+      "completion_tokens": 273,
+      "total_tokens": 425
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c04:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"retrieve\",\"queries\":[\"VAS PPT NDI between-group differences 10-minute 15-minute rPMS\"],\"neighbor_paragraph_ids\":[\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:40\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 4223,
+      "completion_tokens": 594,
+      "total_tokens": 4817
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c04:decision:1",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选片段显示Protocol A为15分钟、Protocol B为10分钟；第4周VAS下降幅度10分钟组为5.02分、15分钟组为4.87分，NDI调整均值10分钟组4.49低于15分钟组5.13，PPT调整均值10分钟组9.41高于15分钟组9.24，点估计方向均显示10分钟组数值更优。但原文同时报告组间差异无统计学显著性，因此仅支持“数值上”而非统计学或临床优效。\",\"supported_parts\":[\"第4周VAS下降幅度：10分钟组5.02分，15分钟组4.87分\",\"第4周NDI调整均值：10分钟组4.49，15分钟组5.13\",\"第4周PPT调整均值：10分钟组9.41，15分钟组9.24\",\"上述点估计方向均偏向10分钟方案\"],\"scope_differences\":[\"证据限定于上斜方肌肌筋膜疼痛综合征患者、每周1次共4周的短期干预及第4周时点\",\"两组均同时接受标准化拉伸运动，不能分离rPMS单独效应\"],\"limitations\":[\"原文报告各结局均无显著组间差异，且未预设等效或非劣效界值；不能据此支持统计学优效或临床优效\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:30\",\"quote\":\"The remaining 66 participants were randomized equally to Protocol A (15-minute rPMS; n = 33) or Protocol B (10-minute rPMS; n = 33).\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:3\",\"quote\":\"At the prespecified primary endpoint (week 4), VAS decreased from baseline by 4.87 points in Protocol A and 5.02 points in Protocol B.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:40\",\"quote\":\"Adjusted marginal means declined from 14.27 (95% CI 12.49–16.05) at baseline to 5.13 (95% CI 3.25–7.01) at week 4 in Protocol A, and from 14.67 (95% CI 12.89–16.45) to 4.49 (95% CI 2.61–6.37) in Protocol B\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:39\",\"quote\":\"Adjusted marginal means increased from 6.73 (95% CI 6.15–7.32) at baseline to 9.24 (95% CI 8.63–9.85) at week 4 in Protocol A, and from 6.90 (95% CI 6.31–7.48) to 9.41 (95% CI 8.79–10.02) in Protocol B\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 5739,
+      "completion_tokens": 6840,
+      "total_tokens": 12579
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c05",
+   "expected": "证据不足",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 3,
+   "quotes_located": 3,
+   "seconds": 9.3,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c05:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"rPMS stimulation clinical improvement\",\"observed clinical improvement rPMS\",\"rPMS effect versus stretching exercises\",\"concomitant stretching exercise rPMS\",\"placebo effect rPMS\",\"rPMS specific treatment effect\",\"clinical improvement attributable to rPMS\",\"stretching exercises placebo control\",\"rPMS frozen shoulder clinical outcomes\",\"repetitive peripheral magnetic stimulation clinical improvement\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 161,
+      "completion_tokens": 590,
+      "total_tokens": 751
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c05:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"候选原文明确说明两组均接受 active rPMS 联合标准化拉伸练习，因此无法确定 rPMS 对观察到的临床改善的独立贡献，也无法将 rPMS 特异性效应与拉伸练习或安慰/情境效应区分开；这与论断的归因方向相反。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:49\",\"quote\":\"Because both groups received active rPMS in combination with standardized stretching exercises, the independent contribution of rPMS to the observed clinical improvements could not be determined.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:49\",\"quote\":\"Consequently, the specific effects of rPMS cannot be distinguished from the effects of stretching exercises or potential contextual and placebo-related influences.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:42\",\"quote\":\"Importantly, because both groups received active rPMS combined with standardized stretching exercises, the present findings should be interpreted as a comparison between two active treatment protocols rather than as evidence confirming the efficacy of rPMS itself.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3647,
+      "completion_tokens": 860,
+      "total_tokens": 4507
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c06",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 3,
+   "quotes_located": 3,
+   "seconds": 12.4,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c06:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\": [\"15 minute rPMS 10 minute rPMS efficacy equivalent\", \"rPMS 15 minutes versus 10 minutes equivalent effectiveness\", \"rPMS protocols 15 min and 10 min efficacy equivalence\", \"15 minute and 10 minute rPMS treatment outcomes\", \"rPMS protocol duration efficacy equivalence\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 158,
+      "completion_tokens": 268,
+      "total_tokens": 426
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c06:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"原文虽报告两种时长在4周内呈现可比恢复轨迹且无显著组×时间交互，但明确说明本研究未按等效性或非劣效性设计、未预设等效界值，并强调无显著组间差异不应解释为正式的等效证据；因此不能支持‘证明了疗效等效’这一断言。\",\"supported_parts\":[],\"scope_differences\":[\"论断将‘无显著组间差异/可比恢复轨迹’上升为‘证明了等效’，而原文为优效性设计并明确否定正式等效性解释。\"],\"limitations\":[\"原文未设等效界值、未按等效性试验设计或把握度计算，因此不能判定两种方案正式等效。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:42\",\"quote\":\"no significant group-by-time interaction was observed for any outcome, suggesting that both stimulation durations produced comparable recovery trajectories.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:49\",\"quote\":\"the study was not designed or powered as an equivalence or noninferiority trial and did not prespecify an equivalence or noninferiority margin.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:49\",\"quote\":\"Therefore, the absence of significant between-group differences should not be interpreted as formal evidence of equivalence between treatment durations\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3560,
+      "completion_tokens": 1674,
+      "total_tokens": 5234
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c07",
+   "expected": "证据不足",
+   "actual": "证据不足",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 8.2,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c07:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"rPMS clinical efficacy long term maintenance\",\"repetitive peripheral magnetic stimulation long term effects\",\"clinical efficacy maintained after 4 weeks intervention\",\"four week rPMS intervention follow up\",\"long term maintenance of treatment effect after rPMS\",\"rPMS follow up outcomes after four weeks\",\"sustained clinical benefit after four week intervention\",\"long term efficacy of repetitive peripheral magnetic stimulation\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 157,
+      "completion_tokens": 307,
+      "total_tokens": 464
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c07:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"证据不足\",\"rationale\":\"候选原文明确说明随访仅至4周，超过1个月的疗效持久性仍不确定；因此无法支持“4周干预结束后仍能长期维持”的论断。\",\"supported_parts\":[],\"scope_differences\":[\"论断涉及4周干预结束后的长期维持，证据仅覆盖至第4周随访。\"],\"limitations\":[\"原文未评估超过1个月的随访结局，无法判定rPMS疗效是否长期维持。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:49\",\"quote\":\"Second, follow-up was limited to 4 weeks; therefore, the durability of treatment effects beyond one month remains uncertain despite favourable short-term outcomes [28,29].\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3191,
+      "completion_tokens": 761,
+      "total_tokens": 3952
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC13648980-c08",
+   "expected": "部分支持",
+   "actual": "部分支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 10.7,
+   "replies": [
+    {
+     "request_id": "PMC13648980-c08:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"repetitive peripheral magnetic stimulation chronic neck pain\",\"rPMS chronic neck pain effectiveness\",\"repetitive peripheral magnetic stimulation neck pain patients\",\"rPMS effective for chronic neck pain\",\"peripheral magnetic stimulation chronic cervical pain\",\"rPMS treatment chronic neck pain\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 150,
+      "completion_tokens": 244,
+      "total_tokens": 394
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC13648980-c08:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"部分支持\",\"rationale\":\"证据支持 rPMS 在上斜方肌肌筋膜疼痛综合征（MPS）相关慢性颈痛患者中具有短期镇痛和改善颈部功能的效果，但论断将其扩大为对“慢性颈痛患者普遍有效”，对象范围和普遍性明显超出证据。\",\"supported_parts\":[\"rPMS 在慢性颈痛相关的上斜方肌 MPS 患者中可显著降低疼痛强度并改善颈部相关功能障碍\",\"与假刺激相比，单次 10 分钟 rPMS 在颈部 MPS 患者中可显著降低 VAS 并改善 NDI\"],\"scope_differences\":[\"证据主要针对上斜方肌 MPS 患者，而非所有慢性颈痛患者\",\"证据涉及特定 rPMS 方案（如单次 10 分钟或每周一次共 4 周的 10/15 分钟方案）及短期结局，不能外推为普遍有效\"],\"limitations\":[\"候选片段未提供覆盖全部慢性颈痛病因、表型和人群的证据\",\"缺乏长期疗效及“普遍有效”的直接证据\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:9\",\"quote\":\"In upper trapezius MPS specifically, randomized sham-controlled evidence showed that a single 10-minute rPMS session significantly reduced pain intensity and improved neck-related disability\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:43\",\"quote\":\"Mahisanun and Saengsuwan [27] demonstrated significant reductions in VAS and NDI following a single 10-minute rPMS session compared with sham stimulation in patients with neck MPS.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3322,
+      "completion_tokens": 1570,
+      "total_tokens": 4892
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC7461750-c01",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 4.5,
+   "replies": [
+    {
+     "request_id": "PMC7461750-c01:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\": [\"correction notice Fuchs KoCo19 collaboration authorship\", \"original publication omitted Fuchs KoCo19 collaboration\", \"Fuchs omitted from KoCo19 collaboration authors\", \"correction statement Fuchs author omission KoCo19\", \"KoCo19 collaboration Fuchs affiliation acknowledgment\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 161,
+      "completion_tokens": 180,
+      "total_tokens": 341
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC7461750-c01:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文明确说明原发表文章遗漏了 Fuchs 博士作为 KoCo19 合作组成员的身份，与论断完全一致。\",\"supported_parts\":[\"该更正声明指出\",\"原发表文献遗漏了 Fuchs 博士在 KoCo19 合作组中的署名\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:3\",\"quote\":\"In the publication of the original article [1], the author Dr. Fuchs was erroneously omitted as a collaborator from the KoCo19 collaboration group.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 923,
+      "completion_tokens": 458,
+      "total_tokens": 1381
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC7461750-c02",
+   "expected": "证据不足",
+   "actual": "证据不足",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 0,
+   "quotes_located": 0,
+   "seconds": 12.4,
+   "replies": [
+    {
+     "request_id": "PMC7461750-c02:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"cohort study Munich\",\"recruited in Munich\",\"approximately 3000 participants\",\"approximately 3,000 participants\",\"about 3000 participants Munich\",\"3000 participants cohort study\",\"3,000 participants cohort study Munich\",\"study participants Munich cohort\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 156,
+      "completion_tokens": 396,
+      "total_tokens": 552
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC7461750-c02:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"retrieve\",\"queries\":[\"KoCo19 cohort Munich 3000 participants recruitment\",\"慕尼黑 3000 名参与者 队列研究 KoCo19\"],\"neighbor_paragraph_ids\":[\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:3\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 755,
+      "completion_tokens": 1014,
+      "total_tokens": 1769
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC7461750-c02:decision:1",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"证据不足\",\"rationale\":\"候选片段仅涉及作者遗漏更正与协作组更新，未提供该队列研究在慕尼黑招募约3000名参与者的信息，无法核验该论断。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[\"候选片段未涉及研究招募地点、队列研究设计或参与者人数。\",\"无法判定该论断是否与原文一致。\"],\"evidence\":[]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 884,
+      "completion_tokens": 235,
+      "total_tokens": 1119
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC7461750-c03",
+   "expected": "证据不足",
+   "actual": "证据不足",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 0,
+   "quotes_located": 0,
+   "seconds": 4.8,
+   "replies": [
+    {
+     "request_id": "PMC7461750-c03:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"follow-up completed between April and June 2020\",\"follow-up conducted from April to June 2020\",\"follow-up period April to June 2020\",\"follow-up between April and June 2020\",\"follow-up visits April June 2020\",\"data collection April to June 2020\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 158,
+      "completion_tokens": 300,
+      "total_tokens": 458
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC7461750-c03:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"证据不足\",\"rationale\":\"候选片段仅涉及更正声明、出版商致歉及作者遗漏，未包含该研究随访时间的信息，无法判断随访是否在 2020 年 4 月至 6 月之间完成。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[\"候选片段未提供随访时间或其起止范围。\",\"无法核验论断中的时间条件。\"],\"evidence\":[]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 864,
+      "completion_tokens": 294,
+      "total_tokens": 1158
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c01",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 6.8,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c01:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO mAP 99.99\",\"DF-Tiny-YOLO four-class apple leaf dataset\",\"DF-Tiny-YOLO mean average precision apple leaf dataset\",\"99.99 mean average precision apple leaf\",\"four-class apple leaf dataset DF-Tiny-YOLO\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 165,
+      "completion_tokens": 326,
+      "total_tokens": 491
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c01:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文明确报告 DF-Tiny-YOLO 在包含四类苹果叶疾病的数据集上的 mAP 为 99.99%，与论断的对象和数值一致。\",\"supported_parts\":[\"DF-Tiny-YOLO 在四类苹果叶数据集上的 mAP 为 99.99%\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:1\",\"quote\":\"The results showed that the mean average precision (mAP) and average intersection over union (IoU) of the DF-Tiny-YOLO model were 99.99% and 90.88%, respectively\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:40\",\"quote\":\"The matrix results reveal that the model mAP is 99.99% and the average IoU is 90.88%\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3466,
+      "completion_tokens": 814,
+      "total_tokens": 4280
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c02",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 2,
+   "quotes_located": 2,
+   "seconds": 6.6,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c02:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO 1x1 1x1 3x3 convolution kernels\",\"DF-Tiny-YOLO end of network convolution kernels\",\"DF-Tiny-YOLO detection accuracy computational complexity\",\"1x1 1x1 3x3 convolution sequence detection accuracy\",\"network end sequential convolution kernels detection accuracy\",\"improve detection accuracy without increasing computational complexity\",\"DF-Tiny-YOLO improved detection accuracy\",\"DF-Tiny-YOLO computational complexity\",\"end of network 1x1 1x1 3x3 kernels\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 176,
+      "completion_tokens": 505,
+      "total_tokens": 681
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c02:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文明确说明网络末端依次使用 1×1、1×1、3×3 卷积核，目的是在不增加计算复杂度的情况下增加网络深度并进一步提升检测精度，与论断对象、顺序、条件和目的均一致。\",\"supported_parts\":[\"DF-Tiny-YOLO 在网络末端依次使用 1×1、1×1、3×3 卷积核\",\"目的是在不增加计算复杂度的前提下提升检测精度\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:21\",\"quote\":\"Using 1 × 1, 1 × 1, and 3 × 3 convolution kernels at the network terminals will contribute to reducing the dimension of features and increasing the network depth without increasing computational complexity, thus further improving the detection accuracy.\"},{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:1\",\"quote\":\"The network terminal uses convolution kernels of 1 × 1, 1 × 1, and 3 × 3, in turn, to realize the dimensionality reduction of features and increase network depth without increasing computational complexity, thus further improving the detection accuracy.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3573,
+      "completion_tokens": 616,
+      "total_tokens": 4189
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c03",
+   "expected": "支持",
+   "actual": "支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 5.9,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c03:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"1,404 images randomly divided into training and test sets\",\"1,404 images 80 percent training 20 percent testing\",\"1404 images training set test set split\",\"randomly split image dataset 80 percent training 20 percent test\",\"80 20 train test split of 1,404 images\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 165,
+      "completion_tokens": 342,
+      "total_tokens": 507
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c03:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"支持\",\"rationale\":\"候选原文明确给出该实验数据集共 1,404 张图像，并说明图像按 80%:20% 的比例随机划分为训练集与测试集，与论断对象、条件和数量完全一致。\",\"supported_parts\":[\"该实验使用了 1,404 张图像\",\"图像按 80%:20% 的比例随机划分为训练集与测试集\"],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:23\",\"quote\":\"The data included 300 images of leaves with apple scab, 300 with apple black rot, 275 with apple cedar rust, and 529 healthy leaves, total 1,404 images. Fig 4 describes the basic situation of four types of leaves. The images were randomly divided into training and test sets at a ratio of 80%:20%\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3502,
+      "completion_tokens": 538,
+      "total_tokens": 4040
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c04",
+   "expected": "部分支持",
+   "actual": "部分支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 9.4,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c04:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO compared with Tiny-YOLO\",\"DF-Tiny-YOLO detection accuracy improvement\",\"DF-Tiny-YOLO detection speed improvement\",\"original Tiny-YOLO baseline comparison\",\"improved detection accuracy and speed\",\"DF-Tiny-YOLO performance compared to original Tiny-YOLO\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 164,
+      "completion_tokens": 300,
+      "total_tokens": 464
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c04:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"部分支持\",\"rationale\":\"证据显示 DF-Tiny-YOLO 在 mAP、平均 IoU 和 Recall 等检测精度指标上优于原始 Tiny-YOLO，但检测速度 280 FPS 与 Tiny-YOLO 相同，并非提升。因此论断中“检测精度提升”有支持，“检测速度提升”不被支持。\",\"supported_parts\":[\"DF-Tiny-YOLO 的 mAP 比原始 Tiny-YOLO 高 0.17%\",\"DF-Tiny-YOLO 的平均 IoU 比原始 Tiny-YOLO 高 10.38%\",\"DF-Tiny-YOLO 的 Recall 比原始 Tiny-YOLO 高 0.01\"],\"scope_differences\":[\"检测速度方面，原文明确为 280 FPS，与 Tiny-YOLO 相同，并非提升\"],\"limitations\":[\"证据仅覆盖候选片段中苹果叶片病害检测实验的 DF-Tiny-YOLO 与 Tiny-YOLO 比较，不能支持检测速度也有提升的说法\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:39\",\"quote\":\"The mAP of DF-Tiny-YOLO is 99.99%, which was 0.17% higher than that of Tiny-YOLO. The average IoU was 90.88%, which was 1.59% and 10.38% higher than YOLOV2 and Tiny-YOLO, respectively. Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO. The detection speed was 280 FPS, which was the same as that of Tiny-YOLO\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3440,
+      "completion_tokens": 1341,
+      "total_tokens": 4781
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c05",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 5.9,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c05:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO recall YOLOv2\",\"DF-Tiny-YOLO recall significantly higher than YOLOv2\",\"recall comparison DF-Tiny-YOLO YOLOv2\",\"DF-Tiny-YOLO YOLOv2 recall performance\",\"DF-Tiny-YOLO higher recall than YOLOv2\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 155,
+      "completion_tokens": 335,
+      "total_tokens": 490
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c05:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"证据明确说明 DF-Tiny-YOLO 的 Recall 为 1.00，与 YOLOv2 相同；因此“显著高于 YOLOv2”的论断被直接否定。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:39\",\"quote\":\"Recall was 1.00, which was the same as YOLOV2 and 0.01 higher than Tiny-YOLO.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3377,
+      "completion_tokens": 522,
+      "total_tokens": 3899
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c06",
+   "expected": "相矛盾",
+   "actual": "相矛盾",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 10.8,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c06:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO four categories recognition performance\",\"DF-Tiny-YOLO consistent performance across four classes\",\"DF-Tiny-YOLO class-wise recognition results\",\"DF-Tiny-YOLO four-class detection performance\",\"DF-Tiny-YOLO category performance comparison\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 153,
+      "completion_tokens": 303,
+      "total_tokens": 456
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c06:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"相矛盾\",\"rationale\":\"候选原文明确称 DF-Tiny-YOLO 对 Apple cedar rust 和 healthy leaves 表现最好，说明四个类别之间的识别表现并不一致，与论断相反。\",\"supported_parts\":[],\"scope_differences\":[],\"limitations\":[\"原文片段未列出四个类别的逐类 precision/Recall 数值，仅给出定性判断。\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:40\",\"quote\":\"The matrix results reveal that the model mAP is 99.99% and the average IoU is 90.88%, indicating that the majority of the prediction results are consistent with the true situation and the model performs best for Apple cedar rust and healthy leaves.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 3679,
+      "completion_tokens": 1372,
+      "total_tokens": 5051
+     },
+     "parse_error": null
+    }
+   ]
+  },
+  {
+   "case_id": "PMC8806060-c07",
+   "expected": "部分支持",
+   "actual": "部分支持",
+   "status": "COMPLETED",
+   "error": null,
+   "quotes_total": 1,
+   "quotes_located": 1,
+   "seconds": 6.5,
+   "replies": [
+    {
+     "request_id": "PMC8806060-c07:query_generation:0",
+     "purpose": "query_generation",
+     "repairs": null,
+     "text": "{\"queries\":[\"DF-Tiny-YOLO comparison with mainstream detection models\",\"DF-Tiny-YOLO outperforms detection models\",\"DF-Tiny-YOLO performance comparison three models\",\"DF-Tiny-YOLO detection accuracy comparison\",\"mainstream detection models performance comparison\",\"DF-Tiny-YOLO superior detection performance\"]}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 157,
+      "completion_tokens": 279,
+      "total_tokens": 436
+     },
+     "parse_error": null
+    },
+    {
+     "request_id": "PMC8806060-c07:decision:0",
+     "purpose": "decision",
+     "repairs": null,
+     "text": "{\"action\":\"final\",\"decision\":{\"label\":\"部分支持\",\"rationale\":\"证据表明 DF-Tiny-YOLO 优于 Tiny-YOLO 和 YOLOv2，但仅明确对比了两个模型，未达到论断所称的三个及以上主流检测模型。\",\"supported_parts\":[\"DF-Tiny-YOLO 在与 Tiny-YOLO、YOLOv2 的对比中检测性能更优\"],\"scope_differences\":[\"论断要求与三个及以上主流检测模型对比，证据仅明确列出 Tiny-YOLO 和 YOLOv2 两个对比模型\"],\"limitations\":[\"可核查片段不足以证明 DF-Tiny-YOLO 相对三个及以上主流检测模型均表现更优\"],\"evidence\":[{\"paragraph_id\":\"p:PMC0000001:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:jats-0.1.0:1\",\"quote\":\"Compared with the Tiny-YOLO and YOLOv2 network models, the new method proposed in this paper significantly improves the detection performance.\"}]}}",
+     "response_model": "deepseek-flash",
+     "usage": {
+      "prompt_tokens": 4137,
+      "completion_tokens": 697,
+      "total_tokens": 4834
+     },
+     "parse_error": null
+    }
+   ]
+  }
+ ]
+}
