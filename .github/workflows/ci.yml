@@ -56,6 +56,21 @@ jobs:
       - name: Check the semantic report matches the frozen samples
         run: python tests/functional/report.py --check
 
+      # 24 条金标的「第二人签核」与 4 个冻结来源的清单一致性，此前只在手工执行记录里查过，
+      # 也就是说：有人把一条签核改成 disputed、或把冻结清单改了而不更新哈希，CI 仍然全绿。
+      # 两道都是离线检查（不联网、各 < 5 s），放在 pytest 之前，理由同上：这类漂移一步就能修。
+      # 这是既有 `backend` 作业里新增的两步，**不新增检查项**（与 backend/frontend/e2e 三个
+      # 作业的关系不变）；若团队更希望它像 e2e 那样独立成项（#26 的做法），拆出去也可以。
+      #
+      # 口径边界：离线模式下 19 条引文落在清单预览窗口之外，只能记「无法判定」。所以这道门禁
+      # 证明的是「签核状态没漂、冻结清单没漂」，**不是引文验收**；引文真核仍归
+      # `claims.py --live`（需外网，CI 不跑，见 docs/execution-record.md §4）。
+      - name: Check the answer key is still signed off
+        run: python tests/functional/claims.py --require-coverage --require-review
+
+      - name: Check the frozen sources still match the manifest
+        run: python tests/functional/freeze_sources.py --check
+
       - name: Run pytest
         run: python -m pytest -c backend/pyproject.toml -q
 
